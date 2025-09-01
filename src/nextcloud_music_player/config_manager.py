@@ -60,7 +60,7 @@ class ConfigManager:
                 "server_url": "http://cloud.home.daozzg.com",
                 "username": "guest", 
                 "password": "",
-                "default_sync_folder": "/mp3/音乐/01.周杰伦%20%20%20170首/",
+                "default_sync_folder": "/mp3/音乐/当月抖音热播流行歌曲484首/",
                 "auto_connect": False,
                 "remember_credentials": True
             },

@@ -214,7 +214,7 @@ class ConnectionView:
                 self.password_input.value = config.get("password", "")
                 self.password_text_input.value = config.get("password", "")
             
-            self.sync_folder_input.value = config.get("default_sync_folder", "/mp3/音乐/01.周杰伦%20%20%20170首/")
+            self.sync_folder_input.value = config.get("default_sync_folder", "/mp3/音乐/当月抖音热播流行歌曲484首/")
             self.auto_connect_switch.value = config.get("auto_connect", False)
             self.remember_password_switch.value = config.get("remember_credentials", True)
             
