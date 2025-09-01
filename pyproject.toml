@@ -107,6 +107,13 @@ requires = [
 permission.network_request = "This app needs network access to connect to your NextCloud server and sync music files."
 permission.local_network = "This app needs local network access to connect to your NextCloud server."
 
+# iOS后台播放配置
+supported_device_families = ["1", "2"]  # iPhone 和 iPad
+
+# Info.plist 配置
+info.UIBackgroundModes = ["audio"]
+info.NSAppTransportSecurity = {NSAllowsArbitraryLoads = true, NSAllowsLocalNetworking = true}
+
 [tool.briefcase.app.nextcloud-music-player.android]
 requires = [
     "toga-android~=0.4.0",

@@ -189,6 +189,7 @@ class iOSAudioPlayer:
         self._player = None
         self._current_file = None
         self._volume = 0.7
+        self._audio_manager = None
         self._init_avfoundation()
     
     def _init_avfoundation(self):
@@ -201,6 +202,50 @@ class iOSAudioPlayer:
             self.AVAudioPlayer = ObjCClass("AVAudioPlayer")
             self.NSURL = ObjCClass("NSURL")
             self.NSString = ObjCClass("NSString")
+            self.AVAudioSession = ObjCClass("AVAudioSession")
+            
+            # 初始化后台音频管理器
+            try:
+                from .ios_background_audio import get_ios_audio_manager
+                self._audio_manager = get_ios_audio_manager()
+                if self._audio_manager and self._audio_manager.is_configured:
+                    logger.info("iOS后台音频管理器配置成功")
+                else:
+                    logger.warning("iOS后台音频管理器配置失败")
+            except ImportError:
+                logger.warning("无法导入iOS后台音频管理器")
+            
+            # 配置音频会话以支持后台播放
+            session = self.AVAudioSession.sharedInstance()
+            
+            # 设置音频会话类别为播放，支持后台播放
+            try:
+                # 尝试使用更完整的API
+                success = session.setCategory_withOptions_error_(
+                    "AVAudioSessionCategoryPlayback",
+                    0,  # AVAudioSessionCategoryOptions 默认
+                    None
+                )
+                
+                if not success:
+                    # 回退到简单API
+                    success = session.setCategory_error_("AVAudioSessionCategoryPlayback", None)
+                
+                if success:
+                    session.setActive_error_(True, None)
+                    logger.info("iOS音频会话配置成功，支持后台播放")
+                else:
+                    logger.warning("设置iOS音频会话类别失败")
+                    
+            except Exception as e:
+                logger.warning(f"配置iOS音频会话失败: {e}")
+                # 最后尝试简单方法
+                try:
+                    session.setCategory("AVAudioSessionCategoryPlayback", error=None)
+                    session.setActive(True, error=None)
+                    logger.info("iOS音频会话配置成功（简单方法）")
+                except:
+                    logger.error("所有iOS音频会话配置方法都失败")
             
             logger.info("iOS AVFoundation音频播放器初始化成功")
             
@@ -239,6 +284,10 @@ class iOSAudioPlayer:
     def play(self) -> bool:
         """播放音频"""
         try:
+            # 激活音频会话
+            if self._audio_manager:
+                self._audio_manager.activate_session()
+            
             if self._player:
                 result = self._player.play()
                 if result:
@@ -267,6 +316,11 @@ class iOSAudioPlayer:
             if self._player:
                 self._player.stop()
                 logger.info("iOS停止播放")
+                
+                # 可选：停止播放后停用音频会话（如果不需要保持后台能力）
+                # if self._audio_manager:
+                #     self._audio_manager.deactivate_session()
+                
                 return True
             return False
         except Exception as e:
