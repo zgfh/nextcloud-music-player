@@ -62,6 +62,9 @@ class PlaybackView:
         # 启动UI更新定时器
         self.start_ui_timer()
         
+        # 更新播放模式按钮状态（初始化为单曲循环）
+        self.update_playmode_buttons()
+        
         # 加载当前播放列表
         self.load_current_playlist()
     

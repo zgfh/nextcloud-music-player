@@ -66,7 +66,7 @@ class ConfigManager:
             },
             "player": {
                 "volume": 70,
-                "play_mode": "normal",
+                "play_mode": "repeat_one",
                 "auto_play_on_select": True
             },
             "app": {

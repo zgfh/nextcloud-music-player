@@ -66,7 +66,7 @@ class NextCloudMusicPlayer(toga.App):
         self.playlist = []
         self.is_playing = False  # 保留用于兼容性
         self.is_paused = False   # 保留用于兼容性
-        self.play_mode = PlayMode.NORMAL
+        self.play_mode = PlayMode.REPEAT_ONE
         self.volume = self.config_manager.get("player.volume", 70) / 100.0
         self.position = 0  # 播放位置（秒）
         self.duration = 0  # 歌曲总时长（秒）
