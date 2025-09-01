@@ -9,6 +9,7 @@ from toga.style.pack import COLUMN, ROW
 import asyncio
 import logging
 from typing import Optional, Dict, List, Any
+from enum import Enum
 import os
 import json
 from datetime import datetime
@@ -16,13 +17,21 @@ from ..services.playback_service import PlaybackService
 
 logger = logging.getLogger(__name__)
 
+class PlayMode(Enum):
+    """播放模式枚举"""
+    NORMAL = "normal"
+    REPEAT_ONE = "repeat_one"
+    REPEAT_ALL = "repeat_all"
+    SHUFFLE = "shuffle"
+
 class PlaybackView:
     """音乐播放界面视图 - 基于 playlists.json 的播放列表管理"""
     
     def __init__(self, app, view_manager):
         self.app = app  # 保留app引用以传递给service
         self.view_manager = view_manager
-        
+        self.play_mode = PlayMode.REPEAT_ONE
+
         # 初始化播放服务
         self.playback_service = PlaybackService(
             config_manager=app.config_manager,
@@ -35,12 +44,12 @@ class PlaybackView:
         self.playback_service.set_playback_callbacks(
             pause_callback=None,  # 由服务自己处理
             stop_callback=None,   # 由服务自己处理
-            get_play_mode_callback=lambda: app.play_mode,
+            get_play_mode_callback=None,
             get_is_playing_callback=None,  # 由服务自己处理
             set_volume_callback=lambda volume: setattr(app, 'volume', volume),
-            seek_to_position_callback=getattr(app, 'seek_to_position', None),
-            get_duration_callback=lambda: getattr(app, 'duration', 0),
-            set_play_mode_callback=lambda mode: setattr(app, 'play_mode', mode)
+            seek_to_position_callback=None,
+            get_duration_callback=None,
+            set_play_mode_callback=None
         )
         
         # 播放列表管理
@@ -54,7 +63,8 @@ class PlaybackView:
             'play_count': 0,
             'last_played': None
         }
-        
+        self.position=0
+        self.duration=0
         
         # 构建界面
         self.build_interface()
@@ -688,9 +698,32 @@ class PlaybackView:
                 self.status_label.text = "⏹️ 停止"
                 self.play_pause_button.text = "▶️"
             
-            # 更新播放进度（从应用获取实时状态）
-            position = getattr(self.app, 'position', 0)
-            duration = getattr(self.app, 'duration', 0)
+            # 更新播放进度（从音频播放器获取实时状态）
+            position = 0
+            duration = 0
+            
+            # 从音频播放器获取实时播放位置和时长
+            if self.playback_service.audio_player:
+                try:
+                    position = self.playback_service.audio_player.get_position()
+                    duration = self.playback_service.audio_player.get_duration()
+                    
+                    # 如果返回的值为负数（表示不支持），使用默认值
+                    if position < 0:
+                        position = 0
+                    if duration < 0:
+                        duration = 0
+                        
+                    # 更新本地状态（用于其他地方可能的引用）
+                    self.position = position
+                    self.duration = duration
+                    self.current_song_state['position'] = position
+                    self.current_song_state['duration'] = duration
+                    
+                except Exception as e:
+                    logger.error(f"获取播放位置失败: {e}")
+                    position = 0
+                    duration = 0
             
             if duration > 0:
                 progress_percent = (position / duration) * 100
@@ -1293,7 +1326,7 @@ class PlaybackView:
             songs = self.current_playlist_data["songs"]
             
             # 根据播放模式确定下一首歌曲
-            play_mode = getattr(self.app, 'play_mode', None)
+            play_mode = self.play_mode
             
             if hasattr(play_mode, 'value') and play_mode.value == "shuffle":
                 # 随机模式：随机选择一首（排除当前）
@@ -1327,7 +1360,7 @@ class PlaybackView:
             songs = self.current_playlist_data["songs"]
             
             # 根据播放模式确定下一首歌曲
-            play_mode = getattr(self.app, 'play_mode', None)
+            play_mode = self.play_mode
             
             if hasattr(play_mode, 'value') and play_mode.value == "shuffle":
                 # 随机模式：随机选择一首（排除当前）
@@ -1356,12 +1389,79 @@ class PlaybackView:
     def on_seek(self, widget):
         """拖拽进度条"""
         try:
-            duration = self.playback_service.get_duration()
+            # 从音频播放器获取实时时长
+            duration = 0
+            
+            # 首先尝试从播放服务获取时长
+            if self.playback_service.audio_player:
+                duration = self.playback_service.audio_player.get_duration()
+                if duration < 0:  # 如果播放器不支持获取时长
+                    duration = self.duration  # 使用缓存的时长
+                    logger.debug(f"使用缓存的时长: {duration}")
+            else:
+                duration = self.duration  # 使用缓存的时长
+                logger.debug(f"没有音频播放器，使用缓存的时长: {duration}")
+            
+            # 如果仍然没有有效时长，尝试从文件信息获取
+            if duration <= 0:
+                current_song = self.get_current_song_entry()
+                if current_song and current_song.get("info"):
+                    # 尝试从歌曲信息中获取时长
+                    song_info = current_song["info"]
+                    if "duration" in song_info and song_info["duration"] > 0:
+                        duration = song_info["duration"]
+                        logger.debug(f"从歌曲信息获取时长: {duration}")
+            
+            # 如果还是没有时长，尝试估算一个合理的时长（基于文件大小）
+            if duration <= 0:
+                current_song = self.get_current_song_entry()
+                if current_song and current_song.get("info"):
+                    song_info = current_song["info"]
+                    file_size = song_info.get("size", 0)
+                    if file_size > 0:
+                        # 粗略估算：MP3文件约128kbps，即16KB/s
+                        # 这只是一个估算，实际可能有很大差异
+                        estimated_duration = file_size / (16 * 1024)  # 估算的秒数
+                        if 30 <= estimated_duration <= 600:  # 合理范围：30秒到10分钟
+                            duration = estimated_duration
+                            logger.debug(f"基于文件大小估算时长: {duration:.1f}秒")
+                        else:
+                            # 如果估算值不合理，使用默认值
+                            duration = 180  # 3分钟作为默认值
+                            logger.debug(f"估算值不合理({estimated_duration:.1f}s)，使用默认时长: {duration}秒")
+                    else:
+                        duration = 180  # 3分钟作为默认值
+                        logger.debug("没有文件大小信息，使用默认时长: 180秒")
+            
             if duration > 0:
+                # 计算新的播放位置
                 new_position = (widget.value / 100) * duration
-                self.playback_service.seek_to_position(new_position)
+                
+                # 跳转到新位置
+                success = self.playback_service.seek_to_position(new_position)
+                if success:
+                    logger.info(f"跳转到位置: {new_position:.2f}秒 ({widget.value:.1f}%)，时长: {duration:.1f}秒")
+                    
+                    # 立即更新位置显示（不等待下次UI更新）
+                    self.position = new_position
+                    self.duration = duration  # 更新缓存的时长
+                    current_min = int(new_position // 60)
+                    current_sec = int(new_position % 60)
+                    total_min = int(duration // 60)
+                    total_sec = int(duration % 60)
+                    self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
+                    self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
+                else:
+                    logger.warning("跳转失败")
+                    self.show_message("跳转失败：播放器不支持此功能", "warning")
+            else:
+                logger.warning("无法跳转：未获取到有效的音频时长")
+                # 不显示警告消息，因为这会频繁出现
+                # self.show_message("无法跳转：未获取到音频时长", "warning")
+                
         except Exception as e:
             logger.error(f"拖拽进度条失败: {e}")
+            self.show_message(f"跳转失败: {str(e)}", "error")
     
     def on_volume_change(self, widget):
         """音量变化"""

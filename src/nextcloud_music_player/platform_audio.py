@@ -96,6 +96,11 @@ class PygameAudioPlayer:
             
             self._pygame.mixer.music.load(file_path)
             self._current_file = file_path
+            
+            # 清除缓存的时长，确保重新计算
+            if hasattr(self, '_cached_duration'):
+                delattr(self, '_cached_duration')
+            
             logger.info(f"音频文件加载成功: {file_path}")
             return True
         except Exception as e:
@@ -171,16 +176,113 @@ class PygameAudioPlayer:
             return False
     
     def get_duration(self) -> float:
-        """获取音频时长（秒）- pygame不支持直接获取，返回-1"""
+        """获取音频时长（秒）- pygame不支持直接获取，尝试使用音频库"""
+        if not self._current_file:
+            logger.debug("get_duration: 没有当前文件")
+            return -1.0
+        
+        if not os.path.exists(self._current_file):
+            logger.debug(f"get_duration: 文件不存在: {self._current_file}")
+            return -1.0
+        
+        # 缓存时长，避免重复计算
+        if hasattr(self, '_cached_duration') and self._cached_duration > 0:
+            return self._cached_duration
+        
+        try:
+            # 尝试使用mutagen库获取音频时长
+            try:
+                import mutagen
+                logger.debug(f"尝试使用mutagen获取时长: {self._current_file}")
+                audio_file = mutagen.File(self._current_file)
+                if audio_file is not None and hasattr(audio_file, 'info') and hasattr(audio_file.info, 'length'):
+                    duration = float(audio_file.info.length)
+                    if duration > 0:
+                        logger.info(f"通过mutagen获取音频时长: {duration:.2f}秒")
+                        self._cached_duration = duration
+                        return duration
+                    else:
+                        logger.debug(f"mutagen获取的时长无效: {duration}")
+                else:
+                    logger.debug("mutagen无法解析音频文件或没有时长信息")
+            except ImportError:
+                logger.debug("mutagen库不可用")
+            except Exception as e:
+                logger.debug(f"mutagen获取音频时长失败: {e}")
+            
+            # 尝试使用wave库（仅支持WAV格式）
+            if self._current_file.lower().endswith('.wav'):
+                try:
+                    import wave
+                    logger.debug(f"尝试使用wave库获取时长: {self._current_file}")
+                    with wave.open(self._current_file, 'rb') as wav_file:
+                        frames = wav_file.getnframes()
+                        sample_rate = wav_file.getframerate()
+                        duration = frames / float(sample_rate)
+                        if duration > 0:
+                            logger.info(f"通过wave库获取音频时长: {duration:.2f}秒")
+                            self._cached_duration = duration
+                            return duration
+                except Exception as e:
+                    logger.debug(f"wave库获取音频时长失败: {e}")
+            
+            # 尝试使用 eyed3 库（专门用于MP3）
+            if self._current_file.lower().endswith('.mp3'):
+                try:
+                    import eyed3
+                    logger.debug(f"尝试使用eyed3获取时长: {self._current_file}")
+                    audiofile = eyed3.load(self._current_file)
+                    if audiofile and audiofile.info and audiofile.info.time_secs:
+                        duration = float(audiofile.info.time_secs)
+                        if duration > 0:
+                            logger.info(f"通过eyed3获取音频时长: {duration:.2f}秒")
+                            self._cached_duration = duration
+                            return duration
+                except ImportError:
+                    logger.debug("eyed3库不可用")
+                except Exception as e:
+                    logger.debug(f"eyed3获取音频时长失败: {e}")
+            
+            logger.warning(f"所有方法都无法获取音频时长: {self._current_file}")
+            
+        except Exception as e:
+            logger.error(f"获取音频时长时发生错误: {e}")
+        
         return -1.0
     
     def get_position(self) -> float:
         """获取当前播放位置（秒）- pygame不支持直接获取，返回-1"""
+        # pygame不支持获取播放位置，需要通过其他方式跟踪
         return -1.0
     
     def seek(self, position: float) -> bool:
-        """跳转到指定位置（秒）- pygame不支持，返回False"""
-        return False
+        """跳转到指定位置（秒）- pygame有限支持"""
+        if not self._pygame or not self._current_file:
+            return False
+        
+        try:
+            # pygame不支持直接跳转，但可以尝试使用set_pos()
+            # 注意：这个功能在某些音频格式上可能不稳定
+            if hasattr(self._pygame.mixer.music, 'set_pos'):
+                # set_pos接受秒为单位的位置
+                self._pygame.mixer.music.set_pos(position)
+                logger.info(f"pygame跳转到位置: {position:.2f}秒")
+                return True
+            else:
+                logger.warning("pygame版本不支持set_pos功能")
+                return False
+        except Exception as e:
+            logger.error(f"pygame跳转位置失败: {e}")
+            # 尝试重新加载和播放
+            try:
+                logger.info("尝试通过重新加载文件实现跳转")
+                self._pygame.mixer.music.stop()
+                self._pygame.mixer.music.load(self._current_file)
+                self._pygame.mixer.music.play(start=position)
+                return True
+            except Exception as retry_e:
+                logger.error(f"pygame重新加载跳转也失败: {retry_e}")
+                return False
 
 class iOSAudioPlayer:
     """基于iOS AVFoundation的音频播放器"""

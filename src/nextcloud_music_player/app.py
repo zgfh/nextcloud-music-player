@@ -20,7 +20,6 @@ import tempfile
 import threading
 import time
 import logging
-from enum import Enum
 import random
 from typing import Optional
 
@@ -34,13 +33,6 @@ from .music_library import MusicLibrary
 from .config_manager import ConfigManager
 
 
-class PlayMode(Enum):
-    """播放模式枚举"""
-    NORMAL = "normal"
-    REPEAT_ONE = "repeat_one"
-    REPEAT_ALL = "repeat_all"
-    SHUFFLE = "shuffle"
-
 
 class NextCloudMusicPlayer(toga.App):
     """NextCloud音乐播放器主应用类"""
@@ -50,8 +42,6 @@ class NextCloudMusicPlayer(toga.App):
         # 设置日志系统
         self.setup_logging()
         
-        # 注意：pygame初始化现在由播放服务处理
-        
         # 初始化配置管理器
         from .config_manager import ConfigManager
         self.config_manager = ConfigManager()
@@ -60,32 +50,8 @@ class NextCloudMusicPlayer(toga.App):
         self.nextcloud_client = None
         self.music_library = MusicLibrary()
         
-        # 播放状态管理（保留用于兼容性和UI显示）
-        self.current_song = None
-        self.current_song_index = 0
-        self.playlist = []
-        self.is_playing = False  # 保留用于兼容性
-        self.is_paused = False   # 保留用于兼容性
-        self.play_mode = PlayMode.REPEAT_ONE
-        self.volume = self.config_manager.get("player.volume", 70) / 100.0
-        self.position = 0  # 播放位置（秒）
-        self.duration = 0  # 歌曲总时长（秒）
-        
-        # 下载状态管理
-        self.selected_song_name = None
-        self._downloading_songs = set()
-        self._download_queue = []
-        self._download_stats = {
-            'total_count': 0,
-            'downloaded_count': 0,
-            'downloading_count': 0,
-            'queue_count': 0
-        }
-        
         # UI 更新队列（线程安全）
         self._pending_ui_updates = []
-        self._ui_needs_play_update = False
-        self._ui_needs_position_update = False
         
         # 创建主窗口
         self.main_window = toga.MainWindow(title=self.formal_name)
@@ -97,10 +63,7 @@ class NextCloudMusicPlayer(toga.App):
         # 设置主窗口内容
         self.main_window.content = self.view_manager.main_container
         self.main_window.show()
-        
-        # TODO: 实现播放位置监控定时器
-        # self.start_position_timer()
-        
+       
         # 恢复上次的视图状态，默认显示播放界面
         last_view = self.config_manager.get("app.last_view", "playback")
         self.view_manager.switch_to_view(last_view)

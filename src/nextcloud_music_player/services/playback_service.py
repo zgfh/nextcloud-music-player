@@ -538,14 +538,45 @@ class PlaybackService:
     
     def seek_to_position(self, position: float):
         """跳转到指定位置"""
-        if self._seek_to_position_callback:
-            self._seek_to_position_callback(position)
+        try:
+            # 优先使用音频播放器的跳转功能
+            if self.audio_player:
+                success = self.audio_player.seek(position)
+                if success:
+                    logger.info(f"跳转到位置: {position:.2f}秒")
+                    return True
+                else:
+                    logger.warning("音频播放器不支持跳转功能")
+            
+            # 备用：使用回调函数
+            if self._seek_to_position_callback:
+                self._seek_to_position_callback(position)
+                return True
+                
+            logger.warning("无法跳转到指定位置：音频播放器和回调函数都不可用")
+            return False
+        except Exception as e:
+            logger.error(f"跳转到指定位置失败: {e}")
+            return False
     
     def get_duration(self) -> float:
         """获取音频总时长"""
-        if self._get_duration_callback:
-            return self._get_duration_callback()
-        return 0.0
+        try:
+            # 优先使用音频播放器的获取时长功能
+            if self.audio_player:
+                duration = self.audio_player.get_duration()
+                if duration >= 0:  # 如果返回有效值
+                    return duration
+            
+            # 备用：使用回调函数
+            if self._get_duration_callback:
+                return self._get_duration_callback()
+                
+            # 返回存储的时长
+            return self.current_song_state.get('duration', 0.0)
+        except Exception as e:
+            logger.error(f"获取音频时长失败: {e}")
+            return 0.0
     
     def set_play_mode(self, play_mode):
         """设置播放模式"""
@@ -556,7 +587,7 @@ class PlaybackService:
         """通过字符串设置播放模式"""
         # 导入播放模式枚举
         try:
-            from ..app import PlayMode
+            from ..views.playback_view import PlayMode
             
             # 模式映射
             mode_map = {
@@ -578,3 +609,40 @@ class PlaybackService:
         except Exception as e:
             logger.error(f"设置播放模式失败: {e}")
             return False
+    
+    def get_playback_state(self) -> Dict[str, Any]:
+        """获取实时播放状态"""
+        try:
+            # 从音频播放器获取实时状态
+            if self.audio_player:
+                position = self.audio_player.get_position()
+                duration = self.audio_player.get_duration()
+                is_playing = self.audio_player.is_playing()
+                
+                # 如果返回的值为负数（表示不支持），使用存储的状态
+                if position < 0:
+                    position = self.current_song_state.get('position', 0)
+                if duration < 0:
+                    duration = self.current_song_state.get('duration', 0)
+                
+                # 更新存储的状态
+                self.current_song_state['position'] = position
+                self.current_song_state['duration'] = duration
+                self.current_song_state['is_playing'] = is_playing
+                
+                return {
+                    'position': position,
+                    'duration': duration,
+                    'is_playing': is_playing,
+                    'is_paused': self.current_song_state.get('is_paused', False),
+                    'current_song': self.current_song,
+                    'play_count': self.current_song_state.get('play_count', 0),
+                    'last_played': self.current_song_state.get('last_played', None)
+                }
+            else:
+                # 返回存储的状态
+                return dict(self.current_song_state)
+                
+        except Exception as e:
+            logger.error(f"获取播放状态失败: {e}")
+            return dict(self.current_song_state)
