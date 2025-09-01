@@ -570,7 +570,6 @@ class FileListView:
         
         self.download_selected_button.enabled = has_selection
         self.play_selected_button.enabled = has_selection
-        self.edit_selected_button.enabled = has_selection
         self.delete_selected_button.enabled = has_selection
     
     def update_stats(self):
@@ -616,11 +615,11 @@ class FileListView:
         for i, file_info in enumerate(file_infos):
             try:
                 filename = file_info['name']
-                file_path = file_info['']
+                file_path = file_info['remote_path']
                 
                 # 更新下载状态path
                 self.show_download_progress(f"正在下载: {filename} ({i+1}/{len(file_infos)})")
-                
+                logger.info(f"开始下载: {filename}")
                 # 下载文件
                 success = await self.music_service.download_file(file_path, filename)
                 
