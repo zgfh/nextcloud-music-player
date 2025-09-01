@@ -52,6 +52,10 @@ class PlaybackView:
             set_play_mode_callback=None
         )
         
+        # 确保播放服务和视图的播放模式同步
+        self.playback_service.set_play_mode_by_string("repeat_one")
+        logger.info("初始化播放模式为单曲循环")
+        
         # 播放列表管理
         self.current_playlist_data = None  # 当前播放列表数据
         self.current_song_info = None      # 当前歌曲信息（从 music_list.json 获取）
@@ -63,8 +67,9 @@ class PlaybackView:
             'play_count': 0,
             'last_played': None
         }
-        self.position=0
-        self.duration=0
+        # 播放完成标记
+        self._song_completed = False
+        self._last_position = 0
         
         # 构建界面
         self.build_interface()
@@ -755,6 +760,47 @@ class PlaybackView:
                         self.current_song_state['position'] = position
                         self.current_song_state['duration'] = duration
                     
+                    # 检测播放完成并自动播放下一曲
+                    if duration > 0 and position > 0:
+                        progress_ratio = position / duration
+                        # 如果播放进度超过99%，认为歌曲播放完成
+                        # 添加防重复触发机制：只在第一次达到99%时触发
+                        if progress_ratio >= 0.99 and not self._song_completed:
+                            logger.info(f"歌曲播放完成，进度: {progress_ratio:.1%}")
+                            self._song_completed = True  # 标记歌曲已完成
+                            
+                            # 立即停止UI更新避免后续的跳转警告
+                            logger.info("歌曲完成，准备处理下一曲逻辑")
+                            
+                            # 使用异步方式处理下一曲播放，避免阻塞UI
+                            try:
+                                if hasattr(self.app, 'add_background_task'):
+                                    self.app.add_background_task(self._auto_play_next_song)
+                                    logger.info("已添加自动播放任务到后台")
+                                else:
+                                    # 备用方案：创建独立的异步任务
+                                    import asyncio
+                                    loop = asyncio.get_event_loop()
+                                    loop.create_task(self._auto_play_next_song())
+                                    logger.info("已创建独立的自动播放任务")
+                            except Exception as task_error:
+                                logger.error(f"创建自动播放任务失败: {task_error}")
+                                # 最后的备用方案：直接调用同步版本
+                                try:
+                                    import threading
+                                    def run_auto_play():
+                                        import asyncio
+                                        asyncio.run(self._auto_play_next_song())
+                                    thread = threading.Thread(target=run_auto_play, daemon=True)
+                                    thread.start()
+                                    logger.info("已在独立线程中启动自动播放")
+                                except Exception as thread_error:
+                                    logger.error(f"线程启动自动播放也失败: {thread_error}")
+                        # 重置播放完成标记（当位置明显减少时，比如重新开始播放或切换歌曲）
+                        elif progress_ratio < 0.95 and self._song_completed:
+                            logger.debug("歌曲位置重置，清除播放完成标记")
+                            self._song_completed = False
+                    
                 except Exception as e:
                     logger.error(f"获取播放位置失败: {e}")
                     # 使用缓存值
@@ -802,6 +848,56 @@ class PlaybackView:
                 
         except Exception as e:
             logger.error(f"更新播放进度失败: {e}")
+    
+    async def _auto_play_next_song(self):
+        """自动播放下一曲的内部方法"""
+        try:
+            logger.info("进入自动播放下一曲方法")
+            await asyncio.sleep(0.2)  # 延迟稍长一点，确保播放状态稳定
+            
+            # 再次检查是否需要播放下一曲
+            if not self.current_playlist_data or not self.current_playlist_data.get("songs"):
+                logger.info("播放列表为空，停止自动播放")
+                return
+                
+            # 根据播放模式决定是否自动播放下一曲
+            # 优先从播放服务获取模式，确保同步
+            play_mode = self.playback_service.get_play_mode()
+            logger.info(f"播放服务获取到的播放模式: {play_mode}")
+            
+            if not play_mode:
+                play_mode = self.play_mode  # 备用
+                logger.info(f"使用视图播放模式作为备用: {play_mode}")
+                
+            if hasattr(play_mode, 'value'):
+                mode_value = play_mode.value
+                logger.info(f"当前播放模式值: {mode_value}")
+                
+                if mode_value == "repeat_one":
+                    # 单曲循环：重新播放当前歌曲
+                    logger.info("单曲循环模式：重新播放当前歌曲")
+                    # 重置播放完成标记和位置
+                    self._song_completed = False
+                    self._last_position = 0
+                    logger.info("已重置播放完成标记和位置")
+                    # 重新播放当前歌曲
+                    logger.info("开始调用play_current_song")
+                    await self.play_current_song()
+                    logger.info("play_current_song调用完成")
+                elif mode_value in ["normal", "repeat_all", "shuffle"]:
+                    # 其他模式：播放下一曲
+                    logger.info(f"{mode_value}模式：播放下一曲")
+                    await self.next_song(None)  # 传入None作为widget参数
+                else:
+                    logger.info(f"未知播放模式: {mode_value}，停止自动播放")
+            else:
+                logger.warning("播放模式对象没有value属性，使用默认行为（播放下一曲）")
+                await self.next_song(None)
+                
+        except Exception as e:
+            logger.error(f"自动播放下一曲失败: {e}")
+            import traceback
+            logger.error(f"详细错误信息: {traceback.format_exc()}")
     
     def update_ui(self):
         """更新UI显示"""
@@ -1047,6 +1143,7 @@ class PlaybackView:
     async def play_current_song(self):
         """播放当前选中的歌曲"""
         try:
+            logger.info("开始执行play_current_song")
             current_song = self.get_current_song_entry()
             if not current_song:
                 logger.warning("没有当前歌曲可播放")
@@ -1054,6 +1151,7 @@ class PlaybackView:
             
             song_info = current_song["info"]
             song_name = current_song["name"]
+            logger.info(f"准备播放歌曲: {song_name}")
             
             # 使用playback_service和music_service检查歌曲
             music_service = self.playback_service.music_service
@@ -1074,9 +1172,20 @@ class PlaybackView:
             
             # 如果找到了本地文件，直接播放
             if filepath and os.path.exists(filepath):
+                # 重置播放完成标记和相关状态
+                self._song_completed = False
+                self._last_position = 0
+                logger.info("已重置播放完成标记和位置")
+                
                 # 使用播放服务播放
+                logger.info("设置当前歌曲到播放服务")
                 self.playback_service.set_current_song(filepath)
+                logger.info("开始调用播放服务的play_music")
                 await self.playback_service.play_music()
+                logger.info("播放服务的play_music调用完成")
+                
+                # 等待一小段时间确保播放开始
+                await asyncio.sleep(0.1)
                 
                 # 更新播放状态
                 self.update_current_song_state(
@@ -1095,6 +1204,8 @@ class PlaybackView:
                 
         except Exception as e:
             logger.error(f"播放当前歌曲失败: {e}")
+            import traceback
+            logger.error(f"play_current_song详细错误信息: {traceback.format_exc()}")
     
     async def download_and_play_song(self, song_name: str, song_info: Dict[str, Any]):
         """下载并播放歌曲"""
@@ -1437,11 +1548,22 @@ class PlaybackView:
             (self.shuffle_button, "shuffle")
         ]
         
+        # 获取当前播放模式（先从播放服务获取，如果没有则使用视图的播放模式）
+        current_mode = None
+        play_mode = self.playback_service.get_play_mode()
+        if play_mode:
+            current_mode = str(play_mode.value)
+        else:
+            # 使用视图的播放模式作为备用
+            current_mode = str(self.play_mode.value)
+        
+        logger.debug(f"当前播放模式: {current_mode}")
+        
         for button, mode in buttons:
-            play_mode = self.playback_service.get_play_mode()
-            if play_mode and str(play_mode.value) == mode:
+            if current_mode == mode:
                 button.style.background_color = "#007bff"
                 button.style.color = "white"
+                logger.debug(f"播放模式按钮 {mode} 被选中")
             else:
                 button.style.background_color = "#f8f9fa"
                 button.style.color = "black"
@@ -1540,6 +1662,22 @@ class PlaybackView:
     def on_seek(self, widget):
         """拖拽进度条"""
         try:
+            # 如果歌曲已完成播放，忽略UI自动更新导致的跳转尝试
+            if self._song_completed:
+                logger.debug("歌曲已完成播放，忽略进度条更新")
+                return
+            
+            # 检查是否正在播放，如果没有在播放则不允许跳转
+            if not self.playback_service.is_playing():
+                logger.warning("当前没有播放音乐，无法跳转")
+                # 重置进度条到当前位置
+                if hasattr(self, 'position') and hasattr(self, 'duration') and self.duration > 0:
+                    current_progress = (self.position / self.duration) * 100
+                    widget.value = current_progress
+                else:
+                    widget.value = 0
+                return
+            
             # 从音频播放器获取实时时长
             duration = 0
             
@@ -1592,6 +1730,10 @@ class PlaybackView:
                 success = self.playback_service.seek_to_position(new_position)
                 if success:
                     logger.info(f"跳转到位置: {new_position:.2f}秒 ({widget.value:.1f}%)，时长: {duration:.1f}秒")
+                    
+                    # 重置播放完成标记（手动跳转表示用户还想继续听）
+                    if new_position < duration * 0.95:  # 如果跳转到95%之前，重置标记
+                        self._song_completed = False
                     
                     # 立即更新位置显示（不等待下次UI更新）
                     self.position = new_position

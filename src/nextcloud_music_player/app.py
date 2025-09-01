@@ -127,16 +127,32 @@ class NextCloudMusicPlayer(toga.App):
         try:
             # 尝试使用 asyncio 事件循环调度到主线程
             import asyncio
+            import inspect
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    loop.call_soon_threadsafe(task)
-                    return
-            except:
-                pass
+                    # 检查task是否是协程函数
+                    if inspect.iscoroutinefunction(task):
+                        # 如果是协程函数，创建任务
+                        loop.create_task(task())
+                        self.logger.debug("已创建协程任务")
+                        return
+                    elif inspect.iscoroutine(task):
+                        # 如果是协程对象，直接创建任务
+                        loop.create_task(task)
+                        self.logger.debug("已创建协程对象任务")
+                        return
+                    else:
+                        # 如果是普通函数，使用call_soon_threadsafe
+                        loop.call_soon_threadsafe(task)
+                        self.logger.debug("已安排普通函数执行")
+                        return
+            except Exception as loop_error:
+                self.logger.error(f"事件循环处理失败: {loop_error}")
             
             # 降级方案：标记需要更新UI，在主线程中处理
             self._pending_ui_updates.append(task)
+            self.logger.debug("已添加到待处理更新列表")
         except Exception as e:
             print(f"❌ [TASK] 无法执行后台任务: {e}")
 

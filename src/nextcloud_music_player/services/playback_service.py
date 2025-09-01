@@ -68,6 +68,9 @@ class PlaybackService:
         self._get_duration_callback = None
         self._set_play_mode_callback = None
         
+        # 内部播放模式存储
+        self._current_play_mode = None
+        
     def _init_audio_system(self):
         """初始化音频系统"""
         try:
@@ -196,35 +199,75 @@ class PlaybackService:
                 
                 logger.info(f"准备播放音乐: {self.current_song}")
                 
-                # 加载并播放新歌曲
-                if self.audio_player.load(self.current_song):
-                    if self.audio_player.play():
-                        # 更新播放状态
-                        self.current_song_state['is_playing'] = True
+                # 为了确保单曲循环正确工作，总是重新加载文件
+                # 特别是在播放完成后需要重新开始的情况下
+                try:
+                    # 先停止当前播放（如果有的话）
+                    if self.current_song_state['is_playing'] or not self.audio_player.is_playing():
+                        logger.info("停止当前播放，准备重新开始")
+                        self.audio_player.stop()
+                        await asyncio.sleep(0.1)  # 短暂等待确保停止完成
+                        # 重置播放状态
+                        self.current_song_state['is_playing'] = False
                         self.current_song_state['is_paused'] = False
-                        self.current_song_state['last_played'] = datetime.now().isoformat()
                         
-                        # 获取并缓存音频时长
-                        try:
-                            duration = self.audio_player.get_duration()
-                            if duration > 0:
-                                self.current_song_state['duration'] = duration
-                                logger.info(f"缓存音频时长: {duration:.2f}秒")
-                            else:
-                                logger.debug("无法从播放器获取时长，保持原有值")
-                        except Exception as e:
-                            logger.warning(f"获取音频时长失败: {e}")
+                    # 重新加载文件
+                    logger.info("重新加载音频文件")
+                    load_success = self.audio_player.load(self.current_song)
+                    logger.info(f"音频文件加载结果: {load_success}")
+                    
+                    if load_success:
+                        # 开始播放
+                        logger.info("开始播放音频")
+                        play_success = self.audio_player.play()
+                        logger.info(f"音频播放结果: {play_success}")
                         
-                        # 设置音量
-                        volume = self.get_volume() / 100.0  # 转换为0.0-1.0范围
-                        self.audio_player.set_volume(volume)
-                        
-                        logger.info(f"开始播放: {os.path.basename(self.current_song)}")
-                        return
+                        if play_success:
+                            # 更新播放状态
+                            self.current_song_state['is_playing'] = True
+                            self.current_song_state['is_paused'] = False
+                            self.current_song_state['last_played'] = datetime.now().isoformat()
+                            logger.info("播放状态已更新")
+                            
+                            # 获取并缓存音频时长
+                            try:
+                                duration = self.audio_player.get_duration()
+                                if duration > 0:
+                                    self.current_song_state['duration'] = duration
+                                    logger.info(f"缓存音频时长: {duration:.2f}秒")
+                                else:
+                                    logger.debug("无法从播放器获取时长，保持原有值")
+                            except Exception as e:
+                                logger.warning(f"获取音频时长失败: {e}")
+                            
+                            # 设置音量
+                            volume = self.get_volume() / 100.0  # 转换为0.0-1.0范围
+                            self.audio_player.set_volume(volume)
+                            
+                            logger.info(f"开始播放: {os.path.basename(self.current_song)}")
+                            return
+                        else:
+                            logger.error("音频播放器播放失败")
                     else:
-                        logger.error("音频播放器播放失败")
-                else:
-                    logger.error("音频播放器加载文件失败")
+                        logger.error("音频播放器加载文件失败")
+                except Exception as audio_error:
+                    logger.error(f"音频播放过程出现异常: {audio_error}")
+                
+                # 如果新的播放器失败，尝试重新初始化播放器
+                logger.warning("尝试重新初始化音频播放器")
+                try:
+                    from ..platform_audio import create_audio_player
+                    self.audio_player = create_audio_player()
+                    
+                    if self.audio_player and self.audio_player.load(self.current_song):
+                        if self.audio_player.play():
+                            self.current_song_state['is_playing'] = True
+                            self.current_song_state['is_paused'] = False
+                            self.current_song_state['last_played'] = datetime.now().isoformat()
+                            logger.info("重新初始化播放器后播放成功")
+                            return
+                except Exception as reinit_error:
+                    logger.error(f"重新初始化播放器失败: {reinit_error}")
             
             # 备用方案：使用pygame（向后兼容）
             if not self._ensure_audio_system():
@@ -483,9 +526,30 @@ class PlaybackService:
     
     def get_play_mode(self):
         """获取播放模式"""
+        # 优先返回内部存储的播放模式
+        if self._current_play_mode:
+            return self._current_play_mode
+            
+        # 备用：使用回调函数
         if self._get_play_mode_callback:
             return self._get_play_mode_callback()
-        return None
+            
+        # 从配置文件加载
+        try:
+            from ..views.playback_view import PlayMode
+            mode_string = self.config_manager.get("player.play_mode", "repeat_one")
+            mode_map = {
+                "normal": PlayMode.NORMAL,
+                "repeat_one": PlayMode.REPEAT_ONE,
+                "repeat_all": PlayMode.REPEAT_ALL,
+                "shuffle": PlayMode.SHUFFLE
+            }
+            self._current_play_mode = mode_map.get(mode_string, PlayMode.REPEAT_ONE)
+            logger.debug(f"从配置加载播放模式: {mode_string}")
+            return self._current_play_mode
+        except Exception as e:
+            logger.error(f"获取播放模式失败: {e}")
+            return None
     
     def is_playing(self) -> bool:
         """检查是否正在播放"""
@@ -594,6 +658,11 @@ class PlaybackService:
     
     def set_play_mode(self, play_mode):
         """设置播放模式"""
+        # 存储到内部状态
+        self._current_play_mode = play_mode
+        logger.info(f"设置播放模式: {play_mode.value if play_mode else None}")
+        
+        # 调用回调函数（如果有）
         if self._set_play_mode_callback:
             self._set_play_mode_callback(play_mode)
     
