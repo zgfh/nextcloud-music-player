@@ -731,24 +731,40 @@ class PlaybackView:
                     
                     logger.debug(f"update_progress_only: position={position:.2f}, duration={duration:.2f}")
                     
-                    # 如果返回的值为负数（表示不支持），使用默认值
+                    # 确保值有效（iOS现在返回0而不是负数）
                     if position < 0:
                         position = 0
-                    if duration < 0:
-                        duration = 0
+                    if duration <= 0:
+                        # 如果无法从播放器获取时长，尝试从缓存获取
+                        if hasattr(self, 'duration') and self.duration > 0:
+                            duration = self.duration
+                            logger.debug(f"使用缓存的时长: {duration}")
+                        else:
+                            # 尝试从歌曲信息获取时长
+                            current_song = self.get_current_song_entry()
+                            if current_song and current_song.get("info"):
+                                song_info = current_song["info"]
+                                if "duration" in song_info and song_info["duration"] > 0:
+                                    duration = song_info["duration"]
+                                    logger.debug(f"从歌曲信息获取时长: {duration}")
                         
                     # 更新本地状态（用于其他地方可能的引用）
-                    self.position = position
-                    self.duration = duration
-                    self.current_song_state['position'] = position
-                    self.current_song_state['duration'] = duration
+                    if duration > 0:  # 只有在获取到有效时长时才更新
+                        self.position = position
+                        self.duration = duration
+                        self.current_song_state['position'] = position
+                        self.current_song_state['duration'] = duration
                     
                 except Exception as e:
                     logger.error(f"获取播放位置失败: {e}")
-                    position = 0
-                    duration = 0
+                    # 使用缓存值
+                    position = getattr(self, 'position', 0)
+                    duration = getattr(self, 'duration', 0)
             else:
                 logger.debug("update_progress_only: 没有音频播放器")
+                # 使用缓存值
+                position = getattr(self, 'position', 0)
+                duration = getattr(self, 'duration', 0)
             
             if duration > 0:
                 progress_percent = (position / duration) * 100
@@ -762,10 +778,13 @@ class PlaybackView:
                 
                 self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
                 self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
+                
+                logger.debug(f"进度更新: {current_min:02d}:{current_sec:02d} / {total_min:02d}:{total_sec:02d}")
             else:
                 self.progress_slider.value = 0
                 self.current_time_label.text = "00:00"
                 self.total_time_label.text = "00:00"
+                logger.debug("进度重置为00:00")
             
             # 更新播放状态（从应用获取实时状态）
             is_playing = getattr(self.app, 'is_playing', False)
@@ -1527,12 +1546,12 @@ class PlaybackView:
             # 首先尝试从播放服务获取时长
             if self.playback_service.audio_player:
                 duration = self.playback_service.audio_player.get_duration()
-                if duration < 0:  # 如果播放器不支持获取时长
-                    duration = self.duration  # 使用缓存的时长
-                    logger.debug(f"使用缓存的时长: {duration}")
-            else:
-                duration = self.duration  # 使用缓存的时长
-                logger.debug(f"没有音频播放器，使用缓存的时长: {duration}")
+                logger.debug(f"从播放器获取时长: {duration}")
+                
+            # 如果播放器返回0或无效值，尝试从缓存获取
+            if duration <= 0:
+                duration = getattr(self, 'duration', 0)
+                logger.debug(f"使用缓存的时长: {duration}")
             
             # 如果仍然没有有效时长，尝试从文件信息获取
             if duration <= 0:
@@ -1583,13 +1602,19 @@ class PlaybackView:
                     total_sec = int(duration % 60)
                     self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
                     self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
+                    
+                    # 强制更新进度条位置
+                    self.progress_slider.value = widget.value
+                    
                 else:
                     logger.warning("跳转失败")
                     self.show_message("跳转失败：播放器不支持此功能", "warning")
             else:
                 logger.warning("无法跳转：未获取到有效的音频时长")
-                # 不显示警告消息，因为这会频繁出现
-                # self.show_message("无法跳转：未获取到音频时长", "warning")
+                # 重置进度条到0
+                self.progress_slider.value = 0
+                self.current_time_label.text = "00:00"
+                self.total_time_label.text = "00:00"
                 
         except Exception as e:
             logger.error(f"拖拽进度条失败: {e}")

@@ -435,22 +435,36 @@ class iOSAudioPlayer:
             
             # 创建NSURL
             file_url = self.NSURL.fileURLWithPath(self.NSString.stringWithString(file_path))
+            logger.debug(f"iOS load: 创建文件URL: {file_url}")
             
             # 创建AVAudioPlayer
-            self._player = self.AVAudioPlayer.alloc().initWithContentsOfURL(file_url, error=None)
+            error_ptr = None
+            self._player = self.AVAudioPlayer.alloc().initWithContentsOfURL_error_(file_url, error_ptr)
             
             if self._player:
-                self._player.prepareToPlay()
-                self._player.setVolume(self._volume)
+                # 准备播放
+                prepare_success = self._player.prepareToPlay()
+                logger.debug(f"iOS load: prepareToPlay 结果: {prepare_success}")
+                
+                # 设置音量
+                self._player.setVolume_(self._volume)
+                
+                # 验证加载是否成功
+                duration = self._player.duration  # 这是属性，不是方法
+                logger.info(f"iOS音频文件加载成功: {file_path}, 时长: {duration:.2f}秒")
+                
                 self._current_file = file_path
-                logger.info(f"iOS音频文件加载成功: {file_path}")
                 return True
             else:
                 logger.error(f"无法创建AVAudioPlayer: {file_path}")
+                if error_ptr:
+                    logger.error(f"错误详情: {error_ptr}")
                 return False
                 
         except Exception as e:
             logger.error(f"iOS加载音频文件失败: {e}")
+            import traceback
+            logger.error(f"错误堆栈: {traceback.format_exc()}")
             return False
     
     def play(self) -> bool:
@@ -523,25 +537,45 @@ class iOSAudioPlayer:
         """获取音频时长（秒）"""
         try:
             if self._player:
-                return float(self._player.duration())
-            return -1.0
-        except:
-            return -1.0
+                duration = self._player.duration  # 这是属性，不是方法
+                logger.debug(f"iOS get_duration: raw={duration}")
+                # 检查是否为有效时长
+                if duration is not None and duration > 0:
+                    return float(duration)
+                else:
+                    logger.warning(f"iOS get_duration: 无效时长 {duration}")
+                    return 0.0
+            logger.debug("iOS get_duration: 没有播放器")
+            return 0.0
+        except Exception as e:
+            logger.error(f"iOS get_duration 异常: {e}")
+            return 0.0
     
     def get_position(self) -> float:
         """获取当前播放位置（秒）"""
         try:
             if self._player:
-                return float(self._player.currentTime())
-            return -1.0
-        except:
-            return -1.0
+                position = self._player.currentTime  # 这是属性，不是方法
+                logger.debug(f"iOS get_position: raw={position}")
+                # 检查是否为有效位置
+                if position is not None and position >= 0:
+                    return float(position)
+                else:
+                    logger.warning(f"iOS get_position: 无效位置 {position}")
+                    return 0.0
+            logger.debug("iOS get_position: 没有播放器")
+            return 0.0
+        except Exception as e:
+            logger.error(f"iOS get_position 异常: {e}")
+            return 0.0
     
     def seek(self, position: float) -> bool:
         """跳转到指定位置（秒）"""
         try:
             if self._player:
-                self._player.setCurrentTime(position)
+                # 在AVAudioPlayer中，currentTime是可读写属性
+                self._player.currentTime = position
+                logger.debug(f"iOS seek: 设置位置为 {position}")
                 return True
             return False
         except Exception as e:

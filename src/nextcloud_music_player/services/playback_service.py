@@ -204,6 +204,17 @@ class PlaybackService:
                         self.current_song_state['is_paused'] = False
                         self.current_song_state['last_played'] = datetime.now().isoformat()
                         
+                        # 获取并缓存音频时长
+                        try:
+                            duration = self.audio_player.get_duration()
+                            if duration > 0:
+                                self.current_song_state['duration'] = duration
+                                logger.info(f"缓存音频时长: {duration:.2f}秒")
+                            else:
+                                logger.debug("无法从播放器获取时长，保持原有值")
+                        except Exception as e:
+                            logger.warning(f"获取音频时长失败: {e}")
+                        
                         # 设置音量
                         volume = self.get_volume() / 100.0  # 转换为0.0-1.0范围
                         self.audio_player.set_volume(volume)
@@ -565,7 +576,8 @@ class PlaybackService:
             # 优先使用音频播放器的获取时长功能
             if self.audio_player:
                 duration = self.audio_player.get_duration()
-                if duration >= 0:  # 如果返回有效值
+                logger.debug(f"从播放器获取时长: {duration}")
+                if duration > 0:  # iOS现在返回0而不是-1表示无效
                     return duration
             
             # 备用：使用回调函数
@@ -573,7 +585,9 @@ class PlaybackService:
                 return self._get_duration_callback()
                 
             # 返回存储的时长
-            return self.current_song_state.get('duration', 0.0)
+            cached_duration = self.current_song_state.get('duration', 0.0)
+            logger.debug(f"使用缓存时长: {cached_duration}")
+            return cached_duration
         except Exception as e:
             logger.error(f"获取音频时长失败: {e}")
             return 0.0
