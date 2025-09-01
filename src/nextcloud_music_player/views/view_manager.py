@@ -77,30 +77,30 @@ class ViewManager:
         self.switch_to_view(last_view)
     
     def create_navigation(self):
-        """创建导航栏"""
+        """创建导航栏 - iOS优化版本"""
         self.navigation_box = toga.Box(style=Pack(
             direction=ROW, 
-            padding=10,
+            padding=5,
             background_color="#f0f0f0"
         ))
         
-        # 创建导航按钮
+        # 创建导航按钮 - 减小字体和填充
         self.connection_button = toga.Button(
-            "🌐 连接配置",
+            "🌐 连接",
             on_press=lambda widget: self.switch_to_view("connection"),
-            style=Pack(flex=1, padding=5)
+            style=Pack(flex=1, padding=3, font_size=12)
         )
         
         self.file_list_button = toga.Button(
-            "📁 文件列表",
+            "📁 文件",
             on_press=lambda widget: self.switch_to_view("file_list"),
-            style=Pack(flex=1, padding=5)
+            style=Pack(flex=1, padding=3, font_size=12)
         )
         
         self.playback_button = toga.Button(
-            "🎵 播放界面",
+            "🎵 播放",
             on_press=lambda widget: self.switch_to_view("playback"),
-            style=Pack(flex=1, padding=5)
+            style=Pack(flex=1, padding=3, font_size=12)
         )
         
         self.navigation_box.add(self.connection_button)

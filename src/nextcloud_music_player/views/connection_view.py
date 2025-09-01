@@ -19,8 +19,11 @@ class ConnectionView:
         self.password_visible = False
         self.is_connected = False
         
-        # 创建视图容器
-        self.container = toga.Box(style=Pack(direction=COLUMN, padding=20))
+        # 创建滚动视图容器以适配iOS设备
+        self.container = toga.ScrollContainer(
+            content=toga.Box(style=Pack(direction=COLUMN, padding=10)),
+            style=Pack(flex=1)
+        )
         
         # 构建界面
         self.build_interface()
@@ -29,23 +32,26 @@ class ConnectionView:
         self.load_saved_config()
     
     def build_interface(self):
-        """构建连接配置界面"""
-        # 标题
+        """构建连接配置界面 - iOS优化版本"""
+        # 获取容器内容
+        content_box = self.container.content
+        
+        # 标题 - 减小字体和填充
         title = toga.Label(
             "🌐 NextCloud 连接配置",
             style=Pack(
-                padding=(0, 0, 20, 0),
-                font_size=20,
+                padding=(0, 0, 10, 0),
+                font_size=16,
                 font_weight="bold",
                 text_align="center",
-                color="#212529"  # 深色文字，确保可见性
+                color="#212529"
             )
         )
         
-        # 连接状态显示
+        # 连接状态显示 - 减少填充
         self.status_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=10,
+            padding=5,
             background_color="#f0f0f0"
         ))
         
@@ -60,42 +66,42 @@ class ConnectionView:
         
         self.status_box.add(self.status_label)
         
-        # 配置表单
-        form_box = toga.Box(style=Pack(direction=COLUMN, padding=10))
+        # 配置表单 - 减少填充
+        form_box = toga.Box(style=Pack(direction=COLUMN, padding=5))
         
-        # 服务器地址
-        url_label = toga.Label("服务器地址:", style=Pack(padding=(0, 0, 5, 0), color="#495057"))
+        # 服务器地址 - 减小宽度以适应移动设备
+        url_label = toga.Label("服务器地址:", style=Pack(padding=(0, 0, 3, 0), color="#495057", font_size=12))
         self.url_input = toga.TextInput(
             placeholder="https://your-nextcloud.com",
-            style=Pack(width=400, padding=(0, 0, 15, 0))
+            style=Pack(padding=(0, 0, 8, 0), font_size=12)
         )
         
         # 用户名
-        username_label = toga.Label("用户名:", style=Pack(padding=(0, 0, 5, 0), color="#495057"))
+        username_label = toga.Label("用户名:", style=Pack(padding=(0, 0, 3, 0), color="#495057", font_size=12))
         self.username_input = toga.TextInput(
             placeholder="输入用户名",
-            style=Pack(width=400, padding=(0, 0, 15, 0))
+            style=Pack(padding=(0, 0, 8, 0), font_size=12)
         )
         
         # 密码
-        password_label = toga.Label("密码:", style=Pack(padding=(0, 0, 5, 0), color="#495057"))
-        password_container = toga.Box(style=Pack(direction=ROW, alignment="center"))
+        password_label = toga.Label("密码:", style=Pack(padding=(0, 0, 3, 0), color="#495057", font_size=12))
+        password_container = toga.Box(style=Pack(direction=ROW, alignment="center", padding=(0, 0, 8, 0)))
         
         self.password_input = toga.PasswordInput(
             placeholder="输入密码",
-            style=Pack(flex=1, padding=(0, 5, 0, 0))
+            style=Pack(flex=1, padding=(0, 3, 0, 0), font_size=12)
         )
         
         self.password_text_input = toga.TextInput(
             placeholder="输入密码",
-            style=Pack(flex=1, padding=(0, 5, 0, 0))
+            style=Pack(flex=1, padding=(0, 3, 0, 0), font_size=12)
         )
         self.password_text_input.style.display = "none"
         
         self.show_password_button = toga.Button(
             "👁️",
             on_press=self.toggle_password_visibility,
-            style=Pack(width=40, height=30)
+            style=Pack(width=30, height=25, font_size=10)
         )
         
         password_container.add(self.password_input)
@@ -103,43 +109,45 @@ class ConnectionView:
         password_container.add(self.show_password_button)
         
         # 同步文件夹
-        folder_label = toga.Label("同步文件夹路径 (可选):", style=Pack(padding=(0, 0, 5, 0), color="#495057"))
+        folder_label = toga.Label("同步文件夹路径 (可选):", style=Pack(padding=(0, 0, 3, 0), color="#495057", font_size=12))
         self.sync_folder_input = toga.TextInput(
             placeholder="/Music 或留空表示根目录",
-            style=Pack(width=400, padding=(0, 0, 15, 0))
+            style=Pack(padding=(0, 0, 8, 0), font_size=12)
         )
         
-        # 配置选项
-        options_box = toga.Box(style=Pack(direction=COLUMN, padding=5))
+        # 配置选项 - 减少填充
+        options_box = toga.Box(style=Pack(direction=COLUMN, padding=3))
         
         # 记住密码选项
         self.remember_password_switch = toga.Switch(
             text="记住密码",
             value=True,
-            style=Pack(padding=(0, 0, 10, 0))
+            style=Pack(padding=(0, 0, 5, 0), font_size=11)
         )
         
         # 自动连接选项
         self.auto_connect_switch = toga.Switch(
             text="启动时自动连接",
             value=False,
-            style=Pack(padding=(0, 0, 10, 0))
+            style=Pack(padding=(0, 0, 5, 0), font_size=11)
         )
         
         options_box.add(self.remember_password_switch)
         options_box.add(self.auto_connect_switch)
         
-        # 按钮组
-        button_box = toga.Box(style=Pack(direction=ROW, padding=10))
+        # 按钮组 - 减少填充和按钮尺寸
+        button_box = toga.Box(style=Pack(direction=ROW, padding=5))
         
         self.connect_button = toga.Button(
             "🔗 连接",
             on_press=self.connect_to_nextcloud,
             style=Pack(
-                padding=5,
+                padding=3,
                 background_color="#007AFF",
                 color="white",
-                width=100
+                width=80,
+                height=30,
+                font_size=12
             )
         )
         
@@ -147,17 +155,19 @@ class ConnectionView:
             "🔌 断开",
             on_press=self.disconnect_from_nextcloud,
             enabled=False,
-            style=Pack(padding=5, width=100)
+            style=Pack(padding=3, width=80, height=30, font_size=12)
         )
         
         self.test_button = toga.Button(
-            "🔍 测试连接",
+            "🔍 测试",
             on_press=self.test_connection,
             style=Pack(
-                padding=5,
+                padding=3,
                 background_color="#FF9500",
                 color="white",
-                width=100
+                width=80,
+                height=30,
+                font_size=12
             )
         )
         
@@ -165,14 +175,14 @@ class ConnectionView:
         button_box.add(self.disconnect_button)
         button_box.add(self.test_button)
         
-        # 消息显示区域
+        # 消息显示区域 - 减少填充
         self.message_box = toga.Box(style=Pack(
             direction=COLUMN,
-            padding=10,
+            padding=5,
             background_color="#f9f9f9"
         ))
         
-        # 组装界面
+        # 组装界面 - 使用滚动容器的内容
         form_box.add(url_label)
         form_box.add(self.url_input)
         form_box.add(username_label)
@@ -184,10 +194,11 @@ class ConnectionView:
         form_box.add(options_box)
         form_box.add(button_box)
         
-        self.container.add(title)
-        self.container.add(self.status_box)
-        self.container.add(form_box)
-        self.container.add(self.message_box)
+        # 添加到滚动容器的内容中
+        content_box.add(title)
+        content_box.add(self.status_box)
+        content_box.add(form_box)
+        content_box.add(self.message_box)
     
     def load_saved_config(self):
         """加载保存的配置"""

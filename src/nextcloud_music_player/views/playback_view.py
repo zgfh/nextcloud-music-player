@@ -80,30 +80,36 @@ class PlaybackView:
     
     
     def build_interface(self):
-        """构建播放界面"""
-        # 创建视图容器
-        self.container = toga.Box(style=Pack(direction=COLUMN, padding=20))
+        """构建播放界面 - iOS优化版本"""
+        # 创建可滚动视图容器，减少padding
+        self.container = toga.ScrollContainer(
+            content=toga.Box(style=Pack(direction=COLUMN, padding=8)),
+            style=Pack(flex=1)
+        )
         
-        # 消息显示区域
+        # 获取容器内容
+        content_box = self.container.content
+        
+        # 消息显示区域 - 减少padding
         self.message_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=10,
+            padding=5,
             visibility="hidden"
         ))
         
-        # 标题
+        # 标题 - 减少字体大小和padding
         title = toga.Label(
             "🎵 音乐播放器",
             style=Pack(
-                padding=(0, 0, 20, 0),
-                font_size=20,
+                padding=(0, 0, 8, 0),
+                font_size=16,
                 font_weight="bold",
                 text_align="center"
             )
         )
         
         # 添加消息框
-        self.container.add(self.message_box)
+        content_box.add(self.message_box)
         
         # 当前播放信息区域
         self.create_now_playing_section()
@@ -114,23 +120,19 @@ class PlaybackView:
         # 进度条区域
         self.create_progress_section()
         
-        # 音量控制区域
-        self.create_volume_section()
-        
-        # 播放模式控制
-        self.create_playmode_section()
+        # 音量和播放模式组合区域
+        self.create_volume_and_mode_section()
         
         # 播放列表区域
         self.create_playlist_section()
         
         # 组装界面
-        self.container.add(title)
-        self.container.add(self.now_playing_box)
-        self.container.add(self.controls_box)
-        self.container.add(self.progress_box)
-        self.container.add(self.volume_box)
-        self.container.add(self.playmode_box)
-        self.container.add(self.playlist_box)
+        content_box.add(title)
+        content_box.add(self.now_playing_box)
+        content_box.add(self.controls_box)
+        content_box.add(self.progress_box)
+        content_box.add(self.volume_mode_box)
+        content_box.add(self.playlist_box)
         
     def update_services(self):
         """更新服务依赖 - 当app的服务实例更新时调用"""
@@ -318,43 +320,43 @@ class PlaybackView:
     
     
     def create_now_playing_section(self):
-        """创建当前播放信息区域"""
+        """创建当前播放信息区域 - iOS优化版本"""
         self.now_playing_box = toga.Box(style=Pack(
             direction=COLUMN,
-            padding=15,
+            padding=8,
             background_color="#f8f9fa"
         ))
         
-        # 当前歌曲信息
+        # 当前歌曲信息 - 减小字体
         self.song_title_label = toga.Label(
             "未选择歌曲",
             style=Pack(
-                font_size=18,
+                font_size=14,
                 font_weight="bold",
                 text_align="center",
-                padding=(0, 0, 5, 0),
-                color="#212529"  # 深色文字，确保可见性
+                padding=(0, 0, 3, 0),
+                color="#212529"
             )
         )
         
         self.song_info_label = toga.Label(
             "选择一首歌曲开始播放",
             style=Pack(
-                font_size=12,
+                font_size=10,
                 color="#666666",
                 text_align="center",
-                padding=(0, 0, 10, 0)
+                padding=(0, 0, 5, 0)
             )
         )
         
-        # 播放状态
+        # 播放状态 - 减小字体
         self.status_label = toga.Label(
             "⏹️ 停止",
             style=Pack(
-                font_size=16,
+                font_size=12,
                 text_align="center",
-                padding=(5, 0),
-                color="#495057"  # 中等深色，确保可见性
+                padding=(3, 0),
+                color="#495057"
             )
         )
         
@@ -363,58 +365,58 @@ class PlaybackView:
         self.now_playing_box.add(self.status_label)
     
     def create_playback_controls(self):
-        """创建播放控制按钮"""
+        """创建播放控制按钮 - iOS优化版本"""
         self.controls_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=15,
+            padding=8,
             alignment="center"
         ))
         
-        # 上一曲按钮
+        # 上一曲按钮 - 减小尺寸
         self.prev_button = toga.Button(
             "⏮️",
             on_press=self.previous_song,
             style=Pack(
-                width=60,
-                height=40,
-                padding=(0, 5),
-                font_size=16
+                width=45,
+                height=35,
+                padding=(0, 3),
+                font_size=14
             )
         )
         
-        # 播放/暂停按钮
+        # 播放/暂停按钮 - 减小尺寸
         self.play_pause_button = toga.Button(
             "▶️",
             on_press=self.toggle_playback,
             style=Pack(
-                width=80,
-                height=50,
-                padding=(0, 10),
-                font_size=20
+                width=60,
+                height=40,
+                padding=(0, 8),
+                font_size=16
             )
         )
         
-        # 下一曲按钮
+        # 下一曲按钮 - 减小尺寸
         self.next_button = toga.Button(
             "⏭️",
             on_press=self.next_song,
             style=Pack(
-                width=60,
-                height=40,
-                padding=(0, 5),
-                font_size=16
+                width=45,
+                height=35,
+                padding=(0, 3),
+                font_size=14
             )
         )
         
-        # 停止按钮
+        # 停止按钮 - 减小尺寸
         self.stop_button = toga.Button(
             "⏹️",
             on_press=self.stop_playback,
             style=Pack(
-                width=60,
-                height=40,
-                padding=(0, 5),
-                font_size=16
+                width=45,
+                height=35,
+                padding=(0, 3),
+                font_size=14
             )
         )
         
@@ -424,21 +426,22 @@ class PlaybackView:
         self.controls_box.add(self.stop_button)
     
     def create_progress_section(self):
-        """创建播放进度区域"""
+        """创建播放进度区域 - iOS优化版本"""
         self.progress_box = toga.Box(style=Pack(
             direction=COLUMN,
-            padding=15
+            padding=8
         ))
         
-        # 时间显示
-        time_box = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 5, 0)))
+        # 时间显示 - 减小字体
+        time_box = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 3, 0)))
         
         self.current_time_label = toga.Label(
             "00:00",
             style=Pack(
                 flex=0, 
-                padding=(0, 10, 0, 0),
-                color="#495057"  # 深色文字，确保可见性
+                padding=(0, 5, 0, 0),
+                color="#495057",
+                font_size=10
             )
         )
         
@@ -447,17 +450,18 @@ class PlaybackView:
             style=Pack(
                 flex=0, 
                 text_align="right",
-                color="#495057"  # 深色文字，确保可见性
+                color="#495057",
+                font_size=10
             )
         )
         
-        # 进度条（使用滑块模拟）
+        # 进度条（使用滑块模拟）- 减小padding
         self.progress_slider = toga.Slider(
             min=0,
             max=100,
             value=0,
             on_change=self.on_seek,
-            style=Pack(flex=1, padding=(0, 10))
+            style=Pack(flex=1, padding=(0, 5))
         )
         
         time_box.add(self.current_time_label)
@@ -466,19 +470,26 @@ class PlaybackView:
         
         self.progress_box.add(time_box)
     
-    def create_volume_section(self):
-        """创建音量控制区域"""
-        self.volume_box = toga.Box(style=Pack(
+    def create_volume_and_mode_section(self):
+        """创建音量和播放模式组合控制区域 - iOS优化版本"""
+        self.volume_mode_box = toga.Box(style=Pack(
+            direction=COLUMN,
+            padding=8
+        ))
+        
+        # 音量控制行
+        volume_row = toga.Box(style=Pack(
             direction=ROW,
-            padding=15,
-            alignment="center"
+            alignment="center",
+            padding=(0, 0, 3, 0)
         ))
         
         volume_label = toga.Label(
-            "🔊 音量:",
+            "🔊",
             style=Pack(
-                padding=(0, 10, 0, 0),
-                color="#495057"  # 深色文字，确保可见性
+                padding=(0, 5, 0, 0),
+                color="#495057",
+                font_size=12
             )
         )
         
@@ -487,107 +498,133 @@ class PlaybackView:
             max=100,
             value=self.playback_service.get_volume(),
             on_change=self.on_volume_change,
-            style=Pack(flex=1, padding=(0, 10))
+            style=Pack(flex=1, padding=(0, 5))
         )
         
         self.volume_label = toga.Label(
             f"{int(self.volume_slider.value)}%",
             style=Pack(
-                width=50,
-                color="#495057"  # 深色文字，确保可见性
+                width=35,
+                color="#495057",
+                font_size=10
             )
         )
         
-        self.volume_box.add(volume_label)
-        self.volume_box.add(self.volume_slider)
-        self.volume_box.add(self.volume_label)
-    
-    def create_playmode_section(self):
-        """创建播放模式控制区域"""
-        self.playmode_box = toga.Box(style=Pack(
+        volume_row.add(volume_label)
+        volume_row.add(self.volume_slider)
+        volume_row.add(self.volume_label)
+        
+        # 播放模式控制行 - 使用更紧凑的按钮
+        mode_row = toga.Box(style=Pack(
             direction=ROW,
-            padding=15,
             alignment="center"
         ))
         
-        playmode_label = toga.Label(
-            "播放模式:",
+        mode_label = toga.Label(
+            "模式:",
             style=Pack(
-                padding=(0, 10, 0, 0),
-                color="#495057"  # 深色文字，确保可见性
+                padding=(0, 5, 0, 0),
+                color="#495057",
+                font_size=10
             )
         )
         
-        # 播放模式按钮
+        # 播放模式按钮 - 减小尺寸
         self.normal_button = toga.Button(
-            "🔁 顺序",
+            "顺序",
             on_press=lambda widget: self.set_play_mode("normal"),
-            style=Pack(padding=(0, 5), background_color="#007bff", color="white")
+            style=Pack(
+                width=45,
+                height=25,
+                padding=(0, 2),
+                font_size=9,
+                background_color="#007bff",
+                color="white"
+            )
         )
         
         self.repeat_one_button = toga.Button(
-            "🔂 单曲循环",
+            "单曲",
             on_press=lambda widget: self.set_play_mode("repeat_one"),
-            style=Pack(padding=(0, 5))
+            style=Pack(
+                width=45,
+                height=25,
+                padding=(0, 2),
+                font_size=9
+            )
         )
         
         self.repeat_all_button = toga.Button(
-            "🔁 列表循环",
+            "列表",
             on_press=lambda widget: self.set_play_mode("repeat_all"),
-            style=Pack(padding=(0, 5))
+            style=Pack(
+                width=45,
+                height=25,
+                padding=(0, 2),
+                font_size=9
+            )
         )
         
         self.shuffle_button = toga.Button(
-            "🔀 随机",
+            "随机",
             on_press=lambda widget: self.set_play_mode("shuffle"),
-            style=Pack(padding=(0, 5))
+            style=Pack(
+                width=45,
+                height=25,
+                padding=(0, 2),
+                font_size=9
+            )
         )
         
-        self.playmode_box.add(playmode_label)
-        self.playmode_box.add(self.normal_button)
-        self.playmode_box.add(self.repeat_one_button)
-        self.playmode_box.add(self.repeat_all_button)
-        self.playmode_box.add(self.shuffle_button)
+        mode_row.add(mode_label)
+        mode_row.add(self.normal_button)
+        mode_row.add(self.repeat_one_button)
+        mode_row.add(self.repeat_all_button)
+        mode_row.add(self.shuffle_button)
+        
+        self.volume_mode_box.add(volume_row)
+        self.volume_mode_box.add(mode_row)
     
     def create_playlist_section(self):
-        """创建播放列表区域"""
+        """创建播放列表区域 - iOS优化版本"""
         self.playlist_box = toga.Box(style=Pack(
             direction=COLUMN,
-            padding=15,
+            padding=8,
             flex=1
         ))
         
-        # 播放列表标题和管理按钮
-        playlist_header = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 10, 0)))
+        # 播放列表标题和管理按钮 - 减小按钮尺寸
+        playlist_header = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 5, 0)))
         
         playlist_label = toga.Label(
             "播放列表:",
             style=Pack(
                 flex=1,
                 font_weight="bold",
-                color="#212529"  # 深色文字，确保可见性
+                color="#212529",
+                font_size=12
             )
         )
         
-        # 播放列表管理按钮
+        # 播放列表管理按钮 - 减小尺寸
         self.save_playlist_button = toga.Button(
-            "💾 保存",
+            "💾",
             on_press=self.save_playlist_as_new,
             style=Pack(
-                width=80,
-                height=30,
-                padding=(0, 5, 0, 0),
-                font_size=12
+                width=30,
+                height=25,
+                padding=(0, 2, 0, 0),
+                font_size=10
             )
         )
         
         self.manage_playlists_button = toga.Button(
-            "📋 管理",
+            "📋",
             on_press=self.show_playlist_manager,
             style=Pack(
-                width=80,
-                height=30,
-                font_size=12
+                width=30,
+                height=25,
+                font_size=10
             )
         )
         
@@ -595,48 +632,48 @@ class PlaybackView:
         playlist_header.add(self.save_playlist_button)
         playlist_header.add(self.manage_playlists_button)
         
-        # 当前播放列表信息
+        # 当前播放列表信息 - 减小字体
         self.current_playlist_info = toga.Label(
             "当前播放列表: 临时列表",
             style=Pack(
-                padding=(0, 0, 5, 0),
-                font_size=11,
+                padding=(0, 0, 3, 0),
+                font_size=9,
                 color="#666666"
             )
         )
         
-        # 播放列表操作按钮行
-        playlist_actions = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 5, 0)))
+        # 播放列表操作按钮行 - 减小按钮尺寸
+        playlist_actions = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 3, 0)))
         
         self.clear_playlist_button = toga.Button(
-            "🗑️ 清空",
+            "🗑️",
             on_press=self.clear_current_playlist,
             style=Pack(
-                width=70,
-                height=25,
-                padding=(0, 5, 0, 0),
-                font_size=10
+                width=30,
+                height=20,
+                padding=(0, 2, 0, 0),
+                font_size=8
             )
         )
         
         self.remove_song_button = toga.Button(
-            "➖ 移除",
+            "➖",
             on_press=self.remove_selected_song,
             style=Pack(
-                width=70,
-                height=25,
-                padding=(0, 5, 0, 0),
-                font_size=10
+                width=30,
+                height=20,
+                padding=(0, 2, 0, 0),
+                font_size=8
             )
         )
         
         playlist_actions.add(self.clear_playlist_button)
         playlist_actions.add(self.remove_song_button)
         
-        # 播放列表
+        # 播放列表 - 减小高度
         self.playlist_table = toga.DetailedList(
             on_select=self.on_playlist_select,
-            style=Pack(flex=1, height=200)
+            style=Pack(flex=1, height=150)
         )
         
         self.playlist_box.add(playlist_header)

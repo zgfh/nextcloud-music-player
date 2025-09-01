@@ -56,6 +56,22 @@ class NextCloudMusicPlayer(toga.App):
         # 创建主窗口
         self.main_window = toga.MainWindow(title=self.formal_name)
         
+        # 检测iOS平台并进行适配
+        try:
+            import platform
+            current_platform = platform.system()
+            if hasattr(self, 'app_context') and hasattr(self.app_context, 'platform'):
+                # 如果有app_context，使用其中的平台信息
+                platform_info = str(self.app_context.platform)
+                if 'iOS' in platform_info:
+                    self.logger.info("检测到iOS平台，启用移动设备适配")
+            elif current_platform == 'Darwin':
+                # 在macOS上运行，可能是iOS模拟器
+                self.logger.info("在Darwin平台运行，可能是iOS模拟器")
+        except Exception as e:
+            self.logger.warning(f"平台检测失败: {e}")
+            self.logger.info("使用通用移动设备适配")
+        
         # 创建视图管理器
         from .views.view_manager import ViewManager
         self.view_manager = ViewManager(self)

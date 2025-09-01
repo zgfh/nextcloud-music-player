@@ -27,8 +27,11 @@ class FileListView:
         self.music_service.set_playlist_change_callback(self._on_playlist_changed)
         self.music_service.set_sync_folder_change_callback(self._on_sync_folder_changed)
         
-        # 创建视图容器
-        self.container = toga.Box(style=Pack(direction=COLUMN, padding=20))
+        # 创建滚动视图容器以适配iOS设备
+        self.container = toga.ScrollContainer(
+            content=toga.Box(style=Pack(direction=COLUMN, padding=10)),
+            style=Pack(flex=1)
+        )
         
         # 构建界面
         self.build_interface()
@@ -50,133 +53,133 @@ class FileListView:
         self.reload_music_list()
     
     def build_interface(self):
-        """构建文件列表界面"""
-        # 标题
+        """构建文件列表界面 - iOS优化版本"""
+        # 获取滚动容器的内容
+        content_box = self.container.content
+        
+        # 标题 - 减小字体和填充
         title = toga.Label(
             "📁 音乐文件列表",
             style=Pack(
-                padding=(0, 0, 10, 0),
-                font_size=20,
+                padding=(0, 0, 5, 0),
+                font_size=16,
                 font_weight="bold",
                 text_align="center",
-                color="#212529"  # 深色文字，确保可见性
+                color="#212529"
             )
         )
         
-        # 说明标签
+        # 说明标签 - 减小字体和填充
         description = toga.Label(
             "📝 所有操作基于 music_list.json 进行增删查改",
             style=Pack(
-                padding=(0, 0, 20, 0),
-                font_size=12,
+                padding=(0, 0, 8, 0),
+                font_size=10,
                 text_align="center",
-                color="#6c757d",  # 灰色文字
+                color="#6c757d",
                 font_style="italic"
             )
         )
         
-        # 操作栏
-        action_bar = toga.Box(style=Pack(direction=ROW, padding=10))
+        # 操作栏 - 减少填充
+        action_bar = toga.Box(style=Pack(direction=ROW, padding=5))
         
-        # 同步按钮
+        # 同步按钮 - 减小尺寸
         self.sync_button = toga.Button(
-            "📥 同步音乐列表",
+            "📥 同步",
             on_press=self.sync_music_list,
             style=Pack(
-                padding=5,
+                padding=3,
                 background_color="#34C759",
-                color="white"
+                color="white",
+                font_size=11,
+                width=60,
+                height=30
             )
         )
         
-        # 文件夹输入
+        # 文件夹输入 - 减小字体
         self.folder_input = toga.TextInput(
             placeholder="指定同步文件夹路径 (可选)",
-            style=Pack(flex=1, padding=(0, 5, 0, 5))
+            style=Pack(flex=1, padding=(0, 3, 0, 3), font_size=11)
         )
         
-        # 搜索输入框
+        # 搜索输入框 - 减小字体
         self.search_input = toga.TextInput(
             placeholder="搜索歌曲、艺术家或专辑...",
-            style=Pack(flex=1, padding=(0, 5, 0, 5))
+            style=Pack(flex=1, padding=(0, 3, 0, 3), font_size=11)
         )
         
-        # 搜索按钮
+        # 搜索按钮 - 减小尺寸
         self.search_button = toga.Button(
-            "🔍 搜索",
+            "🔍",
             on_press=self.search_music,
-            style=Pack(padding=5)
-        )
-        
-        
-        # 全选按钮
-        self.select_all_button = toga.Button(
-            "☑️ 全选",
-            on_press=self.select_all_files,
-            style=Pack(padding=5)
+            style=Pack(padding=3, width=30, height=30, font_size=10)
         )
         
         action_bar.add(self.sync_button)
         action_bar.add(self.folder_input)
         action_bar.add(self.search_input)
         action_bar.add(self.search_button)
-        action_bar.add(self.select_all_button)
         
-        # 播放控制栏
-        playback_bar = toga.Box(style=Pack(direction=ROW, padding=10))
+        # 播放控制栏 - 减小填充和按钮
+        playback_bar = toga.Box(style=Pack(direction=ROW, padding=5))
         
-        # 添加到播放列表按钮
+        # 合并操作按钮
         self.add_to_playlist_button = toga.Button(
-            "🎵 添加到播放列表",
+            "🎵 添加",
             on_press=self.add_to_playlist,
             style=Pack(
-                padding=5,
+                padding=3,
                 background_color="#007bff",
-                color="white"
+                color="white",
+                font_size=10,
+                width=60,
+                height=25
             )
         )
         
-        # 播放选中文件按钮
         self.play_selected_button = toga.Button(
-            "▶️ 播放选中",
+            "▶️ 播放",
             on_press=self.play_selected_files,
             style=Pack(
-                padding=5,
+                padding=3,
                 background_color="#28a745",
-                color="white"
-            )
-        )
-        # 编辑选中文件按钮
-        self.edit_selected_button = toga.Button(
-            "✏️ 编辑信息",
-            on_press=self.edit_selected_file,
-            style=Pack(
-                padding=5,
-                background_color="#ffc107",
-                color="black"
+                color="white",
+                font_size=10,
+                width=60,
+                height=25
             )
         )
         
-        # 删除选中文件按钮
+        self.select_all_button = toga.Button(
+            "☑️ 全选",
+            on_press=self.select_all_files,
+            style=Pack(padding=3, font_size=10, width=60, height=25)
+        )
+        
         self.delete_selected_button = toga.Button(
-            "🗑️ 删除选中",
+            "🗑️ 删除",
             on_press=self.delete_selected_files,
             style=Pack(
-                padding=5,
+                padding=3,
                 background_color="#dc3545",
-                color="white"
+                color="white",
+                font_size=10,
+                width=60,
+                height=25
             )
         )
         
         playback_bar.add(self.add_to_playlist_button)
         playback_bar.add(self.play_selected_button)
-        playback_bar.add(self.edit_selected_button)
+        playback_bar.add(self.select_all_button)
         playback_bar.add(self.delete_selected_button)
         
-        # 统计信息
+        # 统计信息 - 减小填充
         self.stats_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=10,
+            padding=5,
             background_color="#f0f0f0"
         ))
         
@@ -184,65 +187,69 @@ class FileListView:
             "总文件: 0 | 已选择: 0 | 已下载: 0",
             style=Pack(
                 flex=1,
-                color="#495057"  # 深色文字，确保可见性
+                color="#495057",
+                font_size=10
             )
         )
         
         self.stats_box.add(self.stats_label)
         
-        # 文件列表
+        # 文件列表 - 减小高度
         self.music_list = toga.DetailedList(
             data=[],
-            style=Pack(flex=1, height=300),
+            style=Pack(flex=1, height=200),
             on_select=self.on_file_select
         )
         
-        # 下载控制栏
-        download_bar = toga.Box(style=Pack(direction=ROW, padding=10))
+        # 下载控制栏 - 简化
+        download_bar = toga.Box(style=Pack(direction=ROW, padding=5))
         
         self.download_selected_button = toga.Button(
-            "⬇️ 下载选中",
+            "⬇️ 下载",
             on_press=self.download_selected_files,
             enabled=False,
             style=Pack(
-                padding=5,
+                padding=3,
                 background_color="#007AFF",
-                color="white"
+                color="white",
+                font_size=10,
+                width=60,
+                height=25
             )
         )
         
         self.clear_cache_button = toga.Button(
-            "🗑️ 清除缓存",
+            "🗑️ 清缓存",
             on_press=self.clear_cache,
-            style=Pack(padding=5)
+            style=Pack(padding=3, font_size=10, width=70, height=25)
         )
         
         download_bar.add(self.download_selected_button)
         download_bar.add(self.clear_cache_button)
         
-        # 下载状态显示
+        # 下载状态显示 - 减小填充
         self.download_status_box = toga.Box(style=Pack(
             direction=COLUMN,
-            padding=10,
+            padding=5,
             background_color="#f9f9f9"
         ))
         
-        # 消息显示区域
+        # 消息显示区域 - 减小填充
         self.message_box = toga.Box(style=Pack(
             direction=COLUMN,
-            padding=10
+            padding=5
         ))
         
-        # 组装界面
-        self.container.add(title)
-        self.container.add(description)
-        self.container.add(action_bar)
-        self.container.add(playback_bar)
-        self.container.add(self.stats_box)
-        self.container.add(self.music_list)
-        self.container.add(download_bar)
-        self.container.add(self.download_status_box)
-        self.container.add(self.message_box)
+        # 组装界面 - 使用滚动容器的内容
+        content_box.add(title)
+        content_box.add(description)
+        content_box.add(action_bar)
+        content_box.add(playback_bar)
+        content_box.add(self.stats_box)
+        content_box.add(self.music_list)
+        content_box.add(download_bar)
+        content_box.add(self.download_status_box)
+        content_box.add(self.message_box)
     
     def reload_music_list(self, music_files: Optional[List[Dict]] = None):
         """从 music_list.json 重新加载音乐列表"""
