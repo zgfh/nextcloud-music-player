@@ -646,15 +646,106 @@ class PlaybackView:
     
     def start_ui_timer(self):
         """启动UI更新定时器"""
+        logger.info("启动UI更新定时器")
         self.update_ui()
-        # 每500ms更新一次UI
-        self.playback_service.add_background_task(self.schedule_ui_update)
+        # 使用异步方式，在主线程中更新
+        try:
+            if hasattr(self.app, 'add_background_task'):
+                logger.info("使用app.add_background_task启动UI更新")
+                # 创建协程并包装为可调用的函数
+                def start_task():
+                    import asyncio
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(self.schedule_ui_update())
+                        logger.info("成功创建UI更新协程任务")
+                    except Exception as e:
+                        logger.error(f"创建协程任务失败: {e}")
+                
+                self.app.add_background_task(start_task)
+            else:
+                logger.warning("没有找到add_background_task方法，UI更新定时器无法启动")
+        except Exception as e:
+            logger.error(f"启动UI更新定时器失败: {e}")
     
     async def schedule_ui_update(self):
-        """定时更新UI"""
+        """定时更新UI - 在主线程异步执行"""
+        logger.info("开始UI更新定时器")
         while True:
             await asyncio.sleep(0.5)
-            self.update_ui()
+            try:
+                # 只更新播放进度，避免触发列表更新
+                self.update_progress_only()
+            except Exception as e:
+                logger.error(f"UI更新失败: {e}")
+    
+    def update_progress_only(self):
+        """只更新播放进度，不更新列表等复杂UI组件"""
+        try:
+            # 更新播放进度（从音频播放器获取实时状态）
+            position = 0
+            duration = 0
+            
+            # 从音频播放器获取实时播放位置和时长
+            if self.playback_service.audio_player:
+                try:
+                    position = self.playback_service.audio_player.get_position()
+                    duration = self.playback_service.audio_player.get_duration()
+                    
+                    logger.debug(f"update_progress_only: position={position:.2f}, duration={duration:.2f}")
+                    
+                    # 如果返回的值为负数（表示不支持），使用默认值
+                    if position < 0:
+                        position = 0
+                    if duration < 0:
+                        duration = 0
+                        
+                    # 更新本地状态（用于其他地方可能的引用）
+                    self.position = position
+                    self.duration = duration
+                    self.current_song_state['position'] = position
+                    self.current_song_state['duration'] = duration
+                    
+                except Exception as e:
+                    logger.error(f"获取播放位置失败: {e}")
+                    position = 0
+                    duration = 0
+            else:
+                logger.debug("update_progress_only: 没有音频播放器")
+            
+            if duration > 0:
+                progress_percent = (position / duration) * 100
+                self.progress_slider.value = progress_percent
+                
+                # 更新时间显示
+                current_min = int(position // 60)
+                current_sec = int(position % 60)
+                total_min = int(duration // 60)
+                total_sec = int(duration % 60)
+                
+                self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
+                self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
+            else:
+                self.progress_slider.value = 0
+                self.current_time_label.text = "00:00"
+                self.total_time_label.text = "00:00"
+            
+            # 更新播放状态（从应用获取实时状态）
+            is_playing = getattr(self.app, 'is_playing', False)
+            is_paused = getattr(self.app, 'is_paused', False)
+            
+            if is_playing:
+                self.status_label.text = "▶️ 播放中"
+                self.play_pause_button.text = "⏸️"
+            elif is_paused:
+                self.status_label.text = "⏸️ 暂停"
+                self.play_pause_button.text = "▶️"
+            else:
+                self.status_label.text = "⏹️ 停止"
+                self.play_pause_button.text = "▶️"
+                
+        except Exception as e:
+            logger.error(f"更新播放进度失败: {e}")
     
     def update_ui(self):
         """更新UI显示"""
@@ -708,6 +799,8 @@ class PlaybackView:
                     position = self.playback_service.audio_player.get_position()
                     duration = self.playback_service.audio_player.get_duration()
                     
+                    logger.debug(f"update_ui: position={position:.2f}, duration={duration:.2f}")
+                    
                     # 如果返回的值为负数（表示不支持），使用默认值
                     if position < 0:
                         position = 0
@@ -724,6 +817,8 @@ class PlaybackView:
                     logger.error(f"获取播放位置失败: {e}")
                     position = 0
                     duration = 0
+            else:
+                logger.debug("update_ui: 没有音频播放器")
             
             if duration > 0:
                 progress_percent = (position / duration) * 100

@@ -69,6 +69,11 @@ class PygameAudioPlayer:
         self._current_file = None
         self._is_paused = False
         self._volume = 0.7
+        # 位置跟踪相关
+        self._start_time = None
+        self._pause_time = None
+        self._seek_offset = 0.0
+        self._cached_duration = None
         self._init_pygame()
     
     def _init_pygame(self):
@@ -97,9 +102,13 @@ class PygameAudioPlayer:
             self._pygame.mixer.music.load(file_path)
             self._current_file = file_path
             
+            # 重置位置跟踪
+            self._start_time = None
+            self._pause_time = None
+            self._seek_offset = 0.0
+            
             # 清除缓存的时长，确保重新计算
-            if hasattr(self, '_cached_duration'):
-                delattr(self, '_cached_duration')
+            self._cached_duration = None
             
             logger.info(f"音频文件加载成功: {file_path}")
             return True
@@ -113,11 +122,20 @@ class PygameAudioPlayer:
             return False
         
         try:
+            import time
             if self._is_paused:
                 self._pygame.mixer.music.unpause()
                 self._is_paused = False
+                # 恢复播放时，调整开始时间
+                if self._pause_time and self._start_time:
+                    pause_duration = time.time() - self._pause_time
+                    self._start_time += pause_duration
+                self._pause_time = None
             else:
                 self._pygame.mixer.music.play()
+                # 记录播放开始时间
+                self._start_time = time.time()
+                self._seek_offset = 0.0
             logger.info("开始播放音频")
             return True
         except Exception as e:
@@ -130,8 +148,11 @@ class PygameAudioPlayer:
             return False
         
         try:
+            import time
             self._pygame.mixer.music.pause()
             self._is_paused = True
+            # 记录暂停时间
+            self._pause_time = time.time()
             logger.info("暂停播放")
             return True
         except Exception as e:
@@ -146,6 +167,10 @@ class PygameAudioPlayer:
         try:
             self._pygame.mixer.music.stop()
             self._is_paused = False
+            # 重置位置跟踪
+            self._start_time = None
+            self._pause_time = None
+            self._seek_offset = 0.0
             logger.info("停止播放")
             return True
         except Exception as e:
@@ -179,14 +204,14 @@ class PygameAudioPlayer:
         """获取音频时长（秒）- pygame不支持直接获取，尝试使用音频库"""
         if not self._current_file:
             logger.debug("get_duration: 没有当前文件")
-            return -1.0
+            return 0.0
         
         if not os.path.exists(self._current_file):
             logger.debug(f"get_duration: 文件不存在: {self._current_file}")
-            return -1.0
+            return 0.0
         
         # 缓存时长，避免重复计算
-        if hasattr(self, '_cached_duration') and self._cached_duration > 0:
+        if self._cached_duration is not None and self._cached_duration > 0:
             return self._cached_duration
         
         try:
@@ -248,12 +273,38 @@ class PygameAudioPlayer:
         except Exception as e:
             logger.error(f"获取音频时长时发生错误: {e}")
         
-        return -1.0
+        return 0.0
     
     def get_position(self) -> float:
-        """获取当前播放位置（秒）- pygame不支持直接获取，返回-1"""
-        # pygame不支持获取播放位置，需要通过其他方式跟踪
-        return -1.0
+        """获取当前播放位置（秒）- 通过时间跟踪实现"""
+        if not self._start_time:
+            logger.debug("get_position: 没有开始时间，返回 0.0")
+            return 0.0
+        
+        import time
+        
+        if self._is_paused and self._pause_time:
+            # 如果暂停，返回暂停时的位置
+            position = (self._pause_time - self._start_time) + self._seek_offset
+            logger.debug(f"get_position: 暂停状态，位置 {position:.2f}秒")
+        else:
+            # 如果播放中，计算当前位置
+            current_time = time.time()
+            position = (current_time - self._start_time) + self._seek_offset
+            logger.debug(f"get_position: 播放状态，位置 {position:.2f}秒")
+        
+        # 确保位置不超过歌曲时长
+        duration = self.get_duration()
+        if duration > 0 and position > duration:
+            position = duration
+            logger.debug(f"get_position: 位置超出时长，调整为 {position:.2f}秒")
+        
+        # 确保位置不为负数
+        if position < 0:
+            position = 0.0
+            logger.debug("get_position: 位置为负数，调整为 0.0")
+            
+        return position
     
     def seek(self, position: float) -> bool:
         """跳转到指定位置（秒）- pygame有限支持"""
@@ -261,28 +312,47 @@ class PygameAudioPlayer:
             return False
         
         try:
+            import time
+            
             # pygame不支持直接跳转，但可以尝试使用set_pos()
             # 注意：这个功能在某些音频格式上可能不稳定
             if hasattr(self._pygame.mixer.music, 'set_pos'):
                 # set_pos接受秒为单位的位置
                 self._pygame.mixer.music.set_pos(position)
                 logger.info(f"pygame跳转到位置: {position:.2f}秒")
+                
+                # 更新位置跟踪
+                self._start_time = time.time()
+                self._seek_offset = position
+                self._pause_time = None
+                
                 return True
             else:
                 logger.warning("pygame版本不支持set_pos功能")
-                return False
+                
+                # 尝试重新加载和播放
+                try:
+                    logger.info("尝试通过重新加载文件实现跳转")
+                    was_playing = self.is_playing()
+                    self._pygame.mixer.music.stop()
+                    self._pygame.mixer.music.load(self._current_file)
+                    
+                    if was_playing:
+                        self._pygame.mixer.music.play(start=position)
+                        # 更新位置跟踪
+                        self._start_time = time.time()
+                        self._seek_offset = position
+                        self._pause_time = None
+                        self._is_paused = False
+                    
+                    return True
+                except Exception as retry_e:
+                    logger.error(f"pygame重新加载跳转也失败: {retry_e}")
+                    return False
+                    
         except Exception as e:
             logger.error(f"pygame跳转位置失败: {e}")
-            # 尝试重新加载和播放
-            try:
-                logger.info("尝试通过重新加载文件实现跳转")
-                self._pygame.mixer.music.stop()
-                self._pygame.mixer.music.load(self._current_file)
-                self._pygame.mixer.music.play(start=position)
-                return True
-            except Exception as retry_e:
-                logger.error(f"pygame重新加载跳转也失败: {retry_e}")
-                return False
+            return False
 
 class iOSAudioPlayer:
     """基于iOS AVFoundation的音频播放器"""
