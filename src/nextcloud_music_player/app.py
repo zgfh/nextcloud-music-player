@@ -31,7 +31,6 @@ except ImportError:
 
 from .nextcloud_client import NextCloudClient
 from .music_library import MusicLibrary
-from .config import DEFAULT_NEXTCLOUD_CONFIG, APP_CONFIG
 from .config_manager import ConfigManager
 
 

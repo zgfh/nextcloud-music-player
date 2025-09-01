@@ -1,0 +1,116 @@
+name: Auto Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 匹配 v1.0.0, v1.2.3 等格式的标签
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整的git历史
+    
+    - name: Extract version from tag
+      id: version
+      run: |
+        # 从标签中提取版本号（去掉v前缀）
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # 获取上一个标签
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+        
+        if [ -n "$PREV_TAG" ]; then
+          # 生成从上一个标签到当前标签的更改日志
+          CHANGELOG=$(git log --pretty=format:"- %s" $PREV_TAG..HEAD)
+        else
+          # 如果没有上一个标签，生成从第一个提交到当前的更改日志
+          CHANGELOG=$(git log --pretty=format:"- %s")
+        fi
+        
+        # 如果更改日志为空，提供默认信息
+        if [ -z "$CHANGELOG" ]; then
+          CHANGELOG="- Initial release"
+        fi
+        
+        # 保存到文件，避免特殊字符问题
+        echo "$CHANGELOG" > changelog.txt
+        
+        # 创建完整的发布说明
+        cat > release_notes.md << 'EOF'
+        ## 🎵 NextCloud Music Player v${{ steps.version.outputs.version }}
+        
+        感谢使用 NextCloud Music Player！这是一个跨平台的音乐播放器，支持与 NextCloud 服务器同步音乐文件。
+        
+        ### 📦 下载
+        请根据您的操作系统选择对应的安装包：
+        
+        #### 桌面平台
+        - **Windows**: `.msi` 文件 - 适用于 Windows 10/11
+        - **macOS**: `.dmg` 文件 - 适用于 macOS 10.14+
+        - **Linux**: `.deb` 文件 - 适用于 Ubuntu/Debian 系统
+        
+        #### 移动平台
+        - **iOS**: Xcode 项目文件 - 需要自行编译和签名
+        - **Android**: `.apk` 文件（如果可用）- 适用于 Android 7.0+
+        
+        **注意**: 移动平台版本可能需要额外的配置步骤，请查看文档获取详细说明。
+        
+        ### ✨ 本版本更新
+        EOF
+        
+        cat changelog.txt >> release_notes.md
+        
+        cat >> release_notes.md << 'EOF'
+        
+        ### 🚀 主要功能
+        - 🎵 支持MP3音乐播放
+        - ☁️ NextCloud服务器集成
+        - 📱 跨平台支持（Windows、macOS、Linux、iOS、Android）
+        - 🎛️ 完整的播放控制（播放、暂停、上一首、下一首）
+        - 📊 播放进度条和音量控制
+        - 🔄 播放模式切换（顺序、随机、循环）
+        - 💾 离线缓存支持
+        - 📂 文件夹选择同步
+        
+        ### 📱 移动平台说明
+        
+        #### iOS 安装
+        1. 下载 iOS 构建文件
+        2. 使用 Xcode 打开项目
+        3. 配置开发者证书
+        4. 编译并安装到设备
+        
+        #### Android 安装
+        1. 下载 `.apk` 文件（如果可用）
+        2. 在设备上启用"未知来源"安装
+        3. 安装 APK 文件
+        4. 或者下载源码自行编译
+        
+        ### 🐛 问题反馈
+        如果您遇到任何问题，请在 [GitHub Issues](https://github.com/zgfh/nextcloud-music-player/issues) 中反馈。
+        
+        ### 📝 安装说明
+        1. 下载对应平台的安装包
+        2. 按照系统提示安装应用
+        3. 启动应用并配置您的 NextCloud 服务器连接
+        4. 享受音乐播放体验！
+        EOF
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.tag }}
+        name: NextCloud Music Player v${{ steps.version.outputs.version }}
+        body_path: release_notes.md
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,286 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  release:
+    types: [published]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov
+    
+    - name: Run tests
+      run: |
+        pytest tests/ -v --cov=src/nextcloud_music_player
+
+  build-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libgirepository1.0-dev \
+          libcairo2-dev \
+          libpango1.0-dev \
+          libwebkitgtk-3.0-dev \
+          gir1.2-webkit-3.0 \
+          libcairo-gobject2 \
+          libgirepository-1.0-1 \
+          libgtk-3-0 \
+          libpango-1.0-0 \
+          libwebkit2gtk-4.0-37 \
+          gir1.2-webkit2-4.0
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install briefcase
+        pip install -e .
+    
+    - name: Build Linux app
+      run: |
+        python -m briefcase build linux
+        python -m briefcase package linux
+    
+    - name: Upload Linux artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: linux-build
+        path: dist/*.deb
+
+  build-windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install briefcase
+        pip install -e .
+    
+    - name: Build Windows app
+      run: |
+        python -m briefcase build windows
+        python -m briefcase package windows
+    
+    - name: Upload Windows artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: windows-build
+        path: dist/*.msi
+
+  build-macos:
+    needs: test
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install briefcase
+        pip install -e .
+    
+    - name: Build macOS app
+      run: |
+        python -m briefcase build macOS
+        python -m briefcase package macOS
+    
+    - name: Upload macOS artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: macos-build
+        path: dist/*.dmg
+
+  build-ios:
+    needs: test
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Set up Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install briefcase
+        pip install -e .
+    
+    - name: Create iOS app
+      run: |
+        python -m briefcase create iOS
+    
+    - name: Build iOS app
+      run: |
+        python -m briefcase build iOS
+      continue-on-error: true  # iOS构建可能因为缺少证书而失败
+    
+    - name: Upload iOS artifacts
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: ios-build
+        path: |
+          iOS/
+          build/
+        retention-days: 7
+
+  build-android:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Set up JDK 11
+      uses: actions/setup-java@v3
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v2
+      with:
+        api-level: 33
+        build-tools: 33.0.0
+        cmake: 3.22.1
+        ndk: 25.1.8937393
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install briefcase
+        pip install -e .
+    
+    - name: Create Android app
+      run: |
+        python -m briefcase create android
+    
+    - name: Build Android app
+      run: |
+        python -m briefcase build android
+      continue-on-error: true  # Android构建可能因为环境配置而失败
+    
+    - name: Package Android app
+      run: |
+        python -m briefcase package android
+      continue-on-error: true
+    
+    - name: Upload Android artifacts
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: android-build
+        path: |
+          android/
+          dist/*.apk
+        retention-days: 7
+
+  # 发布开发版本（推送到 main/master 分支时）
+  publish-dev:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    needs: [build-linux, build-windows, build-macos, build-ios, build-android]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+    
+    - name: Create development release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: dev-${{ github.sha }}
+        name: Development Build ${{ github.sha }}
+        body: |
+          Development build from commit ${{ github.sha }}
+          
+          This is an automated development release. Use at your own risk.
+          
+          **📦 Available Downloads:**
+          - **Desktop**: Linux (.deb), Windows (.msi), macOS (.dmg)
+          - **Mobile**: iOS (source/project files), Android (.apk if available)
+          
+          **Note**: Mobile builds may not contain signed packages and are for development/testing purposes.
+          
+          **Changes:**
+          ${{ github.event.head_commit.message }}
+        files: |
+          linux-build/*
+          windows-build/*
+          macos-build/*
+          ios-build/*
+          android-build/*
+        prerelease: true
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+  # 发布正式版本（创建 tag 时）
+  publish-release:
+    if: github.event_name == 'release'
+    needs: [build-linux, build-windows, build-macos, build-ios, build-android]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+    
+    - name: Upload release assets
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          linux-build/*
+          windows-build/*
+          macos-build/*
+          ios-build/*
+          android-build/*
+        token: ${{ secrets.GITHUB_TOKEN }}

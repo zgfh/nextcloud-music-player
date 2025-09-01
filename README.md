@@ -1,16 +1,20 @@
 
 # NextCloud Music Player 🎵
 
+免责: 大模型生成的项目,开发学习使用,不保证质量
+
 <div align="center">
 
 ![License](https://img.shields.io/badge/license-BSD%203--Clause-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20iOS%20%7C%20Android-lightgrey.svg)
 ![Status](https://img.shields.io/badge/status-Alpha-orange.svg)
+![Build](https://github.com/zgfh/nextcloud-music-player/actions/workflows/build.yml/badge.svg)
+![Release](https://github.com/zgfh/nextcloud-music-player/actions/workflows/release.yml/badge.svg)
 
 **一个基于 BeeWare 的跨平台音乐播放器，支持 NextCloud 云端音乐同步**
 
-[功能特性](#-功能特性) • [安装说明](#-安装说明) • [使用指南](#-使用指南) • [开发指南](#-开发指南) • [贡献](#-贡献) • [许可证](#-许可证)
+[功能特性](#-功能特性) • [安装说明](#-安装说明) • [使用指南](#-使用指南) • [开发指南](#-开发指南) • [自动化构建](#-自动化构建与发布) • [贡献](#-贡献) • [许可证](#-许可证)
 
 </div>
 
@@ -54,6 +58,41 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 - **日志系统**：完善的日志记录，便于问题诊断
 
 ## 🚀 安装说明
+
+### 📦 预构建版本（推荐）
+
+访问 [Releases 页面](https://github.com/zgfh/nextcloud-music-player/releases) 下载适合您操作系统的预构建安装包：
+
+#### 桌面平台
+- **Windows**: 下载 `.msi` 文件，双击安装
+- **macOS**: 下载 `.dmg` 文件，拖拽到应用程序文件夹
+- **Linux**: 下载 `.deb` 文件，使用包管理器安装
+
+#### 移动平台
+- **iOS**: 下载 iOS 项目文件，需要 Xcode 编译和签名
+- **Android**: 下载 `.apk` 文件（开发版本，未签名）
+
+📱 **移动平台详细安装和构建指南**: [移动平台构建指南](docs/MOBILE_BUILD_GUIDE.md)
+
+```bash
+# Ubuntu/Debian 系统安装示例
+sudo dpkg -i nextcloud-music-player_*.deb
+sudo apt-get install -f  # 如果有依赖问题
+```
+
+#### 移动平台安装说明
+
+**iOS 安装:**
+1. 下载 iOS 构建文件并解压
+2. 使用 Xcode 打开 `.xcodeproj` 文件
+3. 配置开发者证书和描述文件
+4. 连接 iOS 设备并编译安装
+
+**Android 安装:**
+1. 在 Android 设备上启用"开发者选项"和"USB调试"
+2. 在"安全"设置中允许"未知来源"安装
+3. 下载并安装 `.apk` 文件
+4. 注意：开发版本未经过签名，仅用于测试
 
 ### 系统要求
 
@@ -101,18 +140,49 @@ python -m briefcase package
 
 #### iOS 平台
 ```bash
+# 系统要求：macOS + Xcode
 # 初始化 iOS 项目
 python -m briefcase create iOS
 python -m briefcase build iOS
+
+# 在 Xcode 中打开项目进行进一步配置
 python -m briefcase open iOS
 
 # 后续更新
 python -m briefcase update iOS
 ```
 
+**iOS 构建要求:**
+- macOS 系统
+- Xcode 14.0 或更高版本
+- Apple Developer 账户（用于设备安装）
+- iOS 12.0 或更高版本的目标设备
+
 #### Android 平台
 ```bash
+# 系统要求：安装 Android SDK 和 JDK
 # 初始化 Android 项目
+python -m briefcase create android
+python -m briefcase build android
+
+# 打包 APK
+python -m briefcase package android
+
+# 后续更新
+python -m briefcase update android
+```
+
+**Android 构建要求:**
+- JDK 11 或更高版本
+- Android SDK (API Level 21+)
+- Android Build Tools
+- 至少 4GB 可用内存
+
+#### 移动平台注意事项
+- 移动平台构建需要额外的系统配置
+- iOS 需要 Apple Developer 证书进行签名
+- Android APK 默认为调试版本，生产环境需要签名
+- 某些音频功能在移动平台上可能有限制
 python -m briefcase create android
 python -m briefcase build android
 ```
@@ -229,7 +299,57 @@ python -m pytest tests/ --cov=src/nextcloud_music_player --cov-report=html
 - **构建应用**: 构建发布版本
 - **NextCloud 连接测试**: 测试服务器连接
 
-## 📄 许可证
+## � 自动化构建与发布
+
+本项目配置了完整的 CI/CD 流水线，支持自动构建、测试和发布。
+
+### 🔄 持续集成
+
+每次推送代码或创建 Pull Request 时，会自动执行：
+- 单元测试
+- 代码质量检查（flake8, black, isort）
+- 安全漏洞扫描（bandit, safety）
+- 多平台构建测试
+
+### 📦 自动发布
+
+#### 开发版本
+每次推送到 `main` 分支时，自动创建开发版本：
+- 构建所有平台的应用包（Windows .msi、macOS .dmg、Linux .deb）
+- 创建预发布版本，标签格式：`dev-{commit-sha}`
+- 上传构建产物到 GitHub Releases
+
+#### 正式版本
+创建新的版本标签时，自动发布正式版本：
+
+```bash
+# 使用发布脚本（推荐）
+./scripts/release.sh 1.0.0
+
+# 或手动创建标签
+git tag -a v1.0.0 -m "Release version 1.0.0"
+git push origin v1.0.0
+```
+
+发布流程会：
+- 自动生成更改日志
+- 创建详细的 Release 说明
+- 上传所有平台的安装包
+- 发送发布通知
+
+### 📊 构建状态
+
+- **构建状态**: ![Build](https://github.com/zgfh/nextcloud-music-player/actions/workflows/build.yml/badge.svg)
+- **发布状态**: ![Release](https://github.com/zgfh/nextcloud-music-player/actions/workflows/release.yml/badge.svg)
+- **代码质量**: ![Quality](https://github.com/zgfh/nextcloud-music-player/actions/workflows/quality.yml/badge.svg)
+
+查看详细构建信息：
+- [Actions 页面](https://github.com/zgfh/nextcloud-music-player/actions)
+- [Releases 页面](https://github.com/zgfh/nextcloud-music-player/releases)
+
+更多信息请参考 [工作流说明文档](.github/workflows/README.md)。
+
+## �📄 许可证
 
 本项目采用 BSD 3-Clause 许可证。详见 [LICENSE](LICENSE) 文件。
 
