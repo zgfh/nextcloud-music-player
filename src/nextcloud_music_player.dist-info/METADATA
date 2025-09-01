@@ -1,0 +1,11 @@
+Metadata-Version: 2.1
+Briefcase-Version: 0.3.25
+Name: nextcloud-music-player
+Formal-Name: NextCloud Music Player
+App-ID: com.example.nextcloud-music-player
+Version: 0.1.0
+Home-page: https://example.com/nextcloud-music-player
+Download-URL: https://example.com/nextcloud-music-player
+Author: Your Name
+Author-email: your.email@example.com
+Summary: A cross-platform music player with NextCloud integration

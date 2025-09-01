@@ -1,0 +1,13 @@
+# This is a placeholder for the app icon
+# In a real application, you would place actual icon files here:
+# - icon.icns (for macOS)
+# - icon.ico (for Windows)  
+# - icon.png (for Linux and other platforms)
+# - Various sizes for mobile platforms
+
+# For now, the app will use default system icons
+# You can create icons using tools like:
+# - GIMP
+# - Sketch
+# - Figma
+# - Online icon generators

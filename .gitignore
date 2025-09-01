@@ -1,0 +1,10 @@
+src/nextcloud_music_player/config.py
+build/*
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+logs/
+.venv/
+.pytest_cache/
+.vscode/

@@ -1,0 +1,118 @@
+[build-system]
+requires = ["briefcase"]
+build-backend = "briefcase"
+
+[project]
+formal_name = "NextCloud Music Player"
+name = "nextcloud-music-player"
+bundle = "com.example"
+version = "0.1.0"
+description = "A cross-platform music player with NextCloud integration"
+long_description = """A BeeWare-based music player that syncs MP3 files from NextCloud and provides playback functionality across multiple platforms."""
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+keywords = ["music", "player", "nextcloud", "beeware", "toga"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Sound/Audio :: Players",
+]
+dependencies = [
+    "toga>=0.4.0",
+    "requests>=2.25.0",
+    "httpx>=0.24.0",
+]
+
+[project.urls]
+Homepage = "https://example.com/nextcloud-music-player"
+"Bug Tracker" = "https://github.com/example/nextcloud-music-player/issues"
+"Source Code" = "https://github.com/example/nextcloud-music-player"
+
+[project.scripts]
+nextcloud-music-player = "nextcloud_music_player.__main__:main"
+
+[tool.briefcase]
+project_name = "NextCloud Music Player"
+bundle = "com.example"
+version = "0.1.0"
+url = "https://example.com/nextcloud-music-player"
+author = "Your Name"
+author_email = "your.email@example.com"
+
+[tool.briefcase.app.nextcloud-music-player]
+formal_name = "NextCloud Music Player"
+description = "A cross-platform music player with NextCloud integration"
+icon = "src/nextcloud_music_player/resources/icon"
+sources = [
+    "src/nextcloud_music_player",
+]
+test_sources = [
+    "tests",
+]
+
+[tool.briefcase.app.nextcloud-music-player.macOS]
+requires = [
+    "toga-cocoa~=0.4.0",
+    "pygame>=2.0.0",
+]
+
+[tool.briefcase.app.nextcloud-music-player.linux]
+requires = [
+    "toga-gtk~=0.4.0",
+    "pygame>=2.0.0",
+]
+system_requires = [
+    "libgirepository1.0-dev",
+    "libcairo2-dev",
+    "libpango1.0-dev",
+    "libwebkitgtk-3.0-dev",
+    "gir1.2-webkit-3.0",
+]
+
+[tool.briefcase.app.nextcloud-music-player.linux.system.debian]
+system_runtime_requires = [
+    "libcairo-gobject2",
+    "libgirepository-1.0-1",
+    "libgtk-3-0",
+    "libpango-1.0-0",
+    "libwebkit2gtk-4.0-37",
+    "gir1.2-webkit2-4.0",
+]
+
+[tool.briefcase.app.nextcloud-music-player.windows]
+requires = [
+    "toga-winforms~=0.4.0",
+    "pygame>=2.0.0",
+]
+
+[tool.briefcase.app.nextcloud-music-player.iOS]
+requires = [
+    "toga-iOS~=0.4.0",
+    "requests>=2.25.0",
+    "httpx>=0.24.0",
+]
+
+# iOS权限配置
+permission.network_request = "This app needs network access to connect to your NextCloud server and sync music files."
+permission.local_network = "This app needs local network access to connect to your NextCloud server."
+
+[tool.briefcase.app.nextcloud-music-player.android]
+requires = [
+    "toga-android~=0.4.0",
+]
+
+[tool.briefcase.app.nextcloud-music-player.web]
+requires = [
+    "toga-web~=0.4.0",
+]
