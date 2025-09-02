@@ -556,10 +556,26 @@ class iOSAudioPlayer:
         try:
             if self._player:
                 position = self._player.currentTime  # 这是属性，不是方法
+                
+                # iOS特殊处理：添加防抖机制，减少频繁的位置查询导致的卡顿
+                if hasattr(self, '_last_position_time'):
+                    import time
+                    current_time = time.time()
+                    # 如果距离上次查询不到0.1秒，使用缓存值
+                    if current_time - self._last_position_time < 0.1:
+                        if hasattr(self, '_cached_position'):
+                            logger.debug(f"iOS get_position: 使用缓存位置 {self._cached_position:.2f}")
+                            return self._cached_position
+                
                 logger.debug(f"iOS get_position: raw={position}")
+                
                 # 检查是否为有效位置
                 if position is not None and position >= 0:
-                    return float(position)
+                    # 缓存位置和时间
+                    import time
+                    self._cached_position = float(position)
+                    self._last_position_time = time.time()
+                    return self._cached_position
                 else:
                     logger.warning(f"iOS get_position: 无效位置 {position}")
                     return 0.0
@@ -573,9 +589,29 @@ class iOSAudioPlayer:
         """跳转到指定位置（秒）"""
         try:
             if self._player:
+                # iOS特殊处理：添加防抖机制，避免频繁seek
+                if hasattr(self, '_last_seek_time'):
+                    import time
+                    current_time = time.time()
+                    # 如果距离上次seek不到0.2秒，忽略这次操作
+                    if current_time - self._last_seek_time < 0.2:
+                        logger.debug(f"iOS seek: 忽略频繁的seek操作 {position}")
+                        return True
+                
                 # 在AVAudioPlayer中，currentTime是可读写属性
                 self._player.currentTime = position
                 logger.debug(f"iOS seek: 设置位置为 {position}")
+                
+                # 记录seek时间，用于防抖
+                import time
+                self._last_seek_time = time.time()
+                
+                # 清除位置缓存，强制下次重新获取
+                if hasattr(self, '_cached_position'):
+                    del self._cached_position
+                if hasattr(self, '_last_position_time'):
+                    del self._last_position_time
+                
                 return True
             return False
         except Exception as e:

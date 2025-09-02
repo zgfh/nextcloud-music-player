@@ -469,6 +469,10 @@ class PlaybackView:
             style=Pack(flex=1, padding=(0, 5))
         )
         
+        # 添加防抖控制变量
+        self._updating_progress = False  # 标记是否正在程序更新进度条
+        self._last_user_seek_time = 0  # 用户最后一次拖拽时间
+        
         time_box.add(self.current_time_label)
         time_box.add(self.progress_slider)
         time_box.add(self.total_time_label)
@@ -713,8 +717,13 @@ class PlaybackView:
     async def schedule_ui_update(self):
         """定时更新UI - 在主线程异步执行"""
         logger.info("开始UI更新定时器")
+        # iOS特殊处理：降低更新频率，避免卡顿
+        from ..platform_audio import is_ios
+        update_interval = 2.0 if is_ios() else 0.5  # iOS用2秒，其他平台0.5秒
+        logger.info(f"设置UI更新间隔: {update_interval}秒")
+        
         while True:
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(update_interval)
             try:
                 # 只更新播放进度，避免触发列表更新
                 self.update_progress_only()
@@ -724,6 +733,9 @@ class PlaybackView:
     def update_progress_only(self):
         """只更新播放进度，不更新列表等复杂UI组件"""
         try:
+            # iOS特殊处理：添加防抖机制
+            from ..platform_audio import is_ios
+            
             # 更新播放进度（从音频播放器获取实时状态）
             position = 0
             duration = 0
@@ -734,7 +746,14 @@ class PlaybackView:
                     position = self.playback_service.audio_player.get_position()
                     duration = self.playback_service.audio_player.get_duration()
                     
-                    logger.debug(f"update_progress_only: position={position:.2f}, duration={duration:.2f}")
+                    # iOS特殊处理：增加额外的日志级别控制
+                    if is_ios():
+                        # 只在重要变化时记录日志
+                        if not hasattr(self, '_last_logged_position') or abs(position - self._last_logged_position) > 5:
+                            logger.info(f"iOS位置更新: {position:.2f}秒 / {duration:.2f}秒")
+                            self._last_logged_position = position
+                    else:
+                        logger.debug(f"update_progress_only: position={position:.2f}, duration={duration:.2f}")
                     
                     # 确保值有效（iOS现在返回0而不是负数）
                     if position < 0:
@@ -763,9 +782,11 @@ class PlaybackView:
                     # 检测播放完成并自动播放下一曲
                     if duration > 0 and position > 0:
                         progress_ratio = position / duration
-                        # 如果播放进度超过99%，认为歌曲播放完成
-                        # 添加防重复触发机制：只在第一次达到99%时触发
-                        if progress_ratio >= 0.99 and not self._song_completed:
+                        # iOS特殊处理：提高完成阈值，避免频繁触发
+                        completion_threshold = 0.98 if is_ios() else 0.99
+                        
+                        # 如果播放进度超过阈值，认为歌曲播放完成
+                        if progress_ratio >= completion_threshold and not self._song_completed:
                             logger.info(f"歌曲播放完成，进度: {progress_ratio:.1%}")
                             self._song_completed = True  # 标记歌曲已完成
                             
@@ -814,7 +835,13 @@ class PlaybackView:
             
             if duration > 0:
                 progress_percent = (position / duration) * 100
-                self.progress_slider.value = progress_percent
+                
+                # 只有在进度变化较大时才更新进度条，减少触发on_change
+                current_progress = getattr(self.progress_slider, 'value', 0)
+                if abs(progress_percent - current_progress) > 0.1:  # 只有变化超过0.1%才更新
+                    self._updating_progress = True
+                    self.progress_slider.value = progress_percent
+                    self._updating_progress = False
                 
                 # 更新时间显示
                 current_min = int(position // 60)
@@ -827,7 +854,9 @@ class PlaybackView:
                 
                 logger.debug(f"进度更新: {current_min:02d}:{current_sec:02d} / {total_min:02d}:{total_sec:02d}")
             else:
+                self._updating_progress = True
                 self.progress_slider.value = 0
+                self._updating_progress = False
                 self.current_time_label.text = "00:00"
                 self.total_time_label.text = "00:00"
                 logger.debug("进度重置为00:00")
@@ -974,7 +1003,13 @@ class PlaybackView:
             
             if duration > 0:
                 progress_percent = (position / duration) * 100
-                self.progress_slider.value = progress_percent
+                
+                # 只有在进度变化较大时才更新进度条，减少触发on_change
+                current_progress = getattr(self.progress_slider, 'value', 0)
+                if abs(progress_percent - current_progress) > 0.1:  # 只有变化超过0.1%才更新
+                    self._updating_progress = True
+                    self.progress_slider.value = progress_percent
+                    self._updating_progress = False
                 
                 # 更新时间显示
                 current_min = int(position // 60)
@@ -985,7 +1020,9 @@ class PlaybackView:
                 self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
                 self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
             else:
+                self._updating_progress = True
                 self.progress_slider.value = 0
+                self._updating_progress = False
                 self.current_time_label.text = "00:00"
                 self.total_time_label.text = "00:00"
             
@@ -1662,6 +1699,28 @@ class PlaybackView:
     def on_seek(self, widget):
         """拖拽进度条"""
         try:
+            # 如果是程序自动更新进度条，直接返回
+            if hasattr(self, '_updating_progress') and self._updating_progress:
+                logger.debug("程序更新进度条，忽略on_change事件")
+                return
+            
+            # iOS特殊处理：添加更强的防抖机制
+            from ..platform_audio import is_ios
+            if is_ios():
+                import time
+                current_time = time.time()
+                
+                # 检查是否在短时间内多次触发
+                if hasattr(self, '_last_user_seek_time'):
+                    time_diff = current_time - self._last_user_seek_time
+                    if time_diff < 0.8:  # 增加到0.8秒的防抖间隔
+                        logger.debug(f"iOS: 忽略频繁的用户进度条拖拽 (间隔: {time_diff:.2f}s)")
+                        return
+                
+                # 记录用户操作时间
+                self._last_user_seek_time = current_time
+                logger.info(f"iOS用户拖拽进度条: {widget.value:.1f}%")
+            
             # 如果歌曲已完成播放，忽略UI自动更新导致的跳转尝试
             if self._song_completed:
                 logger.debug("歌曲已完成播放，忽略进度条更新")
@@ -1673,9 +1732,13 @@ class PlaybackView:
                 # 重置进度条到当前位置
                 if hasattr(self, 'position') and hasattr(self, 'duration') and self.duration > 0:
                     current_progress = (self.position / self.duration) * 100
+                    self._updating_progress = True
                     widget.value = current_progress
+                    self._updating_progress = False
                 else:
+                    self._updating_progress = True
                     widget.value = 0
+                    self._updating_progress = False
                 return
             
             # 从音频播放器获取实时时长
@@ -1729,7 +1792,11 @@ class PlaybackView:
                 # 跳转到新位置
                 success = self.playback_service.seek_to_position(new_position)
                 if success:
-                    logger.info(f"跳转到位置: {new_position:.2f}秒 ({widget.value:.1f}%)，时长: {duration:.1f}秒")
+                    # iOS特殊处理：减少日志频率
+                    if is_ios():
+                        logger.info(f"iOS跳转: {new_position:.2f}秒 ({widget.value:.1f}%)")
+                    else:
+                        logger.info(f"跳转到位置: {new_position:.2f}秒 ({widget.value:.1f}%)，时长: {duration:.1f}秒")
                     
                     # 重置播放完成标记（手动跳转表示用户还想继续听）
                     if new_position < duration * 0.95:  # 如果跳转到95%之前，重置标记
@@ -1745,8 +1812,10 @@ class PlaybackView:
                     self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
                     self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
                     
-                    # 强制更新进度条位置
+                    # 强制更新进度条位置（不触发on_change）
+                    self._updating_progress = True
                     self.progress_slider.value = widget.value
+                    self._updating_progress = False
                     
                 else:
                     logger.warning("跳转失败")
@@ -1754,7 +1823,9 @@ class PlaybackView:
             else:
                 logger.warning("无法跳转：未获取到有效的音频时长")
                 # 重置进度条到0
+                self._updating_progress = True
                 self.progress_slider.value = 0
+                self._updating_progress = False
                 self.current_time_label.text = "00:00"
                 self.total_time_label.text = "00:00"
                 
