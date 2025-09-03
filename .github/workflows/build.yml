@@ -68,7 +68,7 @@ jobs:
         python -m briefcase package linux
     
     - name: Upload Linux artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: linux-build
         path: dist/*.deb
@@ -96,7 +96,7 @@ jobs:
         python -m briefcase package windows
     
     - name: Upload Windows artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: windows-build
         path: dist/*.msi
@@ -124,7 +124,7 @@ jobs:
         python -m briefcase package macOS
     
     - name: Upload macOS artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: macos-build
         path: dist/*.dmg
@@ -161,7 +161,7 @@ jobs:
       continue-on-error: true  # iOS构建可能因为缺少证书而失败
     
     - name: Upload iOS artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: ios-build
@@ -216,7 +216,7 @@ jobs:
       continue-on-error: true
     
     - name: Upload Android artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: android-build
@@ -234,7 +234,9 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
     
     - name: Create development release
       uses: softprops/action-gh-release@v1
@@ -255,11 +257,11 @@ jobs:
           **Changes:**
           ${{ github.event.head_commit.message }}
         files: |
-          linux-build/*
-          windows-build/*
-          macos-build/*
-          ios-build/*
-          android-build/*
+          artifacts/linux-build/*
+          artifacts/windows-build/*
+          artifacts/macos-build/*
+          artifacts/ios-build/*
+          artifacts/android-build/*
         prerelease: true
         token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -272,15 +274,17 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
     
     - name: Upload release assets
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          linux-build/*
-          windows-build/*
-          macos-build/*
-          ios-build/*
-          android-build/*
+          artifacts/linux-build/*
+          artifacts/windows-build/*
+          artifacts/macos-build/*
+          artifacts/ios-build/*
+          artifacts/android-build/*
         token: ${{ secrets.GITHUB_TOKEN }}

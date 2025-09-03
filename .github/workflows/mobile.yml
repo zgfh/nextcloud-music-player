@@ -60,7 +60,7 @@ jobs:
         fi
     
     - name: Upload iOS artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ios-build-${{ github.sha }}
         path: |
@@ -134,7 +134,7 @@ jobs:
         fi
     
     - name: Upload Android artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: android-build-${{ github.sha }}
         path: |
@@ -149,7 +149,9 @@ jobs:
     if: always()
     steps:
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
     
     - name: Create build summary
       run: |
@@ -163,9 +165,9 @@ jobs:
         echo "" >> mobile-summary.md
         
         # iOS 构建状态
-        if [ -d "ios-build-${{ github.sha }}" ]; then
+        if [ -d "artifacts/ios-build-${{ github.sha }}" ]; then
           echo "- ✅ iOS: Build completed" >> mobile-summary.md
-          if [ -f "ios-build-${{ github.sha }}/ios-build-output.tar.gz" ]; then
+          if [ -f "artifacts/ios-build-${{ github.sha }}/ios-build-output.tar.gz" ]; then
             echo "  - 📦 Project files available" >> mobile-summary.md
           fi
         else
@@ -173,9 +175,9 @@ jobs:
         fi
         
         # Android 构建状态
-        if [ -d "android-build-${{ github.sha }}" ]; then
+        if [ -d "artifacts/android-build-${{ github.sha }}" ]; then
           echo "- ✅ Android: Build completed" >> mobile-summary.md
-          if ls android-build-${{ github.sha }}/*.apk 1> /dev/null 2>&1; then
+          if ls artifacts/android-build-${{ github.sha }}/*.apk 1> /dev/null 2>&1; then
             echo "  - 📦 APK files available" >> mobile-summary.md
           else
             echo "  - 📁 Project files available (APK generation may have failed)" >> mobile-summary.md
@@ -194,7 +196,7 @@ jobs:
         cat mobile-summary.md
     
     - name: Upload summary
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: mobile-build-summary
         path: mobile-summary.md
