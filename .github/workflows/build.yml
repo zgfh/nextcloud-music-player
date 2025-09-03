@@ -241,7 +241,6 @@ jobs:
           pkg-config \
           build-essential \
           libcairo2-dev \
-          libcairo-gobject2-dev \
           libpixman-1-dev \
           libpng-dev \
           libjpeg-dev \
@@ -307,20 +306,11 @@ jobs:
 
   # 发布开发版本（推送到 main/master 分支时）
   publish-dev:
-    if: always() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     needs: [build-linux, build-windows, build-macos, build-ios, build-android]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Check if at least one build succeeded
-      run: |
-        if [[ "${{ needs.build-linux.result }}" == "success" ]] || [[ "${{ needs.build-windows.result }}" == "success" ]] || [[ "${{ needs.build-macos.result }}" == "success" ]] || [[ "${{ needs.build-ios.result }}" == "success" ]] || [[ "${{ needs.build-android.result }}" == "success" ]]; then
-          echo "At least one build succeeded, proceeding with release"
-        else
-          echo "No builds succeeded, skipping release"
-          exit 1
-        fi
     
     - name: Download all artifacts
       uses: actions/download-artifact@v4
@@ -356,20 +346,11 @@ jobs:
 
   # 发布正式版本（创建 tag 时）
   publish-release:
-    if: github.event_name == 'release' && always()
+    if: github.event_name == 'release'
     needs: [build-linux, build-windows, build-macos, build-ios, build-android]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Check if at least one build succeeded
-      run: |
-        if [[ "${{ needs.build-linux.result }}" == "success" ]] || [[ "${{ needs.build-windows.result }}" == "success" ]] || [[ "${{ needs.build-macos.result }}" == "success" ]] || [[ "${{ needs.build-ios.result }}" == "success" ]] || [[ "${{ needs.build-android.result }}" == "success" ]]; then
-          echo "At least one build succeeded, proceeding with release"
-        else
-          echo "No builds succeeded, skipping release"
-          exit 1
-        fi
     
     - name: Download all artifacts
       uses: actions/download-artifact@v4
