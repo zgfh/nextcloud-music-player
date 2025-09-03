@@ -269,7 +269,123 @@ jobs:
     - name: Build iOS app
       run: |
         python -m briefcase build iOS
+        echo "=== Listing iOS build output ==="
+        find . -name "*.app" -type d | head -10
+        find . -path "*/ios/xcode/build/*" -type d | head -10
       continue-on-error: true  # iOS构建可能因为缺少证书而失败
+    
+    - name: Package iOS app
+      run: |
+        echo "=== Attempting iOS packaging with different signing strategies ==="
+        
+        # 策略1: 尝试 ad-hoc 签名（最可能成功）
+        echo "Strategy 1: Ad-hoc signing"
+        if python -m briefcase package iOS --adhoc-sign; then
+          echo "✓ Ad-hoc signing successful"
+        else
+          echo "✗ Ad-hoc signing failed"
+        fi
+        
+        # 策略2: 尝试无签名构建（仅生成 .app）
+        echo "Strategy 2: No signing (development only)"
+        python -m briefcase build iOS || echo "Build step failed"
+        
+        # 策略3: 手动创建未签名的 IPA（如果有 .app 文件）
+        echo "Strategy 3: Manual unsigned IPA creation"
+        APP_PATH=$(find . -name "*.app" -type d | head -1)
+        if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
+          echo "Found .app at: $APP_PATH"
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r "NextCloud-Music-Player-unsigned.ipa" Payload/
+          rm -rf Payload/
+          echo "✓ Created unsigned IPA: NextCloud-Music-Player-unsigned.ipa"
+        else
+          echo "✗ No .app file found for manual IPA creation"
+        fi
+        
+        echo "=== Listing all iOS artifacts ==="
+        find . -name "*.ipa" 2>/dev/null || echo "No .ipa files found"
+        find . -name "*.app" -type d 2>/dev/null | head -5
+        ls -la build/nextcloud-music-player/ios/xcode/build/ || true
+      continue-on-error: true
+    
+    - name: Create iOS archive
+      run: |
+        # 创建包含源码和构建产物的压缩包
+        mkdir -p ios-distribution
+        
+        # 复制 Xcode 项目
+        if [ -d "build/nextcloud-music-player/ios" ]; then
+          cp -r build/nextcloud-music-player/ios ios-distribution/
+        fi
+        
+        # 复制任何生成的 .app 文件
+        find . -name "*.app" -type d -exec cp -r {} ios-distribution/ \; 2>/dev/null || true
+        
+        # 复制任何生成的 .ipa 文件（包括未签名的）
+        find . -name "*.ipa" -exec cp {} ios-distribution/ \; 2>/dev/null || true
+        
+        # 创建详细的说明文件
+        cat > ios-distribution/README.md << 'EOF'
+        # iOS Build Artifacts
+        
+        This package contains NextCloud Music Player for iOS in multiple formats.
+        
+        ## Installation Options
+        
+        ### Option 1: Ready-to-install IPA (if available)
+        - Look for .ipa files in this directory
+        - Signed IPA: Can be installed directly via Xcode or third-party tools
+        - Unsigned IPA: Requires re-signing with your certificate
+        
+        ### Option 2: Xcode Project (Always Available)
+        1. Open ios/xcode/NextCloud Music Player.xcodeproj in Xcode
+        2. Configure your Apple Developer account and signing
+        3. Build and run on your device
+        
+        ## Manual Installation Steps
+        
+        ### For Signed IPA:
+        Install via Xcode or iOS App Installer tools
+        
+        ### For Unsigned IPA:
+        Re-sign with your certificate using codesign
+        
+        ### For Xcode Project:
+        1. Open Xcode
+        2. File -> Open -> Select the .xcodeproj file
+        3. Select your development team in Project Settings -> Signing & Capabilities
+        4. Connect your iOS device
+        5. Product -> Run
+        
+        ## File Types Explained
+        
+        - .app files: Raw application bundles (need Xcode to install)
+        - .ipa files: iOS App Store packages (can be installed directly)
+        - ios/ folder: Complete Xcode project source
+        
+        ## Important Notes
+        
+        - Unsigned builds: Only work on jailbroken devices or require re-signing
+        - Development builds: Require the device to be added to your Apple Developer account
+        - App Store builds: Need Apple Developer Program membership and proper certificates
+        
+        For development and testing, using the Xcode project is the most reliable method.
+        EOF
+        
+        # 列出包含的文件
+        echo "" >> ios-distribution/README.md
+        echo "## Files in this package:" >> ios-distribution/README.md
+        find ios-distribution -type f -not -name "README.md" | sed 's|ios-distribution/|- |' >> ios-distribution/README.md
+        
+        # 创建压缩包
+        tar -czf ios-build.tar.gz ios-distribution/
+        
+        echo "=== iOS distribution package created ==="
+        ls -la ios-build.tar.gz
+        echo "=== Contents summary ==="
+        ls -la ios-distribution/
     
     - name: Upload iOS artifacts
       uses: actions/upload-artifact@v4
@@ -277,8 +393,8 @@ jobs:
       with:
         name: ios-build
         path: |
-          nextcloud-music-player/iOS/
-          build/
+          ios-build.tar.gz
+          ios-distribution/**/*
         retention-days: 7
 
   build-android:
@@ -449,6 +565,17 @@ jobs:
       with:
         path: artifacts
     
+    - name: List all artifacts for debugging
+      run: |
+        echo "=== Downloaded artifacts structure ==="
+        find artifacts -type f -ls | head -20
+        echo ""
+        echo "=== iOS build contents ==="
+        ls -la artifacts/ios-build/ || echo "No iOS build artifacts found"
+        echo ""
+        echo "=== All available files for release ==="
+        find artifacts -name "*.deb" -o -name "*.msi" -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.apk" | sort
+    
     - name: Create development release
       uses: softprops/action-gh-release@v1
       with:
@@ -461,7 +588,15 @@ jobs:
           
           **📦 Available Downloads:**
           - **Desktop**: Linux (.deb), Windows (.msi), macOS (.dmg)
-          - **Mobile**: iOS (source/project files), Android (.apk if available)
+          - **Mobile**: 
+            - iOS: Source code + Xcode project (ios-build.tar.gz) - requires manual signing
+            - Android: APK file (if build succeeded)
+          
+          **📱 iOS Installation:**
+          1. Download and extract ios-build.tar.gz
+          2. Open the Xcode project
+          3. Configure your development team and signing certificates
+          4. Build and install to your device
           
           **Note**: Mobile builds may not contain signed packages and are for development/testing purposes.
           
@@ -471,7 +606,7 @@ jobs:
           artifacts/linux-build/**/*.deb
           artifacts/windows-build/**/*.msi
           artifacts/macos-build/**/*.dmg
-          artifacts/ios-build/**/*
+          artifacts/ios-build/ios-build.tar.gz
           artifacts/android-build/**/*.apk
         prerelease: true
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -498,6 +633,6 @@ jobs:
           artifacts/linux-build/**/*.deb
           artifacts/windows-build/**/*.msi
           artifacts/macos-build/**/*.dmg
-          artifacts/ios-build/**/*
+          artifacts/ios-build/ios-build.tar.gz
           artifacts/android-build/**/*.apk
         token: ${{ secrets.GITHUB_TOKEN }}
