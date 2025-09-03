@@ -249,6 +249,10 @@ jobs:
           build-essential \
           libgirepository1.0-dev \
           libcairo2-dev \
+          libcairo2 \
+          libcairo-gobject2 \
+          libglib2.0-dev \
+          libglib2.0-0 \
           libpixman-1-dev \
           libpng-dev \
           libjpeg-dev \
