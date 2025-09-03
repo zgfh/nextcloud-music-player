@@ -10,6 +10,7 @@ import asyncio
 import logging
 from typing import List, Dict, Any, Optional, Callable
 from ..services.music_service import MusicService
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,12 @@ class FileListView:
         
         # 构建界面
         self.build_interface()
+        logger.info("文件列表视图初始化完成")
         
         # 从 music_list.json 加载音乐列表
         self.reload_music_list()
+        # 软件启动时异步更新下载状态 - 使用线程调用同步版本
+        threading.Timer(0.5, self.update_download_status_sync).start()
         
     def _on_playlist_changed(self, playlist: List[str], start_index: int):
         """播放列表变化回调"""
@@ -262,7 +266,7 @@ class FileListView:
         self.music_list.data.clear()
         for file_info in self.music_files:
             # 检查文件是否已下载
-            is_downloaded = self.check_file_downloaded(file_info['name'])
+            is_downloaded = file_info.get('is_downloaded', False)
             download_status = "✅" if is_downloaded else "⬇️"
             
             # 格式化显示信息
@@ -577,7 +581,7 @@ class FileListView:
         total_files = len(self.music_files)
         selected_files = len(self.selected_files)
         downloaded_files = sum(1 for file_info in self.music_files 
-                             if self.check_file_downloaded(file_info['name']))
+                             if file_info.get('is_downloaded', False))
         
         self.stats_label.text = f"总文件: {total_files} | 已选择: {selected_files} | 已下载: {downloaded_files}"
     
@@ -723,3 +727,22 @@ class FileListView:
         default_folder = connection_config.get("default_sync_folder", "")
         if default_folder and not self.folder_input.value:
             self.folder_input.value = default_folder
+            
+    async def update_download_status(self):
+        """异步更新下载状态"""
+        # 更新下载状态
+        for file_info in self.music_files:
+            file_info['is_downloaded'] = self.check_file_downloaded(file_info['name'])
+            await asyncio.sleep(0.1)
+    
+    def update_download_status_sync(self):
+        """同步更新下载状态（用于线程调用）"""
+        logger.info("开始同步更新下载状态")
+        try:
+            # 更新下载状态
+            for file_info in self.music_files:
+                file_info['is_downloaded'] = self.check_file_downloaded(file_info['name'])
+                logger.debug(f"检查文件 {file_info['name']} 下载状态: {file_info['is_downloaded']}")
+            logger.info(f"完成下载状态检查，共 {len(self.music_files)} 个文件")
+        except Exception as e:
+            logger.error(f"更新下载状态失败: {e}")

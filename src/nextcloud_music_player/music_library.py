@@ -105,7 +105,7 @@ class MusicLibrary:
 
         if filepath and os.path.exists(filepath):
             logger.info(f"Song '{song_name}' is now marked as downloaded.")
-            self.songs[song_name]['filepath'] = str(filepath)
+            self.songs[song_name]['filepath'] = filepath
             self.songs[song_name]['is_downloaded'] = True
             self.save_music_list()
             return True
