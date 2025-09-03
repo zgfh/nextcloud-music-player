@@ -3,5 +3,6 @@
 """
 
 from .playlist_component import PlaylistViewComponent
+from .lyrics_component import LyricsDisplayComponent
 
-__all__ = ['PlaylistViewComponent']
+__all__ = ['PlaylistViewComponent', 'LyricsDisplayComponent']

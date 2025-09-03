@@ -34,16 +34,26 @@ class ViewManager:
         from .file_list_view import FileListView
         from .playback_view import PlaybackView
         from ..services.music_service import MusicService
+        from ..services.lyrics_service import LyricsService
+        
+        # 创建歌词服务
+        self.lyrics_service = LyricsService(
+            config_manager=app.config_manager,
+            nextcloud_client=app.nextcloud_client,
+            music_library=app.music_library
+        )
         
         # 创建音乐服务
         self.music_service = MusicService(
             music_library=app.music_library,
             nextcloud_client=app.nextcloud_client,
-            config_manager=app.config_manager
+            config_manager=app.config_manager,
+            lyrics_service=self.lyrics_service
         )
         
-        # 保存音乐服务引用到app中，以便其他地方可以更新NextCloud客户端
+        # 保存服务引用到app中，以便其他地方可以访问
         app.music_service = self.music_service
+        app.lyrics_service = self.lyrics_service
         
         # 设置播放列表变化回调来更新app状态
         self.music_service.set_playlist_change_callback(self._handle_playlist_change)

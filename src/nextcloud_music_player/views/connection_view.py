@@ -310,6 +310,10 @@ class ConnectionView:
             if hasattr(self.app, 'music_service'):
                 self.app.music_service.update_nextcloud_client(self.app.nextcloud_client)
             
+            # 更新歌词服务中的NextCloud客户端
+            if hasattr(self.app, 'lyrics_service'):
+                self.app.lyrics_service.update_clients(nextcloud_client=self.app.nextcloud_client)
+            
             # 测试连接
             success = await self.app.nextcloud_client.test_connection()
             
@@ -343,6 +347,10 @@ class ConnectionView:
             # 更新音乐服务中的NextCloud客户端
             if hasattr(self.app, 'music_service'):
                 self.app.music_service.update_nextcloud_client(None)
+            
+            # 更新歌词服务中的NextCloud客户端
+            if hasattr(self.app, 'lyrics_service'):
+                self.app.lyrics_service.update_clients(nextcloud_client=None)
            
             self.is_connected = False
             self.update_connection_status(False)

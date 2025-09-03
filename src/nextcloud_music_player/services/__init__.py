@@ -3,5 +3,6 @@
 """
 
 from .music_service import MusicService
+from .lyrics_service import LyricsService
 
-__all__ = ['MusicService']
+__all__ = ['MusicService', 'LyricsService']

@@ -56,6 +56,23 @@ class PlaybackView:
             on_playlist_change_callback=self.on_playlist_changed
         )
         
+        # 初始化歌词显示组件
+        try:
+            from .components.lyrics_component import LyricsDisplayComponent
+            
+            # 获取歌词服务（如果应用有的话）
+            lyrics_service = getattr(app, 'lyrics_service', None)
+            
+            self.lyrics_component = LyricsDisplayComponent(
+                app=app,
+                config_manager=app.config_manager,
+                lyrics_service=lyrics_service
+            )
+            logger.info("歌词组件初始化成功")
+        except ImportError as e:
+            logger.warning(f"歌词组件导入失败，将不显示歌词: {e}")
+            self.lyrics_component = None
+        
         # 设置播放控制回调
         self.playback_service.set_playback_callbacks(
             pause_callback=None,  # 由服务自己处理
@@ -146,14 +163,116 @@ class PlaybackView:
         # 播放列表区域 - 使用播放列表组件
         self.playlist_box = self.playlist_component.get_widget()
         
+        # 歌词显示区域
+        if self.lyrics_component:
+            self.lyrics_box = self.lyrics_component.get_widget()
+        else:
+            # 如果歌词组件不可用，创建占位符
+            self.lyrics_box = toga.Box(style=Pack(
+                direction=COLUMN,
+                padding=8
+            ))
+            lyrics_placeholder = toga.Label(
+                "歌词功能不可用",
+                style=Pack(
+                    text_align="center",
+                    color="#999999",
+                    font_size=11,
+                    padding=20
+                )
+            )
+            self.lyrics_box.add(lyrics_placeholder)
+        
         # 组装界面
         content_box.add(title)
         content_box.add(self.now_playing_box)
         content_box.add(self.controls_box)
         content_box.add(self.progress_box)
         content_box.add(self.volume_mode_box)
-        content_box.add(self.playlist_box)
         
+        # 创建视图切换按钮
+        view_switch_box = toga.Box(style=Pack(
+            direction=ROW,
+            padding=5,
+            alignment="center"
+        ))
+        
+        self.playlist_tab_button = toga.Button(
+            "播放列表",
+            on_press=self.show_playlist_view,
+            style=Pack(
+                width=80,
+                height=30,
+                padding=(0, 2),
+                font_size=11,
+                background_color="#007bff",
+                color="white"
+            )
+        )
+        
+        self.lyrics_tab_button = toga.Button(
+            "歌词",
+            on_press=self.show_lyrics_view,
+            style=Pack(
+                width=80,
+                height=30,
+                padding=(0, 2),
+                font_size=11
+            )
+        )
+        
+        view_switch_box.add(self.playlist_tab_button)
+        view_switch_box.add(self.lyrics_tab_button)
+        
+        # 内容区域容器
+        self.content_container = toga.Box(style=Pack(
+            direction=COLUMN,
+            flex=1
+        ))
+        
+        # 默认显示播放列表
+        self.current_view = "playlist"
+        self.content_container.add(self.playlist_box)
+        
+        content_box.add(view_switch_box)
+        content_box.add(self.content_container)
+        
+    def show_playlist_view(self, widget):
+        """显示播放列表视图"""
+        try:
+            if self.current_view != "playlist":
+                self.content_container.clear()
+                self.content_container.add(self.playlist_box)
+                self.current_view = "playlist"
+                
+                # 更新按钮样式
+                self.playlist_tab_button.style.background_color = "#007bff"
+                self.playlist_tab_button.style.color = "white"
+                self.lyrics_tab_button.style.background_color = "transparent"
+                self.lyrics_tab_button.style.color = "#007bff"
+                
+                logger.debug("切换到播放列表视图")
+        except Exception as e:
+            logger.error(f"显示播放列表视图失败: {e}")
+    
+    def show_lyrics_view(self, widget):
+        """显示歌词视图"""
+        try:
+            if self.current_view != "lyrics":
+                self.content_container.clear()
+                self.content_container.add(self.lyrics_box)
+                self.current_view = "lyrics"
+                
+                # 更新按钮样式
+                self.lyrics_tab_button.style.background_color = "#007bff"
+                self.lyrics_tab_button.style.color = "white"
+                self.playlist_tab_button.style.background_color = "transparent"
+                self.playlist_tab_button.style.color = "#007bff"
+                
+                logger.debug("切换到歌词视图")
+        except Exception as e:
+            logger.error(f"显示歌词视图失败: {e}")
+    
     def update_services(self):
         """更新服务依赖 - 当app的服务实例更新时调用"""
         if hasattr(self.app, 'music_service'):
@@ -164,11 +283,16 @@ class PlaybackView:
         """播放列表歌曲选择回调"""
         try:
             song_info = song_entry.get('info', {})
-            logger.info(f"播放列表选择歌曲: {song_info.get('name', '未知')} (索引: {index})")
+            song_name = song_entry.get('name', '')
+            logger.info(f"播放列表选择歌曲: {song_info.get('name', song_name)} (索引: {index})")
             
             # 更新当前歌曲信息
             self.current_song_info = song_info
             self.update_current_song_info()
+            
+            # 加载歌词
+            if self.lyrics_component and song_name:
+                self.lyrics_component.load_lyrics_for_song(song_name)
             
             # 如果设置了自动播放，则开始播放
             auto_play = self.app.config_manager.get("player.auto_play_on_select", True)
@@ -207,8 +331,21 @@ class PlaybackView:
             
             # 否则需要先下载
             song_name = song_info.get('name', '')
-            if self.app.music_service:
-                await self.app.play_music(song_name)
+            remote_path = song_info.get('remote_path', '')
+            if self.app.music_service and remote_path:
+                # 使用music_service下载文件，然后播放
+                download_success = await self.app.music_service.download_file(remote_path, song_name)
+                if download_success:
+                    # 重新获取文件信息以获取本地路径
+                    updated_song_info = self.app.music_library.get_song_info(song_name)
+                    if updated_song_info and updated_song_info.get('filepath'):
+                        await self.play_music_file(updated_song_info['filepath'])
+                    else:
+                        logger.error(f"下载成功但无法获取本地文件路径: {song_name}")
+                else:
+                    logger.error(f"下载歌曲失败: {song_name}")
+            else:
+                logger.error(f"无法下载歌曲，缺少必要信息: {song_name}")
             
         except Exception as e:
             logger.error(f"播放选中歌曲失败: {e}")
@@ -225,6 +362,16 @@ class PlaybackView:
             # 更新播放状态
             self.current_song_state['is_playing'] = True
             self.current_song_state['is_paused'] = False
+            
+            # 自动加载歌词 - 从文件路径提取歌曲名
+            if self.lyrics_component:
+                try:
+                    import os
+                    song_name = os.path.basename(file_path)
+                    logger.info(f"播放音乐时自动加载歌词: {song_name}")
+                    self.lyrics_component.load_lyrics_for_song(song_name, auto_download=True)
+                except Exception as lyrics_error:
+                    logger.warning(f"自动加载歌词失败: {lyrics_error}")
             
             # 更新UI
             self.update_ui()
@@ -888,6 +1035,10 @@ class PlaybackView:
                 self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
                 self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
                 
+                # 更新歌词显示位置
+                if self.lyrics_component:
+                    self.lyrics_component.update_lyrics_position(position)
+                
                 logger.debug(f"进度更新: {current_min:02d}:{current_sec:02d} / {total_min:02d}:{total_sec:02d}")
             else:
                 self._updating_progress = True
@@ -1055,6 +1206,10 @@ class PlaybackView:
                 
                 self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
                 self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
+                
+                # 更新歌词显示位置  
+                if self.lyrics_component:
+                    self.lyrics_component.update_lyrics_position(position)
             else:
                 self._updating_progress = True
                 self.progress_slider.value = 0
@@ -1202,6 +1357,10 @@ class PlaybackView:
                 self.update_current_song_info()
                 self.update_ui()
                 
+                # 加载歌词
+                if self.lyrics_component:
+                    self.lyrics_component.load_lyrics_for_song(song_name)
+                
                 logger.info(f"开始播放: {song_name}")
             else:
                 logger.info(f"本地未找到文件，尝试下载: {song_name}")
@@ -1243,6 +1402,10 @@ class PlaybackView:
                 # 立即更新UI显示歌曲信息
                 self.update_current_song_info()
                 self.update_ui()
+                
+                # 加载歌词
+                if self.lyrics_component:
+                    self.lyrics_component.load_lyrics_for_song(song_name)
                 
                 self.show_message(f"下载并播放成功: {song_name}", "success")
                 logger.info(f"下载并开始播放: {song_name}")

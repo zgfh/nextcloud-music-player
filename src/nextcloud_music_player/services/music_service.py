@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class MusicService:
     """音乐服务 - 处理音乐文件、播放列表、同步等业务逻辑"""
     
-    def __init__(self, music_library, nextcloud_client, config_manager):
+    def __init__(self, music_library, nextcloud_client, config_manager, lyrics_service=None):
         """
         初始化音乐服务
         
@@ -20,10 +20,12 @@ class MusicService:
             music_library: 音乐库实例
             nextcloud_client: NextCloud客户端实例（可以为None）
             config_manager: 配置管理器实例
+            lyrics_service: 歌词服务实例（可选）
         """
         self.music_library = music_library
         self.nextcloud_client = nextcloud_client
         self.config_manager = config_manager
+        self.lyrics_service = lyrics_service
         
         # 回调函数
         self._playlist_change_callback: Optional[Callable[[List[str], int], None]] = None
@@ -40,7 +42,20 @@ class MusicService:
     def update_nextcloud_client(self, nextcloud_client):
         """更新NextCloud客户端实例"""
         self.nextcloud_client = nextcloud_client
+        # 同时更新歌词服务的客户端
+        if self.lyrics_service:
+            self.lyrics_service.update_clients(nextcloud_client=nextcloud_client)
         logger.info("NextCloud客户端已更新")
+    
+    def set_lyrics_service(self, lyrics_service):
+        """设置歌词服务实例"""
+        self.lyrics_service = lyrics_service
+        if lyrics_service:
+            lyrics_service.update_clients(
+                nextcloud_client=self.nextcloud_client,
+                music_library=self.music_library
+            )
+        logger.info("歌词服务已设置")
     
     def get_all_songs(self) -> List[Dict[str, Any]]:
         """获取所有歌曲列表"""
@@ -220,9 +235,23 @@ class MusicService:
             
             if success:
                 # 更新音乐库中的下载状态
-                
                 self.music_library.mark_song_downloaded(filename, str(local_path))
                 logger.info(f"下载成功并更新状态: {filename}")
+                
+                # 同时尝试下载歌词文件
+                if self.lyrics_service:
+                    try:
+                        song_info = self.music_library.get_song_info(filename)
+                        song_remote_path = song_info.get('remote_path', file_path) if song_info else file_path
+                        
+                        success = await self.lyrics_service.download_lyrics(filename, song_remote_path)
+                        if success:
+                            logger.info(f"歌词下载成功: {filename}")
+                        else:
+                            logger.debug(f"歌词下载失败或不存在: {filename}")
+                        
+                    except Exception as lyrics_error:
+                        logger.warning(f"启动歌词下载失败: {lyrics_error}")
             
             return success
             
