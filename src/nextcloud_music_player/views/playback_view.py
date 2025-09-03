@@ -166,11 +166,8 @@ class PlaybackView:
         # 当前播放信息区域
         self.create_now_playing_section()
         
-        # 播放控制区域 - 使用播放控制组件
+        # 播放控制区域 - 使用播放控制组件（包含进度显示）
         self.playback_controls_widget = self.playback_control_component.widget
-        
-        # 进度条区域
-        self.create_progress_section()
         
         # 播放列表区域 - 使用播放列表组件
         self.playlist_box = self.playlist_component.get_widget()
@@ -198,8 +195,7 @@ class PlaybackView:
         # 组装界面
         content_box.add(title)
         content_box.add(self.now_playing_box)
-        content_box.add(self.playback_controls_widget)  # 使用新的播放控制组件
-        content_box.add(self.progress_box)
+        content_box.add(self.playback_controls_widget)  # 使用新的播放控制组件（包含进度显示）
         
         # 创建视图切换按钮
         view_switch_box = toga.Box(style=Pack(
@@ -676,55 +672,6 @@ class PlaybackView:
         # 这个方法已经被 PlaybackControlComponent 取代
         pass
     
-    def create_progress_section(self):
-        """创建播放进度区域 - iOS优化版本"""
-        self.progress_box = toga.Box(style=Pack(
-            direction=COLUMN,
-            padding=8
-        ))
-        
-        # 时间显示 - 减小字体
-        time_box = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 3, 0)))
-        
-        self.current_time_label = toga.Label(
-            "00:00",
-            style=Pack(
-                flex=0, 
-                padding=(0, 5, 0, 0),
-                color="#495057",
-                font_size=10
-            )
-        )
-        
-        self.total_time_label = toga.Label(
-            "00:00",
-            style=Pack(
-                flex=0, 
-                text_align="right",
-                color="#495057",
-                font_size=10
-            )
-        )
-        
-        # 进度条（使用滑块模拟）- 减小padding
-        self.progress_slider = toga.Slider(
-            min=0,
-            max=100,
-            value=0,
-            on_change=self.on_seek,
-            style=Pack(flex=1, padding=(0, 5))
-        )
-        
-        # 添加防抖控制变量
-        self._updating_progress = False  # 标记是否正在程序更新进度条
-        self._last_user_seek_time = 0  # 用户最后一次拖拽时间
-        
-        time_box.add(self.current_time_label)
-        time_box.add(self.progress_slider)
-        time_box.add(self.total_time_label)
-        
-        self.progress_box.add(time_box)
-    
     def create_volume_and_mode_section(self):
         """创建音量和播放模式组合控制区域 - 已迁移到播放控制组件"""
         # 这个方法已经被 PlaybackControlComponent 取代
@@ -824,137 +771,63 @@ class PlaybackView:
     def update_progress_only(self):
         """只更新播放进度，不更新列表等复杂UI组件"""
         try:
-            # iOS特殊处理：添加防抖机制
-            from ..platform_audio import is_ios
+            # 使用播放控制组件来更新进度
+            if hasattr(self, 'playback_control_component') and self.playback_control_component:
+                self.playback_control_component.update_progress()
             
-            # 更新播放进度（从音频播放器获取实时状态）
+            # 更新歌词显示位置
             position = 0
             duration = 0
+            if hasattr(self, 'playback_control_component') and self.playback_control_component:
+                position = self.playback_control_component.get_current_position()
+                duration = self.playback_control_component.get_current_duration()
             
-            # 从音频播放器获取实时播放位置和时长
-            if self.playback_service.audio_player:
-                try:
-                    position = self.playback_service.audio_player.get_position()
-                    duration = self.playback_service.audio_player.get_duration()
+            if self.lyrics_component:
+                self.lyrics_component.update_lyrics_position(position)
+            
+            # 检测播放完成并自动播放下一曲的逻辑保持不变
+            if duration > 0 and position > 0:
+                progress_ratio = position / duration
+                # iOS特殊处理：提高完成阈值，避免频繁触发
+                from ..platform_audio import is_ios
+                completion_threshold = 0.98 if is_ios() else 0.99
+                
+                # 如果播放进度超过阈值，认为歌曲播放完成
+                if progress_ratio >= completion_threshold and not getattr(self, '_song_completed', False):
+                    logger.info(f"歌曲播放完成，进度: {progress_ratio:.1%}")
+                    self._song_completed = True  # 标记歌曲已完成
                     
-                    # iOS特殊处理：增加额外的日志级别控制
-                    if is_ios():
-                        # 只在重要变化时记录日志
-                        if not hasattr(self, '_last_logged_position') or abs(position - self._last_logged_position) > 5:
-                            logger.info(f"iOS位置更新: {position:.2f}秒 / {duration:.2f}秒")
-                            self._last_logged_position = position
-                    else:
-                        logger.debug(f"update_progress_only: position={position:.2f}, duration={duration:.2f}")
+                    # 立即停止UI更新避免后续的跳转警告
+                    logger.info("歌曲完成，准备处理下一曲逻辑")
                     
-                    # 确保值有效（iOS现在返回0而不是负数）
-                    if position < 0:
-                        position = 0
-                    if duration <= 0:
-                        # 如果无法从播放器获取时长，尝试从缓存获取
-                        if hasattr(self, 'duration') and self.duration > 0:
-                            duration = self.duration
-                            logger.debug(f"使用缓存的时长: {duration}")
+                    # 使用异步方式处理下一曲播放，避免阻塞UI
+                    try:
+                        if hasattr(self.app, 'add_background_task'):
+                            self.app.add_background_task(self._auto_play_next_song)
+                            logger.info("已添加自动播放任务到后台")
                         else:
-                            # 尝试从歌曲信息获取时长
-                            current_song = self.get_current_song_entry()
-                            if current_song and current_song.get("info"):
-                                song_info = current_song["info"]
-                                if "duration" in song_info and song_info["duration"] > 0:
-                                    duration = song_info["duration"]
-                                    logger.debug(f"从歌曲信息获取时长: {duration}")
-                        
-                    # 更新本地状态（用于其他地方可能的引用）
-                    if duration > 0:  # 只有在获取到有效时长时才更新
-                        self.position = position
-                        self.duration = duration
-                        self.current_song_state['position'] = position
-                        self.current_song_state['duration'] = duration
-                    
-                    # 检测播放完成并自动播放下一曲
-                    if duration > 0 and position > 0:
-                        progress_ratio = position / duration
-                        # iOS特殊处理：提高完成阈值，避免频繁触发
-                        completion_threshold = 0.98 if is_ios() else 0.99
-                        
-                        # 如果播放进度超过阈值，认为歌曲播放完成
-                        if progress_ratio >= completion_threshold and not self._song_completed:
-                            logger.info(f"歌曲播放完成，进度: {progress_ratio:.1%}")
-                            self._song_completed = True  # 标记歌曲已完成
-                            
-                            # 立即停止UI更新避免后续的跳转警告
-                            logger.info("歌曲完成，准备处理下一曲逻辑")
-                            
-                            # 使用异步方式处理下一曲播放，避免阻塞UI
-                            try:
-                                if hasattr(self.app, 'add_background_task'):
-                                    self.app.add_background_task(self._auto_play_next_song)
-                                    logger.info("已添加自动播放任务到后台")
-                                else:
-                                    # 备用方案：创建独立的异步任务
-                                    import asyncio
-                                    loop = asyncio.get_event_loop()
-                                    loop.create_task(self._auto_play_next_song())
-                                    logger.info("已创建独立的自动播放任务")
-                            except Exception as task_error:
-                                logger.error(f"创建自动播放任务失败: {task_error}")
-                                # 最后的备用方案：直接调用同步版本
-                                try:
-                                    import threading
-                                    def run_auto_play():
-                                        import asyncio
-                                        asyncio.run(self._auto_play_next_song())
-                                    thread = threading.Thread(target=run_auto_play, daemon=True)
-                                    thread.start()
-                                    logger.info("已在独立线程中启动自动播放")
-                                except Exception as thread_error:
-                                    logger.error(f"线程启动自动播放也失败: {thread_error}")
-                        # 重置播放完成标记（当位置明显减少时，比如重新开始播放或切换歌曲）
-                        elif progress_ratio < 0.95 and self._song_completed:
-                            logger.debug("歌曲位置重置，清除播放完成标记")
-                            self._song_completed = False
-                    
-                except Exception as e:
-                    logger.error(f"获取播放位置失败: {e}")
-                    # 使用缓存值
-                    position = getattr(self, 'position', 0)
-                    duration = getattr(self, 'duration', 0)
-            else:
-                logger.debug("update_progress_only: 没有音频播放器")
-                # 使用缓存值
-                position = getattr(self, 'position', 0)
-                duration = getattr(self, 'duration', 0)
-            
-            if duration > 0:
-                progress_percent = (position / duration) * 100
-                
-                # 只有在进度变化较大时才更新进度条，减少触发on_change
-                current_progress = getattr(self.progress_slider, 'value', 0)
-                if abs(progress_percent - current_progress) > 0.1:  # 只有变化超过0.1%才更新
-                    self._updating_progress = True
-                    self.progress_slider.value = progress_percent
-                    self._updating_progress = False
-                
-                # 更新时间显示
-                current_min = int(position // 60)
-                current_sec = int(position % 60)
-                total_min = int(duration // 60)
-                total_sec = int(duration % 60)
-                
-                self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
-                self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
-                
-                # 更新歌词显示位置
-                if self.lyrics_component:
-                    self.lyrics_component.update_lyrics_position(position)
-                
-                logger.debug(f"进度更新: {current_min:02d}:{current_sec:02d} / {total_min:02d}:{total_sec:02d}")
-            else:
-                self._updating_progress = True
-                self.progress_slider.value = 0
-                self._updating_progress = False
-                self.current_time_label.text = "00:00"
-                self.total_time_label.text = "00:00"
-                logger.debug("进度重置为00:00")
+                            # 备用方案：创建独立的异步任务
+                            import asyncio
+                            loop = asyncio.get_event_loop()
+                            loop.create_task(self._auto_play_next_song())
+                            logger.info("已创建独立的自动播放任务")
+                    except Exception as task_error:
+                        logger.error(f"创建自动播放任务失败: {task_error}")
+                        # 最后的备用方案：直接调用同步版本
+                        try:
+                            import threading
+                            def run_auto_play():
+                                import asyncio
+                                asyncio.run(self._auto_play_next_song())
+                            thread = threading.Thread(target=run_auto_play, daemon=True)
+                            thread.start()
+                            logger.info("已在独立线程中启动自动播放")
+                        except Exception as thread_error:
+                            logger.error(f"线程启动自动播放也失败: {thread_error}")
+                # 重置播放完成标记（当位置明显减少时，比如重新开始播放或切换歌曲）
+                elif progress_ratio < 0.95 and getattr(self, '_song_completed', False):
+                    logger.debug("歌曲位置重置，清除播放完成标记")
+                    self._song_completed = False
             
             # 更新播放状态（从播放服务获取实时状态）
             is_playing = self.playback_service.is_playing()
@@ -963,13 +836,16 @@ class PlaybackView:
             if is_playing:
                 self.status_label.text = "▶️ 播放中"
                 # 更新播放控制组件的播放/暂停按钮
-                self.playback_control_component.update_play_pause_button(True)
+                if hasattr(self, 'playback_control_component') and self.playback_control_component:
+                    self.playback_control_component.update_play_pause_button(True)
             elif is_paused:
                 self.status_label.text = "⏸️ 暂停"
-                self.playback_control_component.update_play_pause_button(False)
+                if hasattr(self, 'playback_control_component') and self.playback_control_component:
+                    self.playback_control_component.update_play_pause_button(False)
             else:
                 self.status_label.text = "⏹️ 停止"
-                self.playback_control_component.update_play_pause_button(False)
+                if hasattr(self, 'playback_control_component') and self.playback_control_component:
+                    self.playback_control_component.update_play_pause_button(False)
                 
         except Exception as e:
             logger.error(f"更新播放进度失败: {e}")
@@ -1047,70 +923,19 @@ class PlaybackView:
                 self.status_label.text = "⏹️ 停止"
                 self.playback_control_component.update_play_pause_button(False)
             
-            # 更新播放进度（从音频播放器获取实时状态）
-            position = 0
-            duration = 0
-            
-            # 从音频播放器获取实时播放位置和时长
-            if self.playback_service.audio_player:
-                try:
-                    position = self.playback_service.audio_player.get_position()
-                    duration = self.playback_service.audio_player.get_duration()
-                    
-                    logger.debug(f"update_ui: position={position:.2f}, duration={duration:.2f}")
-                    
-                    # 如果返回的值为负数（表示不支持），使用默认值
-                    if position < 0:
-                        position = 0
-                    if duration < 0:
-                        duration = 0
-                        
-                    # 更新本地状态（用于其他地方可能的引用）
-                    self.position = position
-                    self.duration = duration
-                    self.current_song_state['position'] = position
-                    self.current_song_state['duration'] = duration
-                    
-                except Exception as e:
-                    logger.error(f"获取播放位置失败: {e}")
-                    position = 0
-                    duration = 0
-            else:
-                logger.debug("update_ui: 没有音频播放器")
-            
-            if duration > 0:
-                progress_percent = (position / duration) * 100
+            # 更新播放进度 - 使用播放控制组件
+            if hasattr(self, 'playback_control_component') and self.playback_control_component:
+                self.playback_control_component.update_progress()
                 
-                # 只有在进度变化较大时才更新进度条，减少触发on_change
-                current_progress = getattr(self.progress_slider, 'value', 0)
-                if abs(progress_percent - current_progress) > 0.1:  # 只有变化超过0.1%才更新
-                    self._updating_progress = True
-                    self.progress_slider.value = progress_percent
-                    self._updating_progress = False
-                
-                # 更新时间显示
-                current_min = int(position // 60)
-                current_sec = int(position % 60)
-                total_min = int(duration // 60)
-                total_sec = int(duration % 60)
-                
-                self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
-                self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
+                # 获取位置信息用于更新歌词
+                position = self.playback_control_component.get_current_position()
                 
                 # 更新歌词显示位置  
                 if self.lyrics_component:
                     self.lyrics_component.update_lyrics_position(position)
-            else:
-                self._updating_progress = True
-                self.progress_slider.value = 0
-                self._updating_progress = False
-                self.current_time_label.text = "00:00"
-                self.total_time_label.text = "00:00"
             
             # 更新音量显示（音量控制现在由播放控制组件处理）
-            if hasattr(self, 'playback_control_component') and self.playback_control_component:
-                # 播放控制组件会自己处理音量显示更新
-                pass
+            # 播放控制组件会自己处理音量显示更新
             
             # 更新播放列表
             self.update_playlist_display()
@@ -1626,150 +1451,6 @@ class PlaybackView:
             
         except Exception as e:
             logger.error(f"同步应用状态失败: {e}")
-    
-
-    
-
-
-    
-    def on_seek(self, widget):
-        """拖拽进度条"""
-        try:
-            # 如果是程序自动更新进度条，直接返回
-            if hasattr(self, '_updating_progress') and self._updating_progress:
-                logger.debug("程序更新进度条，忽略on_change事件")
-                return
-            
-            # iOS特殊处理：添加更强的防抖机制
-            from ..platform_audio import is_ios
-            if is_ios():
-                import time
-                current_time = time.time()
-                
-                # 检查是否在短时间内多次触发
-                if hasattr(self, '_last_user_seek_time'):
-                    time_diff = current_time - self._last_user_seek_time
-                    if time_diff < 0.8:  # 增加到0.8秒的防抖间隔
-                        logger.debug(f"iOS: 忽略频繁的用户进度条拖拽 (间隔: {time_diff:.2f}s)")
-                        return
-                
-                # 记录用户操作时间
-                self._last_user_seek_time = current_time
-                logger.info(f"iOS用户拖拽进度条: {widget.value:.1f}%")
-            
-            # 如果歌曲已完成播放，忽略UI自动更新导致的跳转尝试
-            if self._song_completed:
-                logger.debug("歌曲已完成播放，忽略进度条更新")
-                return
-            
-            # 检查是否正在播放，如果没有在播放则不允许跳转
-            if not self.playback_service.is_playing():
-                logger.warning("当前没有播放音乐，无法跳转")
-                # 重置进度条到当前位置
-                if hasattr(self, 'position') and hasattr(self, 'duration') and self.duration > 0:
-                    current_progress = (self.position / self.duration) * 100
-                    self._updating_progress = True
-                    widget.value = current_progress
-                    self._updating_progress = False
-                else:
-                    self._updating_progress = True
-                    widget.value = 0
-                    self._updating_progress = False
-                return
-            
-            # 从音频播放器获取实时时长
-            duration = 0
-            
-            # 首先尝试从播放服务获取时长
-            if self.playback_service.audio_player:
-                duration = self.playback_service.audio_player.get_duration()
-                logger.debug(f"从播放器获取时长: {duration}")
-                
-            # 如果播放器返回0或无效值，尝试从缓存获取
-            if duration <= 0:
-                duration = getattr(self, 'duration', 0)
-                logger.debug(f"使用缓存的时长: {duration}")
-            
-            # 如果仍然没有有效时长，尝试从文件信息获取
-            if duration <= 0:
-                current_song = self.get_current_song_entry()
-                if current_song and current_song.get("info"):
-                    # 尝试从歌曲信息中获取时长
-                    song_info = current_song["info"]
-                    if "duration" in song_info and song_info["duration"] > 0:
-                        duration = song_info["duration"]
-                        logger.debug(f"从歌曲信息获取时长: {duration}")
-            
-            # 如果还是没有时长，尝试估算一个合理的时长（基于文件大小）
-            if duration <= 0:
-                current_song = self.get_current_song_entry()
-                if current_song and current_song.get("info"):
-                    song_info = current_song["info"]
-                    file_size = song_info.get("size", 0)
-                    if file_size > 0:
-                        # 粗略估算：MP3文件约128kbps，即16KB/s
-                        # 这只是一个估算，实际可能有很大差异
-                        estimated_duration = file_size / (16 * 1024)  # 估算的秒数
-                        if 30 <= estimated_duration <= 600:  # 合理范围：30秒到10分钟
-                            duration = estimated_duration
-                            logger.debug(f"基于文件大小估算时长: {duration:.1f}秒")
-                        else:
-                            # 如果估算值不合理，使用默认值
-                            duration = 180  # 3分钟作为默认值
-                            logger.debug(f"估算值不合理({estimated_duration:.1f}s)，使用默认时长: {duration}秒")
-                    else:
-                        duration = 180  # 3分钟作为默认值
-                        logger.debug("没有文件大小信息，使用默认时长: 180秒")
-            
-            if duration > 0:
-                # 计算新的播放位置
-                new_position = (widget.value / 100) * duration
-                
-                # 跳转到新位置
-                success = self.playback_service.seek_to_position(new_position)
-                if success:
-                    # iOS特殊处理：减少日志频率
-                    if is_ios():
-                        logger.info(f"iOS跳转: {new_position:.2f}秒 ({widget.value:.1f}%)")
-                    else:
-                        logger.info(f"跳转到位置: {new_position:.2f}秒 ({widget.value:.1f}%)，时长: {duration:.1f}秒")
-                    
-                    # 重置播放完成标记（手动跳转表示用户还想继续听）
-                    if new_position < duration * 0.95:  # 如果跳转到95%之前，重置标记
-                        self._song_completed = False
-                    
-                    # 立即更新位置显示（不等待下次UI更新）
-                    self.position = new_position
-                    self.duration = duration  # 更新缓存的时长
-                    current_min = int(new_position // 60)
-                    current_sec = int(new_position % 60)
-                    total_min = int(duration // 60)
-                    total_sec = int(duration % 60)
-                    self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
-                    self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
-                    
-                    # 强制更新进度条位置（不触发on_change）
-                    self._updating_progress = True
-                    self.progress_slider.value = widget.value
-                    self._updating_progress = False
-                    
-                else:
-                    logger.warning("跳转失败")
-                    self.show_message("跳转失败：播放器不支持此功能", "warning")
-            else:
-                logger.warning("无法跳转：未获取到有效的音频时长")
-                # 重置进度条到0
-                self._updating_progress = True
-                self.progress_slider.value = 0
-                self._updating_progress = False
-                self.current_time_label.text = "00:00"
-                self.total_time_label.text = "00:00"
-                
-        except Exception as e:
-            logger.error(f"拖拽进度条失败: {e}")
-            self.show_message(f"跳转失败: {str(e)}", "error")
-    
-
     
     async def on_playlist_select(self, widget, selection=None, **kwargs):
         """播放列表选择"""

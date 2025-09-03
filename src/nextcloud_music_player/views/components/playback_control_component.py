@@ -52,6 +52,7 @@ class PlaybackControlComponent:
         
         # 添加到主容器
         self.container.add(self.controls_box)
+        self.container.add(self.progress_box)  # 先添加进度条
         self.container.add(self.volume_mode_box)
     
     def create_playback_buttons(self):
@@ -218,8 +219,60 @@ class PlaybackControlComponent:
         self.volume_mode_box.add(mode_label)
         self.volume_mode_box.add(self.mode_buttons_box)
         
+        # 创建进度显示区域
+        self.create_progress_section()
+        
         # 初始化播放模式按钮状态
         self.update_mode_buttons()
+    
+    def create_progress_section(self):
+        """创建播放进度区域"""
+        self.progress_box = toga.Box(style=Pack(
+            direction=COLUMN,
+            padding=8
+        ))
+        
+        # 时间显示
+        time_box = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 3, 0)))
+        
+        self.current_time_label = toga.Label(
+            "00:00",
+            style=Pack(
+                flex=0, 
+                padding=(0, 5, 0, 0),
+                color="#495057",
+                font_size=10
+            )
+        )
+        
+        self.total_time_label = toga.Label(
+            "00:00",
+            style=Pack(
+                flex=0, 
+                text_align="right",
+                color="#495057",
+                font_size=10
+            )
+        )
+        
+        # 进度条（使用滑块模拟）
+        self.progress_slider = toga.Slider(
+            min=0,
+            max=100,
+            value=0,
+            on_change=self._on_seek,
+            style=Pack(flex=1, padding=(0, 5))
+        )
+        
+        # 添加防抖控制变量
+        self._updating_progress = False  # 标记是否正在程序更新进度条
+        self._last_user_seek_time = 0  # 用户最后一次拖拽时间
+        
+        time_box.add(self.current_time_label)
+        time_box.add(self.progress_slider)
+        time_box.add(self.total_time_label)
+        
+        self.progress_box.add(time_box)
     
     async def _on_previous_song(self, widget):
         """上一曲按钮点击处理"""
@@ -346,6 +399,162 @@ class PlaybackControlComponent:
                 self.volume_slider.value = volume
         except Exception as e:
             logger.error(f"设置音量滑块失败: {e}")
+    
+    def _on_seek(self, widget):
+        """进度条拖拽处理"""
+        try:
+            # 如果是程序自动更新进度条，直接返回
+            if self._updating_progress:
+                logger.debug("程序更新进度条，忽略on_change事件")
+                return
+            
+            # 防抖处理
+            import time
+            current_time = time.time()
+            
+            # 检查是否在短时间内多次触发
+            if hasattr(self, '_last_user_seek_time'):
+                time_diff = current_time - self._last_user_seek_time
+                if time_diff < 0.5:  # 0.5秒的防抖间隔
+                    logger.debug(f"忽略频繁的用户进度条拖拽 (间隔: {time_diff:.2f}s)")
+                    return
+            
+            # 记录用户操作时间
+            self._last_user_seek_time = current_time
+            logger.info(f"用户拖拽进度条: {widget.value:.1f}%")
+            
+            # 检查是否正在播放
+            if not self.playback_controller.playback_service.is_playing():
+                logger.warning("当前没有播放音乐，无法跳转")
+                self.reset_progress_to_current()
+                return
+            
+            # 计算新的播放位置
+            duration = self.get_current_duration()
+            if duration > 0:
+                new_position = (widget.value / 100) * duration
+                
+                # 跳转到新位置
+                success = self.playback_controller.playback_service.seek_to_position(new_position)
+                if success:
+                    logger.info(f"跳转到位置: {new_position:.2f}秒 ({widget.value:.1f}%)")
+                    # 立即更新时间显示
+                    self.update_time_display(new_position, duration)
+                else:
+                    logger.warning("跳转失败")
+                    self.reset_progress_to_current()
+            else:
+                logger.warning("无法跳转：未获取到有效的音频时长")
+                self.reset_progress_to_current()
+                
+        except Exception as e:
+            logger.error(f"拖拽进度条失败: {e}")
+    
+    def get_current_duration(self):
+        """获取当前歌曲时长"""
+        try:
+            # 首先尝试从播放器获取
+            if self.playback_controller.playback_service.audio_player:
+                duration = self.playback_controller.playback_service.audio_player.get_duration()
+                if duration > 0:
+                    return duration
+            
+            # 尝试从缓存获取
+            if hasattr(self, '_cached_duration') and self._cached_duration > 0:
+                return self._cached_duration
+            
+            # 默认返回0
+            return 0
+        except Exception as e:
+            logger.error(f"获取歌曲时长失败: {e}")
+            return 0
+    
+    def reset_progress_to_current(self):
+        """重置进度条到当前位置"""
+        try:
+            position = self.get_current_position()
+            duration = self.get_current_duration()
+            
+            if duration > 0:
+                current_progress = (position / duration) * 100
+                self._updating_progress = True
+                self.progress_slider.value = current_progress
+                self._updating_progress = False
+            else:
+                self._updating_progress = True
+                self.progress_slider.value = 0
+                self._updating_progress = False
+                
+        except Exception as e:
+            logger.error(f"重置进度条失败: {e}")
+    
+    def get_current_position(self):
+        """获取当前播放位置"""
+        try:
+            if self.playback_controller.playback_service.audio_player:
+                position = self.playback_controller.playback_service.audio_player.get_position()
+                return max(0, position)  # 确保位置不为负数
+            return 0
+        except Exception as e:
+            logger.error(f"获取播放位置失败: {e}")
+            return 0
+    
+    def update_progress(self, position: float = None, duration: float = None):
+        """更新播放进度"""
+        try:
+            # 获取实时位置和时长
+            if position is None:
+                position = self.get_current_position()
+            if duration is None:
+                duration = self.get_current_duration()
+            
+            # 缓存时长
+            if duration > 0:
+                self._cached_duration = duration
+            
+            # 更新进度条
+            if duration > 0:
+                progress_percent = (position / duration) * 100
+                
+                # 只有在进度变化较大时才更新进度条
+                current_progress = getattr(self.progress_slider, 'value', 0)
+                if abs(progress_percent - current_progress) > 0.1:  # 只有变化超过0.1%才更新
+                    self._updating_progress = True
+                    self.progress_slider.value = progress_percent
+                    self._updating_progress = False
+            
+            # 更新时间显示
+            self.update_time_display(position, duration)
+            
+        except Exception as e:
+            logger.error(f"更新播放进度失败: {e}")
+    
+    def update_time_display(self, position: float, duration: float):
+        """更新时间显示"""
+        try:
+            # 格式化时间
+            current_min = int(position // 60)
+            current_sec = int(position % 60)
+            total_min = int(duration // 60)
+            total_sec = int(duration % 60)
+            
+            # 更新显示
+            self.current_time_label.text = f"{current_min:02d}:{current_sec:02d}"
+            self.total_time_label.text = f"{total_min:02d}:{total_sec:02d}"
+            
+        except Exception as e:
+            logger.error(f"更新时间显示失败: {e}")
+    
+    def reset_progress(self):
+        """重置进度显示"""
+        try:
+            self._updating_progress = True
+            self.progress_slider.value = 0
+            self._updating_progress = False
+            self.current_time_label.text = "00:00"
+            self.total_time_label.text = "00:00"
+        except Exception as e:
+            logger.error(f"重置进度显示失败: {e}")
     
     def get_volume(self) -> int:
         """获取当前音量值"""
