@@ -1,0 +1,12 @@
+toga>=0.4.0
+requests>=2.25.0
+httpx>=0.24.0
+
+[dev]
+pytest
+pytest-cov
+black
+flake8
+isort
+mypy
+briefcase

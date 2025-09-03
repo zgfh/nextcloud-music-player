@@ -1,0 +1,2 @@
+[console_scripts]
+nextcloud-music-player = nextcloud_music_player.__main__:main

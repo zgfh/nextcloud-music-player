@@ -3,12 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-formal_name = "NextCloud Music Player"
 name = "nextcloud-music-player"
-bundle = "com.example"
 version = "0.1.0"
 description = "A cross-platform music player with NextCloud integration"
-long_description = """A BeeWare-based music player that syncs MP3 files from NextCloud and provides playback functionality across multiple platforms."""
 readme = "README.md"
 requires-python = ">=3.8"
 license = {file = "LICENSE"}
@@ -62,11 +59,13 @@ nextcloud-music-player = "nextcloud_music_player.__main__:main"
 
 [tool.briefcase]
 project_name = "NextCloud Music Player"
+formal_name = "NextCloud Music Player"
 bundle = "com.example"
 version = "0.1.0"
 url = "https://example.com/nextcloud-music-player"
 author = "Your Name"
 author_email = "your.email@example.com"
+description = "A cross-platform music player with NextCloud integration"
 
 [tool.briefcase.app.nextcloud-music-player]
 formal_name = "NextCloud Music Player"
