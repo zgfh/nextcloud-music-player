@@ -15,16 +15,11 @@ import json
 from datetime import datetime
 from ..services.playback_service import PlaybackService
 from ..services.playlist_manager import PlaylistManager
+from ..services.playback_controller import PlaybackController, PlayMode
 from .components.playlist_component import PlaylistViewComponent
+from .components.playback_control_component import PlaybackControlComponent
 
 logger = logging.getLogger(__name__)
-
-class PlayMode(Enum):
-    """播放模式枚举"""
-    NORMAL = "normal"
-    REPEAT_ONE = "repeat_one"
-    REPEAT_ALL = "repeat_all"
-    SHUFFLE = "shuffle"
 
 class PlaybackView:
     """音乐播放界面视图 - 基于 playlists.json 的播放列表管理"""
@@ -46,6 +41,20 @@ class PlaybackView:
         self.playlist_manager = PlaylistManager(
             config_manager=app.config_manager,
             music_service=getattr(app, 'music_service', None)
+        )
+        
+        # 初始化播放控制器
+        self.playback_controller = PlaybackController(
+            playback_service=self.playback_service,
+            playlist_manager=self.playlist_manager,
+            play_song_callback=self.play_selected_song
+        )
+        
+        # 初始化播放控制组件
+        self.playback_control_component = PlaybackControlComponent(
+            app=app,
+            playback_controller=self.playback_controller,
+            on_play_mode_change_callback=self.on_play_mode_changed
         )
         
         # 初始化播放列表视图组件
@@ -85,7 +94,8 @@ class PlaybackView:
             set_play_mode_callback=None
         )
         
-        # 确保播放服务和视图的播放模式同步
+        # 确保播放控制器、播放服务和视图的播放模式同步
+        self.playback_controller.set_play_mode(PlayMode.REPEAT_ONE)
         self.playback_service.set_play_mode_by_string("repeat_one")
         logger.info("初始化播放模式为单曲循环")
         
@@ -103,6 +113,8 @@ class PlaybackView:
         # 播放完成标记
         self._song_completed = False
         self._last_position = 0
+        # 切换歌曲状态标志（防止重复点击）
+        self._switching_song = False
         
         # 构建界面
         self.build_interface()
@@ -111,7 +123,9 @@ class PlaybackView:
         self.start_ui_timer()
         
         # 更新播放模式按钮状态（初始化为单曲循环）
-        self.update_playmode_buttons()
+        # 更新播放控制组件的播放模式按钮
+        if hasattr(self, 'playback_control_component') and self.playback_control_component:
+            self.playback_control_component.update_mode_buttons()
         
         # 播放列表组件会自动处理初始化和加载
     
@@ -151,14 +165,11 @@ class PlaybackView:
         # 当前播放信息区域
         self.create_now_playing_section()
         
-        # 播放控制区域
-        self.create_playback_controls()
+        # 播放控制区域 - 使用播放控制组件
+        self.playback_controls_widget = self.playback_control_component.widget
         
         # 进度条区域
         self.create_progress_section()
-        
-        # 音量和播放模式组合区域
-        self.create_volume_and_mode_section()
         
         # 播放列表区域 - 使用播放列表组件
         self.playlist_box = self.playlist_component.get_widget()
@@ -186,9 +197,8 @@ class PlaybackView:
         # 组装界面
         content_box.add(title)
         content_box.add(self.now_playing_box)
-        content_box.add(self.controls_box)
+        content_box.add(self.playback_controls_widget)  # 使用新的播放控制组件
         content_box.add(self.progress_box)
-        content_box.add(self.volume_mode_box)
         
         # 创建视图切换按钮
         view_switch_box = toga.Box(style=Pack(
@@ -319,6 +329,23 @@ class PlaybackView:
         except Exception as e:
             logger.error(f"处理播放列表改变失败: {e}")
     
+    def on_play_mode_changed(self, mode: str):
+        """播放模式改变回调"""
+        try:
+            logger.info(f"播放模式已改变为: {mode}")
+            # 同步更新视图的播放模式
+            if mode == "normal":
+                self.play_mode = PlayMode.NORMAL
+            elif mode == "repeat_one":
+                self.play_mode = PlayMode.REPEAT_ONE
+            elif mode == "repeat_all":
+                self.play_mode = PlayMode.REPEAT_ALL
+            elif mode == "shuffle":
+                self.play_mode = PlayMode.SHUFFLE
+                
+        except Exception as e:
+            logger.error(f"处理播放模式改变失败: {e}")
+    
     async def play_selected_song(self, song_info: Dict[str, Any]):
         """播放选中的歌曲"""
         try:
@@ -353,31 +380,54 @@ class PlaybackView:
     async def play_music_file(self, file_path: str):
         """播放音乐文件"""
         try:
+            logger.info(f"开始播放音乐文件: {file_path}")
+            
             # 设置当前歌曲
             self.playback_service.set_current_song(file_path)
             
-            # 开始播放
-            await self.playback_service.play_music()
+            # 开始播放 - 使用超时保护
+            try:
+                await asyncio.wait_for(self.playback_service.play_music(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.error("播放音乐超时，可能存在死锁")
+                return
             
             # 更新播放状态
             self.current_song_state['is_playing'] = True
             self.current_song_state['is_paused'] = False
             
-            # 自动加载歌词 - 从文件路径提取歌曲名
+            # 自动加载歌词 - 从文件路径提取歌曲名（异步执行，不阻塞）
             if self.lyrics_component:
                 try:
                     import os
                     song_name = os.path.basename(file_path)
                     logger.info(f"播放音乐时自动加载歌词: {song_name}")
-                    self.lyrics_component.load_lyrics_for_song(song_name, auto_download=True)
+                    # 使用后台任务加载歌词，避免阻塞播放
+                    if hasattr(self.app, 'add_background_task'):
+                        self.app.add_background_task(
+                            self._load_lyrics_async(song_name)
+                        )
+                    else:
+                        self.lyrics_component.load_lyrics_for_song(song_name, auto_download=True)
                 except Exception as lyrics_error:
                     logger.warning(f"自动加载歌词失败: {lyrics_error}")
             
             # 更新UI
             self.update_ui()
+            logger.info(f"音乐文件播放成功: {file_path}")
             
         except Exception as e:
             logger.error(f"播放音乐文件失败: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+    
+    async def _load_lyrics_async(self, song_name: str):
+        """异步加载歌词"""
+        try:
+            if self.lyrics_component:
+                self.lyrics_component.load_lyrics_for_song(song_name, auto_download=True)
+        except Exception as e:
+            logger.warning(f"异步加载歌词失败: {e}")
             
     def show_message(self, message: str, message_type: str = "info"):
         """显示消息提示"""
@@ -598,65 +648,9 @@ class PlaybackView:
         self.now_playing_box.add(self.status_label)
     
     def create_playback_controls(self):
-        """创建播放控制按钮 - iOS优化版本"""
-        self.controls_box = toga.Box(style=Pack(
-            direction=ROW,
-            padding=8,
-            alignment="center"
-        ))
-        
-        # 上一曲按钮 - 减小尺寸
-        self.prev_button = toga.Button(
-            "⏮️",
-            on_press=self.previous_song,
-            style=Pack(
-                width=45,
-                height=35,
-                padding=(0, 3),
-                font_size=14
-            )
-        )
-        
-        # 播放/暂停按钮 - 减小尺寸
-        self.play_pause_button = toga.Button(
-            "▶️",
-            on_press=self.toggle_playback,
-            style=Pack(
-                width=60,
-                height=40,
-                padding=(0, 8),
-                font_size=16
-            )
-        )
-        
-        # 下一曲按钮 - 减小尺寸
-        self.next_button = toga.Button(
-            "⏭️",
-            on_press=self.next_song,
-            style=Pack(
-                width=45,
-                height=35,
-                padding=(0, 3),
-                font_size=14
-            )
-        )
-        
-        # 停止按钮 - 减小尺寸
-        self.stop_button = toga.Button(
-            "⏹️",
-            on_press=self.stop_playback,
-            style=Pack(
-                width=45,
-                height=35,
-                padding=(0, 3),
-                font_size=14
-            )
-        )
-        
-        self.controls_box.add(self.prev_button)
-        self.controls_box.add(self.play_pause_button)
-        self.controls_box.add(self.next_button)
-        self.controls_box.add(self.stop_button)
+        """创建播放控制按钮 - iOS优化版本 - 已迁移到播放控制组件"""
+        # 这个方法已经被 PlaybackControlComponent 取代
+        pass
     
     def create_progress_section(self):
         """创建播放进度区域 - iOS优化版本"""
@@ -708,119 +702,9 @@ class PlaybackView:
         self.progress_box.add(time_box)
     
     def create_volume_and_mode_section(self):
-        """创建音量和播放模式组合控制区域 - iOS优化版本"""
-        self.volume_mode_box = toga.Box(style=Pack(
-            direction=COLUMN,
-            padding=8
-        ))
-        
-        # 音量控制行
-        volume_row = toga.Box(style=Pack(
-            direction=ROW,
-            alignment="center",
-            padding=(0, 0, 3, 0)
-        ))
-        
-        volume_label = toga.Label(
-            "🔊",
-            style=Pack(
-                padding=(0, 5, 0, 0),
-                color="#495057",
-                font_size=12
-            )
-        )
-        
-        self.volume_slider = toga.Slider(
-            min=0,
-            max=100,
-            value=self.playback_service.get_volume(),
-            on_change=self.on_volume_change,
-            style=Pack(flex=1, padding=(0, 5))
-        )
-        
-        self.volume_label = toga.Label(
-            f"{int(self.volume_slider.value)}%",
-            style=Pack(
-                width=35,
-                color="#495057",
-                font_size=10
-            )
-        )
-        
-        volume_row.add(volume_label)
-        volume_row.add(self.volume_slider)
-        volume_row.add(self.volume_label)
-        
-        # 播放模式控制行 - 使用更紧凑的按钮
-        mode_row = toga.Box(style=Pack(
-            direction=ROW,
-            alignment="center"
-        ))
-        
-        mode_label = toga.Label(
-            "模式:",
-            style=Pack(
-                padding=(0, 5, 0, 0),
-                color="#495057",
-                font_size=10
-            )
-        )
-        
-        # 播放模式按钮 - 减小尺寸
-        self.normal_button = toga.Button(
-            "顺序",
-            on_press=lambda widget: self.set_play_mode("normal"),
-            style=Pack(
-                width=45,
-                height=25,
-                padding=(0, 2),
-                font_size=9,
-                background_color="#007bff",
-                color="white"
-            )
-        )
-        
-        self.repeat_one_button = toga.Button(
-            "单曲",
-            on_press=lambda widget: self.set_play_mode("repeat_one"),
-            style=Pack(
-                width=45,
-                height=25,
-                padding=(0, 2),
-                font_size=9
-            )
-        )
-        
-        self.repeat_all_button = toga.Button(
-            "列表",
-            on_press=lambda widget: self.set_play_mode("repeat_all"),
-            style=Pack(
-                width=45,
-                height=25,
-                padding=(0, 2),
-                font_size=9
-            )
-        )
-        
-        self.shuffle_button = toga.Button(
-            "随机",
-            on_press=lambda widget: self.set_play_mode("shuffle"),
-            style=Pack(
-                width=45,
-                height=25,
-                padding=(0, 2),
-                font_size=9
-            )
-        )
-        
-        mode_row.add(mode_label)
-        mode_row.add(self.normal_button)
-        mode_row.add(self.repeat_one_button)
-        mode_row.add(self.repeat_all_button)
-        mode_row.add(self.shuffle_button)
-        
-        self.volume_mode_box.add(volume_row)
-        self.volume_mode_box.add(mode_row)
+        """创建音量和播放模式组合控制区域 - 已迁移到播放控制组件"""
+        # 这个方法已经被 PlaybackControlComponent 取代
+        pass
     
     def create_playlist_section(self):
         """创建播放列表区域 - iOS优化版本"""
@@ -1054,61 +938,42 @@ class PlaybackView:
             
             if is_playing:
                 self.status_label.text = "▶️ 播放中"
-                self.play_pause_button.text = "⏸️"
+                # 更新播放控制组件的播放/暂停按钮
+                self.playback_control_component.update_play_pause_button(True)
             elif is_paused:
                 self.status_label.text = "⏸️ 暂停"
-                self.play_pause_button.text = "▶️"
+                self.playback_control_component.update_play_pause_button(False)
             else:
                 self.status_label.text = "⏹️ 停止"
-                self.play_pause_button.text = "▶️"
+                self.playback_control_component.update_play_pause_button(False)
                 
         except Exception as e:
             logger.error(f"更新播放进度失败: {e}")
     
     async def _auto_play_next_song(self):
-        """自动播放下一曲的内部方法"""
+        """自动播放下一曲的内部方法 - 使用播放控制器"""
         try:
             logger.info("进入自动播放下一曲方法")
-            await asyncio.sleep(0.2)  # 延迟稍长一点，确保播放状态稳定
             
-            # 再次检查是否需要播放下一曲
-            if not self.current_playlist_data or not self.current_playlist_data.get("songs"):
-                logger.info("播放列表为空，停止自动播放")
+            # 检查是否已经在切换歌曲
+            if hasattr(self, '_switching_song') and self._switching_song:
+                logger.warning("正在手动切换歌曲，跳过自动播放")
                 return
                 
-            # 根据播放模式决定是否自动播放下一曲
-            # 优先从播放服务获取模式，确保同步
-            play_mode = self.playback_service.get_play_mode()
-            logger.info(f"播放服务获取到的播放模式: {play_mode}")
+            await asyncio.sleep(0.2)  # 延迟稍长一点，确保播放状态稳定
             
-            if not play_mode:
-                play_mode = self.play_mode  # 备用
-                logger.info(f"使用视图播放模式作为备用: {play_mode}")
-                
-            if hasattr(play_mode, 'value'):
-                mode_value = play_mode.value
-                logger.info(f"当前播放模式值: {mode_value}")
-                
-                if mode_value == "repeat_one":
-                    # 单曲循环：重新播放当前歌曲
-                    logger.info("单曲循环模式：重新播放当前歌曲")
-                    # 重置播放完成标记和位置
-                    self._song_completed = False
-                    self._last_position = 0
-                    logger.info("已重置播放完成标记和位置")
-                    # 重新播放当前歌曲
-                    logger.info("开始调用play_current_song")
-                    await self.play_current_song()
-                    logger.info("play_current_song调用完成")
-                elif mode_value in ["normal", "repeat_all", "shuffle"]:
-                    # 其他模式：播放下一曲
-                    logger.info(f"{mode_value}模式：播放下一曲")
-                    await self.next_song(None)  # 传入None作为widget参数
-                else:
-                    logger.info(f"未知播放模式: {mode_value}，停止自动播放")
+            # 使用播放控制器的自动播放逻辑
+            success = await self.playback_controller.auto_play_next_song()
+            
+            if success:
+                # 更新播放列表显示
+                if hasattr(self, 'playlist_component') and self.playlist_component:
+                    self.playlist_component.refresh_display()
+                # 更新UI显示
+                self.update_ui()
+                logger.info("自动播放下一曲成功")
             else:
-                logger.warning("播放模式对象没有value属性，使用默认行为（播放下一曲）")
-                await self.next_song(None)
+                logger.info("自动播放下一曲结束或失败")
                 
         except Exception as e:
             logger.error(f"自动播放下一曲失败: {e}")
@@ -1149,13 +1014,14 @@ class PlaybackView:
             
             if is_playing:
                 self.status_label.text = "▶️ 播放中"
-                self.play_pause_button.text = "⏸️"
+                # 更新播放控制组件的播放/暂停按钮
+                self.playback_control_component.update_play_pause_button(True)
             elif is_paused:
                 self.status_label.text = "⏸️ 暂停"
-                self.play_pause_button.text = "▶️"
+                self.playback_control_component.update_play_pause_button(False)
             else:
                 self.status_label.text = "⏹️ 停止"
-                self.play_pause_button.text = "▶️"
+                self.playback_control_component.update_play_pause_button(False)
             
             # 更新播放进度（从音频播放器获取实时状态）
             position = 0
@@ -1217,8 +1083,10 @@ class PlaybackView:
                 self.current_time_label.text = "00:00"
                 self.total_time_label.text = "00:00"
             
-            # 更新音量显示
-            self.volume_label.text = f"{int(self.volume_slider.value)}%"
+            # 更新音量显示（音量控制现在由播放控制组件处理）
+            if hasattr(self, 'playback_control_component') and self.playback_control_component:
+                # 播放控制组件会自己处理音量显示更新
+                pass
             
             # 更新播放列表
             self.update_playlist_display()
@@ -1227,7 +1095,9 @@ class PlaybackView:
             self.update_current_playlist_info()
             
             # 更新播放模式按钮状态
-            self.update_playmode_buttons()
+            # 更新播放控制组件的播放模式按钮
+            if hasattr(self, 'playback_control_component') and self.playback_control_component:
+                self.playback_control_component.update_mode_buttons()
             
         except Exception as e:
             logger.error(f"更新UI失败: {e}")
@@ -1733,141 +1603,10 @@ class PlaybackView:
         except Exception as e:
             logger.error(f"同步应用状态失败: {e}")
     
-    def update_playmode_buttons(self):
-        """更新播放模式按钮状态"""
-        # 重置所有按钮样式
-        buttons = [
-            (self.normal_button, "normal"),
-            (self.repeat_one_button, "repeat_one"), 
-            (self.repeat_all_button, "repeat_all"),
-            (self.shuffle_button, "shuffle")
-        ]
-        
-        # 获取当前播放模式（先从播放服务获取，如果没有则使用视图的播放模式）
-        current_mode = None
-        play_mode = self.playback_service.get_play_mode()
-        if play_mode:
-            current_mode = str(play_mode.value)
-        else:
-            # 使用视图的播放模式作为备用
-            current_mode = str(self.play_mode.value)
-        
-        logger.debug(f"当前播放模式: {current_mode}")
-        
-        for button, mode in buttons:
-            if current_mode == mode:
-                button.style.background_color = "#007bff"
-                button.style.color = "white"
-                logger.debug(f"播放模式按钮 {mode} 被选中")
-            else:
-                button.style.background_color = "#f8f9fa"
-                button.style.color = "black"
+
     
-    async def toggle_playback(self, widget):
-        """切换播放/暂停"""
-        try:
-            if self.playback_service.is_playing():
-                await self.playback_service.pause_music()
-            else:
-                await self.playback_service.play_music()
-            
-            # 更新UI显示
-            self.update_ui()
-        except Exception as e:
-            logger.error(f"切换播放状态失败: {e}")
-    
-    async def stop_playback(self, widget):
-        """停止播放"""
-        try:
-            await self.playback_service.stop_music()
-        except Exception as e:
-            logger.error(f"停止播放失败: {e}")
-    
-    async def previous_song(self, widget):
-        """上一曲"""
-        try:
-            current_playlist = self.playlist_manager.get_current_playlist()
-            if not current_playlist or not current_playlist.get("songs"):
-                logger.warning("播放列表为空，无法切换到上一曲")
-                return
-            
-            current_index = current_playlist.get("current_index", 0)
-            songs = current_playlist["songs"]
-            
-            # 根据播放模式确定上一首歌曲
-            play_mode = self.play_mode
-            
-            if hasattr(play_mode, 'value') and play_mode.value == "shuffle":
-                # 随机模式：随机选择一首（排除当前）
-                import random
-                available_indices = [i for i in range(len(songs)) if i != current_index]
-                if available_indices:
-                    new_index = random.choice(available_indices)
-                else:
-                    new_index = current_index
-            else:
-                # 顺序模式：上一首
-                new_index = (current_index - 1) % len(songs)
-            
-            # 更新播放列表索引
-            current_playlist["current_index"] = new_index
-            self.playlist_manager.save_current_playlist(current_playlist)
-            
-            # 播放选中的歌曲
-            selected_song = songs[new_index]
-            await self.play_selected_song(selected_song["info"])
-            
-            # 更新播放列表显示
-            self.playlist_component.refresh_display()
-            
-        except Exception as e:
-            logger.error(f"上一曲失败: {e}")
-    
-    async def next_song(self, widget):
-        """下一曲"""
-        try:
-            current_playlist = self.playlist_manager.get_current_playlist()
-            if not current_playlist or not current_playlist.get("songs"):
-                logger.warning("播放列表为空，无法切换到下一曲")
-                return
-            
-            current_index = current_playlist.get("current_index", 0)
-            songs = current_playlist["songs"]
-            
-            # 根据播放模式确定下一首歌曲
-            play_mode = self.play_mode
-            
-            if hasattr(play_mode, 'value') and play_mode.value == "shuffle":
-                # 随机模式：随机选择一首（排除当前）
-                import random
-                available_indices = [i for i in range(len(songs)) if i != current_index]
-                if available_indices:
-                    new_index = random.choice(available_indices)
-                else:
-                    new_index = current_index
-            elif hasattr(play_mode, 'value') and play_mode.value == "repeat_one":
-                # 单曲循环：保持当前歌曲
-                new_index = current_index
-            else:
-                # 顺序播放或列表循环
-                new_index = (current_index + 1) % len(songs)
-            
-            # 更新播放列表索引
-            current_playlist["current_index"] = new_index
-            self.playlist_manager.save_current_playlist(current_playlist)
-            
-            # 播放选中的歌曲
-            selected_song = songs[new_index]
-            await self.play_selected_song(selected_song["info"])
-            
-            # 更新播放列表显示
-            self.playlist_component.refresh_display()
-            
-            # 更新UI显示
-            self.update_ui()
-            
-        except Exception as e:
-            logger.error(f"下一曲失败: {e}")
+
+
     
     def on_seek(self, widget):
         """拖拽进度条"""
@@ -2006,37 +1745,7 @@ class PlaybackView:
             logger.error(f"拖拽进度条失败: {e}")
             self.show_message(f"跳转失败: {str(e)}", "error")
     
-    def on_volume_change(self, widget):
-        """音量变化"""
-        try:
-            volume = widget.value / 100
-            self.playback_service.set_audio_volume(volume)
-            self.volume_label.text = f"{int(widget.value)}%"
-            
-            # 保存音量到配置
-            self.playback_service.set_volume(int(widget.value))
-            
-        except Exception as e:
-            logger.error(f"设置音量失败: {e}")
-    
-    def set_play_mode(self, mode: str):
-        """设置播放模式"""
-        try:
-            # 使用播放服务设置模式
-            success = self.playback_service.set_play_mode_by_string(mode)
-            
-            if success:
-                # 播放模式设置由播放服务处理，不需要在这里更新播放列表
-                # 随机模式的洗牌逻辑由播放服务在播放时处理
-                logger.info(f"播放模式已更改为: {mode}")
-                
-            self.update_playmode_buttons()
-            
-        except Exception as e:
-            logger.error(f"设置播放模式失败: {e}")
-            
-        except Exception as e:
-            logger.error(f"设置播放模式失败: {e}")
+
     
     async def on_playlist_select(self, widget, selection=None, **kwargs):
         """播放列表选择"""

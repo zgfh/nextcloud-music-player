@@ -4,5 +4,6 @@
 
 from .playlist_component import PlaylistViewComponent
 from .lyrics_component import LyricsDisplayComponent
+from .playback_control_component import PlaybackControlComponent
 
-__all__ = ['PlaylistViewComponent', 'LyricsDisplayComponent']
+__all__ = ['PlaylistViewComponent', 'LyricsDisplayComponent', 'PlaybackControlComponent']
