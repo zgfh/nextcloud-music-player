@@ -38,7 +38,13 @@ jobs:
           libcairo-gobject2 \
           libgirepository-1.0-1 \
           libgtk-3-0 \
-          libpango-1.0-0
+          libpango-1.0-0 \
+          libcairo2 \
+          libcairo-gobject2 \
+          cairo-5c \
+          libglib2.0-dev \
+          libgdk-pixbuf2.0-dev \
+          libffi-dev
     
     - name: Install WebKit (try modern first)
       run: |

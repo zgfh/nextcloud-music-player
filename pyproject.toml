@@ -136,7 +136,17 @@ info.NSAppTransportSecurity = {NSAllowsArbitraryLoads = true, NSAllowsLocalNetwo
 [tool.briefcase.app.nextcloud-music-player.android]
 requires = [
     "toga-android~=0.4.0",
+    "requests>=2.25.0",
+    "httpx>=0.24.0",
 ]
+# Android不需要音频依赖，使用系统提供的媒体播放功能
+gradle_dependencies = [
+    "androidx.media:media:1.6.0",
+    "androidx.lifecycle:lifecycle-service:2.6.1",
+]
+permission.INTERNET = "This app needs internet access to connect to your NextCloud server."
+permission.WAKE_LOCK = "This app needs wake lock permission for background music playback."
+permission.FOREGROUND_SERVICE = "This app needs foreground service permission for music playback."
 
 [tool.briefcase.app.nextcloud-music-player.web]
 requires = [
