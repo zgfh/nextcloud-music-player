@@ -6,6 +6,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 import asyncio
 import concurrent.futures
+import logging
 from pathlib import Path
 import tempfile
 import os
@@ -14,6 +15,9 @@ from urllib.parse import urljoin, quote
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional
 import hashlib
+import traceback
+
+logger = logging.getLogger(__name__)
 
 
 class NextCloudClient:
@@ -43,28 +47,28 @@ class NextCloudClient:
     
     async def test_connection(self) -> bool:
         """Test the connection to NextCloud using requests library."""
-        print(f"🔍 Testing connection to: {self.server_url}")
+        logger.info(f"🔍 Testing connection to: {self.server_url}")
         
         def _sync_test_connection():
             """同步连接测试函数"""
             try:
                 # 1. 测试基本网络连接
-                print("📡 Step 1: Testing basic network connectivity...")
+                logger.info("📡 Step 1: Testing basic network connectivity...")
                 try:
                     response = requests.head(self.server_url, timeout=10)
-                    print(f"✅ Server reachable: HTTP {response.status_code}")
+                    logger.info(f"✅ Server reachable: HTTP {response.status_code}")
                 except requests.exceptions.ConnectTimeout:
-                    print("❌ Connection timeout")
+                    logger.error("❌ Connection timeout")
                     return False
                 except requests.exceptions.ConnectionError as e:
-                    print(f"❌ Network connection failed: {e}")
+                    logger.error(f"❌ Network connection failed: {e}")
                     return False
                 except Exception as e:
-                    print(f"❌ Network error: {e}")
+                    logger.error(f"❌ Network error: {e}")
                     return False
                 
                 # 2. 测试WebDAV认证
-                print("🔐 Step 2: Testing WebDAV authentication...")
+                logger.info("🔐 Step 2: Testing WebDAV authentication...")
                 try:
                     auth = HTTPBasicAuth(self.username, self.password)
                     response = requests.request(
@@ -76,30 +80,30 @@ class NextCloudClient:
                     )
                     
                     if response.status_code in [200, 207]:
-                        print(f"✅ WebDAV authentication successful: HTTP {response.status_code}")
+                        logger.info(f"✅ WebDAV authentication successful: HTTP {response.status_code}")
                         return True
                     elif response.status_code == 401:
-                        print("❌ Authentication failed: Invalid credentials")
+                        logger.error("❌ Authentication failed: Invalid credentials")
                         return False
                     elif response.status_code == 404:
-                        print("❌ WebDAV endpoint not found")
+                        logger.error("❌ WebDAV endpoint not found")
                         return False
                     else:
-                        print(f"❌ WebDAV failed: HTTP {response.status_code}")
+                        logger.error(f"❌ WebDAV failed: HTTP {response.status_code}")
                         return False
                         
                 except requests.exceptions.ConnectTimeout:
-                    print("❌ WebDAV connection timeout")
+                    logger.error("❌ WebDAV connection timeout")
                     return False
                 except requests.exceptions.ConnectionError as e:
-                    print(f"❌ WebDAV connection error: {e}")
+                    logger.error(f"❌ WebDAV connection error: {e}")
                     return False
                 except Exception as e:
-                    print(f"❌ WebDAV error: {e}")
+                    logger.error(f"❌ WebDAV error: {e}")
                     return False
                     
             except Exception as e:
-                print(f"❌ Connection test failed: {e}")
+                logger.error(f"❌ Connection test failed: {e}")
                 return False
         
         # 在线程池中运行同步函数
@@ -112,32 +116,32 @@ class NextCloudClient:
         """List all music files in the specified folder with enhanced compatibility and logging."""
         music_extensions = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', '.wma'}
         
-        print(f"🔍 [LIST] 开始列出音乐文件，文件夹: '{folder_path}'")
-        print(f"🎵 [LIST] 支持的音乐格式: {list(music_extensions)}")
+        logger.info(f"🔍 [LIST] 开始列出音乐文件，文件夹: '{folder_path}'")
+        logger.info(f"🎵 [LIST] 支持的音乐格式: {list(music_extensions)}")
         
         # 首先尝试使用增强的sync_files方法
         try:
-            print(f"📥 [LIST] 尝试使用sync_files方法...")
+            logger.info(f"📥 [LIST] 尝试使用sync_files方法...")
             result = await self.sync_files(folder_path, music_extensions)
             if result.get('error'):
-                print(f"❌ [LIST] sync_files出错: {result['error']}")
+                logger.error(f"❌ [LIST] sync_files出错: {result['error']}")
                 if result.get('debug'):
                     debug = result['debug']
-                    print(f"🔍 [LIST] 调试信息:")
-                    print(f"    - 请求URL: {debug.get('request_url')}")
-                    print(f"    - 响应状态: {debug.get('response_status')}")
-                    print(f"    - 发现项目总数: {debug.get('total_items_found', 0)}")
-                    print(f"    - 发现文件数: {debug.get('files_found', 0)}")
-                    print(f"    - 发现音乐文件数: {debug.get('music_files_found', 0)}")
+                    logger.debug(f"🔍 [LIST] 调试信息:")
+                    logger.debug(f"    - 请求URL: {debug.get('request_url')}")
+                    logger.debug(f"    - 响应状态: {debug.get('response_status')}")
+                    logger.debug(f"    - 发现项目总数: {debug.get('total_items_found', 0)}")
+                    logger.debug(f"    - 发现文件数: {debug.get('files_found', 0)}")
+                    logger.debug(f"    - 发现音乐文件数: {debug.get('music_files_found', 0)}")
             else:
                 files = result.get('files', [])
-                print(f"✅ [LIST] sync_files成功，找到 {len(files)} 个音乐文件")
+                logger.info(f"✅ [LIST] sync_files成功，找到 {len(files)} 个音乐文件")
                 return files
         except Exception as e:
-            print(f"❌ [LIST] sync_files异常: {e}")
+            logger.error(f"❌ [LIST] sync_files异常: {e}")
         
         # 如果sync_files失败，尝试备用方法
-        print(f"🔄 [LIST] 尝试备用文件列表方法...")
+        logger.info(f"🔄 [LIST] 尝试备用文件列表方法...")
         methods = [
             self._list_files_webdav,
             self._list_files_ocs_api,
@@ -146,18 +150,18 @@ class NextCloudClient:
         
         for i, method in enumerate(methods, 1):
             try:
-                print(f"🔧 [LIST] 尝试方法 {i}/{len(methods)}: {method.__name__}")
+                logger.info(f"🔧 [LIST] 尝试方法 {i}/{len(methods)}: {method.__name__}")
                 files = await method(folder_path, music_extensions)
                 if files:
-                    print(f"✅ [LIST] 方法 {method.__name__} 成功，找到 {len(files)} 个文件")
+                    logger.info(f"✅ [LIST] 方法 {method.__name__} 成功，找到 {len(files)} 个文件")
                     return files
                 else:
-                    print(f"ℹ️ [LIST] 方法 {method.__name__} 返回空列表")
+                    logger.info(f"ℹ️ [LIST] 方法 {method.__name__} 返回空列表")
             except Exception as e:
-                print(f"❌ [LIST] 方法 {method.__name__} 失败: {e}")
+                logger.error(f"❌ [LIST] 方法 {method.__name__} 失败: {e}")
                 continue
         
-        print(f"⚠️ [LIST] 所有方法都失败，返回空列表")
+        logger.warning(f"⚠️ [LIST] 所有方法都失败，返回空列表")
         return []
     
     async def _list_files_webdav(self, folder_path: str, music_extensions: set) -> List[Dict]:
@@ -227,7 +231,7 @@ class NextCloudClient:
                 return music_files
                 
             except Exception as e:
-                print(f"WebDAV file listing failed: {e}")
+                logger.error(f"WebDAV file listing failed: {e}")
                 return []
         
         # 在线程池中运行同步函数
@@ -237,7 +241,7 @@ class NextCloudClient:
     async def _list_files_ocs_api(self, folder_path: str, music_extensions: set) -> List[Dict]:
         """OCS API file listing (fallback method)."""
         # OCS API方法比较复杂，作为备用方案，这里返回空列表
-        print("OCS API method not fully implemented, using WebDAV instead")
+        logger.debug("OCS API method not fully implemented, using WebDAV instead")
         return []
 
     async def _list_files_simple_webdav(self, folder_path: str, music_extensions: set) -> List[Dict]:
@@ -273,7 +277,7 @@ class NextCloudClient:
                 )
                 
                 if response.status_code not in [200, 207]:
-                    print(f"Simple WebDAV PROPFIND failed with status {response.status_code}")
+                    logger.error(f"Simple WebDAV PROPFIND failed with status {response.status_code}")
                     return []
                 
                 # 解析XML响应
@@ -307,7 +311,7 @@ class NextCloudClient:
                 return music_files
                 
             except Exception as e:
-                print(f"Simple WebDAV file listing failed: {e}")
+                logger.error(f"Simple WebDAV file listing failed: {e}")
                 return []
         
         # 在线程池中运行同步函数
@@ -339,9 +343,9 @@ class NextCloudClient:
                 debug_info['request_url'] = url
                 auth = HTTPBasicAuth(self.username, self.password)
                 
-                print(f"🔍 [SYNC] 开始同步文件夹: {folder_path}")
-                print(f"🔗 [SYNC] 请求URL: {url}")
-                print(f"🎵 [SYNC] 目标音乐格式: {list(target_extensions)}")
+                logger.info(f"🔍 [SYNC] 开始同步文件夹: {folder_path}")
+                logger.debug(f"🔗 [SYNC] 请求URL: {url}")
+                logger.debug(f"🎵 [SYNC] 目标音乐格式: {list(target_extensions)}")
                 
                 propfind_body = """<?xml version="1.0"?>
 <d:propfind xmlns:d="DAV:">
@@ -367,16 +371,16 @@ class NextCloudClient:
                 )
                 
                 debug_info['response_status'] = response.status_code
-                print(f"📡 [SYNC] 服务器响应状态: {response.status_code}")
+                logger.debug(f"📡 [SYNC] 服务器响应状态: {response.status_code}")
                 
                 if response.status_code not in [200, 207]:
                     error_msg = f"PROPFIND failed with status {response.status_code}"
-                    print(f"❌ [SYNC] {error_msg}")
-                    print(f"📄 [SYNC] 响应内容: {response.text[:500]}")
+                    logger.error(f"❌ [SYNC] {error_msg}")
+                    logger.debug(f"📄 [SYNC] 响应内容: {response.text[:500]}")
                     return {'files': [], 'error': error_msg, 'debug': debug_info}
                 
                 # 解析XML响应
-                print(f"📄 [SYNC] 解析XML响应...")
+                logger.debug(f"📄 [SYNC] 解析XML响应...")
                 root = ET.fromstring(response.text)
                 music_files = []
                 
@@ -406,21 +410,21 @@ class NextCloudClient:
                         if resourcetype_elem is not None and resourcetype_elem.find('.//{DAV:}collection') is not None:
                             debug_info['directories_found'] += 1
                             item_info['is_directory'] = True
-                            print(f"📁 [SYNC] 发现目录: {file_name}")
+                            logger.debug(f"📁 [SYNC] 发现目录: {file_name}")
                             debug_info['all_files'].append(item_info)
                             continue
                         
                         # 这是文件
                         debug_info['files_found'] += 1
-                        print(f"📄 [SYNC] 发现文件: {file_name}")
+                        logger.debug(f"📄 [SYNC] 发现文件: {file_name}")
                         
                         # 检查文件扩展名
                         file_ext = ""
                         if file_name and '.' in file_name:
                             file_ext = '.' + file_name.split('.')[-1].lower()
                         
-                        print(f"🔍 [SYNC] 文件扩展名: '{file_ext}'")
-                        print(f"🎯 [SYNC] 是否匹配音乐格式: {file_ext in target_extensions}")
+                        logger.debug(f"🔍 [SYNC] 文件扩展名: '{file_ext}'")
+                        logger.debug(f"🎯 [SYNC] 是否匹配音乐格式: {file_ext in target_extensions}")
                         
                         # 检查是否是音乐文件
                         if file_name and any(file_name.lower().endswith(ext) for ext in target_extensions):
@@ -435,32 +439,32 @@ class NextCloudClient:
                                 'etag': etag_elem.text if etag_elem is not None else ''
                             }
                             music_files.append(music_file)
-                            print(f"🎵 [SYNC] 添加音乐文件: {file_name} (大小: {music_file['size']} bytes)")
+                            logger.debug(f"🎵 [SYNC] 添加音乐文件: {file_name} (大小: {music_file['size']} bytes)")
                         
                         debug_info['all_files'].append(item_info)
                 
                 # 打印总结信息
-                print(f"📊 [SYNC] 同步完成总结:")
-                print(f"   - 总项目数: {debug_info['total_items_found']}")
-                print(f"   - 目录数: {debug_info['directories_found']}")
-                print(f"   - 文件数: {debug_info['files_found']}")
-                print(f"   - 音乐文件数: {debug_info['music_files_found']}")
+                logger.info(f"📊 [SYNC] 同步完成总结:")
+                logger.info(f"   - 总项目数: {debug_info['total_items_found']}")
+                logger.info(f"   - 目录数: {debug_info['directories_found']}")
+                logger.info(f"   - 文件数: {debug_info['files_found']}")
+                logger.info(f"   - 音乐文件数: {debug_info['music_files_found']}")
                 
                 if debug_info['music_files_found'] == 0:
-                    print(f"⚠️ [SYNC] 未找到音乐文件！")
-                    print(f"   检查要点:")
-                    print(f"   1. 文件夹路径是否正确: '{folder_path}'")
-                    print(f"   2. 支持的音乐格式: {list(target_extensions)}")
-                    print(f"   3. 发现的所有文件:")
+                    logger.warning(f"⚠️ [SYNC] 未找到音乐文件！")
+                    logger.warning(f"   检查要点:")
+                    logger.warning(f"   1. 文件夹路径是否正确: '{folder_path}'")
+                    logger.warning(f"   2. 支持的音乐格式: {list(target_extensions)}")
+                    logger.debug(f"   3. 发现的所有文件:")
                     for item in debug_info['all_files']:
                         if not item['is_directory']:
-                            print(f"      - {item['name']}")
+                            logger.debug(f"      - {item['name']}")
                 
                 return {'files': music_files, 'error': None, 'debug': debug_info}
                 
             except Exception as e:
                 error_msg = f"同步异常: {str(e)}"
-                print(f"❌ [SYNC] {error_msg}")
+                logger.error(f"❌ [SYNC] {error_msg}")
                 return {'files': [], 'error': error_msg, 'debug': debug_info}
         
         # 在线程池中运行同步函数
@@ -471,7 +475,7 @@ class NextCloudClient:
     
     async def download_file(self, file_path: str, file_name: str,local_path: str=None) -> str:
         """Download a file from NextCloud with smart caching and multiple methods."""
-        print(f"📥 [NC_DOWNLOAD] download_file被调用: {file_path} -> {file_name}")
+        logger.info(f"📥 [NC_DOWNLOAD] download_file被调用: {file_path} -> {file_name}")
         
         try:
             # 生成缓存文件名（基于文件路径的hash）
@@ -483,11 +487,11 @@ class NextCloudClient:
             if local_path:
                 cached_path = Path(local_path)
             
-            print(f"💾 [NC_DOWNLOAD] 缓存路径: {cached_path}")
+            logger.debug(f"💾 [NC_DOWNLOAD] 缓存路径: {cached_path}")
             
             # 如果缓存文件存在且较新，直接返回
             if cached_path.exists():
-                print(f"✅ [NC_DOWNLOAD] 使用缓存文件: {cached_path}")
+                logger.info(f"✅ [NC_DOWNLOAD] 使用缓存文件: {cached_path}")
                 return str(cached_path)
             
             # 尝试不同的下载方法
@@ -497,77 +501,76 @@ class NextCloudClient:
                 self._download_shared_link
             ]
             
-            print(f"🔄 [NC_DOWNLOAD] 尝试 {len(download_methods)} 种下载方法")
+            logger.info(f"🔄 [NC_DOWNLOAD] 尝试 {len(download_methods)} 种下载方法")
             
             for i, method in enumerate(download_methods):
                 try:
-                    print(f"🌐 [NC_DOWNLOAD] 方法 {i+1}: {method.__name__}")
+                    logger.debug(f"🌐 [NC_DOWNLOAD] 方法 {i+1}: {method.__name__}")
                     content = await method(file_path, file_name)
                     if content:
-                        print(f"✅ [NC_DOWNLOAD] 方法 {method.__name__} 成功，内容大小: {len(content)} bytes")
+                        logger.info(f"✅ [NC_DOWNLOAD] 方法 {method.__name__} 成功，内容大小: {len(content)} bytes")
                         
                         # 保存到缓存目录
                         cached_path.parent.mkdir(parents=True, exist_ok=True)
                         with open(cached_path, 'wb') as f:
                             f.write(content)
                         
-                        print(f"💾 [NC_DOWNLOAD] 文件已保存到缓存: {cached_path}")
+                        logger.debug(f"💾 [NC_DOWNLOAD] 文件已保存到缓存: {cached_path}")
                       
-                        print(f"✅ [NC_DOWNLOAD] 使用 {method.__name__} 成功下载 {file_name}")
+                        logger.info(f"✅ [NC_DOWNLOAD] 使用 {method.__name__} 成功下载 {file_name}")
                         return str(cached_path)
                 except Exception as e:
-                    print(f"❌ [NC_DOWNLOAD] 方法 {method.__name__} 失败: {e}")
+                    logger.error(f"❌ [NC_DOWNLOAD] 方法 {method.__name__} 失败: {e}")
                     continue
             
             raise Exception("All download methods failed")
                     
         except Exception as e:
-            print(f"❌ [NC_DOWNLOAD] 下载文件失败 {file_name}: {e}")
-            import traceback
-            print(f"🔍 [NC_DOWNLOAD] 异常堆栈:\n{traceback.format_exc()}")
+            logger.error(f"❌ [NC_DOWNLOAD] 下载文件失败 {file_name}: {e}")
+            logger.debug(f"🔍 [NC_DOWNLOAD] 异常堆栈:\n{traceback.format_exc()}")
             raise
     
     async def _download_webdav(self, file_path: str, file_name: str) -> bytes:
         """Standard WebDAV download using requests."""
-        print(f"🌐 [WEBDAV] _download_webdav开始: {file_path}")
+        logger.debug(f"🌐 [WEBDAV] _download_webdav开始: {file_path}")
         
         def _sync_download():
             try:
                 download_url = f"{self.server_url}{file_path}"
-                print(f"🔗 [WEBDAV] 下载URL: {download_url}")
+                logger.debug(f"🔗 [WEBDAV] 下载URL: {download_url}")
                 
                 auth = HTTPBasicAuth(self.username, self.password)
-                print(f"🔐 [WEBDAV] 使用认证: {self.username}")
+                logger.debug(f"🔐 [WEBDAV] 使用认证: {self.username}")
                 
-                print(f"📡 [WEBDAV] 发送GET请求...")
+                logger.debug(f"📡 [WEBDAV] 发送GET请求...")
                 response = requests.get(
                     download_url,
                     auth=auth,
                     timeout=120
                 )
                 
-                print(f"📊 [WEBDAV] 响应状态: {response.status_code}")
-                print(f"📏 [WEBDAV] 内容长度: {len(response.content) if response.content else 0} bytes")
+                logger.debug(f"📊 [WEBDAV] 响应状态: {response.status_code}")
+                logger.debug(f"📏 [WEBDAV] 内容长度: {len(response.content) if response.content else 0} bytes")
                 
                 if response.status_code == 200:
-                    print(f"✅ [WEBDAV] 下载成功")
+                    logger.debug(f"✅ [WEBDAV] 下载成功")
                     return response.content
                 else:
                     error_msg = f"WebDAV download failed with status {response.status_code}"
-                    print(f"❌ [WEBDAV] {error_msg}")
-                    print(f"🔍 [WEBDAV] 响应内容: {response.text[:500]}")
+                    logger.error(f"❌ [WEBDAV] {error_msg}")
+                    logger.debug(f"🔍 [WEBDAV] 响应内容: {response.text[:500]}")
                     raise Exception(error_msg)
                     
             except Exception as e:
-                print(f"❌ [WEBDAV] 下载异常: {type(e).__name__}: {e}")
+                logger.error(f"❌ [WEBDAV] 下载异常: {type(e).__name__}: {e}")
                 raise
         
         # 在线程池中运行同步函数
-        print(f"🧵 [WEBDAV] 在线程池中执行下载")
+        logger.debug(f"🧵 [WEBDAV] 在线程池中执行下载")
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as executor:
             result = await loop.run_in_executor(executor, _sync_download)
-            print(f"✅ [WEBDAV] 线程池执行完成，数据大小: {len(result)} bytes")
+            logger.debug(f"✅ [WEBDAV] 线程池执行完成，数据大小: {len(result)} bytes")
             return result
 
     async def _download_direct_url(self, file_path: str, file_name: str) -> bytes:
@@ -626,7 +629,7 @@ class NextCloudClient:
                 return None
                 
             except Exception as e:
-                print(f"Error getting file info for {file_path}: {e}")
+                logger.error(f"Error getting file info for {file_path}: {e}")
                 return None
         
         # 在线程池中运行同步函数
@@ -648,65 +651,65 @@ class NextCloudClient:
         
         def _sync_diagnose():
             """同步诊断函数"""
-            print(f"🔍 Starting connection diagnosis for: {self.server_url}")
+            logger.info(f"🔍 Starting connection diagnosis for: {self.server_url}")
             
             try:
                 # 1. 基本服务器可达性测试
-                print("📡 Testing server reachability...")
+                logger.info("📡 Testing server reachability...")
                 try:
                     response = requests.head(self.server_url, timeout=10)
                     diagnosis['server_reachable'] = True
-                    print(f"✅ Server reachable: HTTP {response.status_code}")
+                    logger.info(f"✅ Server reachable: HTTP {response.status_code}")
                 except requests.exceptions.ConnectTimeout:
                     error_msg = "Server unreachable: Connection timeout"
                     diagnosis['errors'].append(error_msg)
-                    print(f"❌ {error_msg}")
+                    logger.error(f"❌ {error_msg}")
                     return diagnosis
                 except requests.exceptions.ConnectionError as e:
                     error_msg = f"Server unreachable: Connection failed - {str(e)}"
                     diagnosis['errors'].append(error_msg)
-                    print(f"❌ {error_msg}")
+                    logger.error(f"❌ {error_msg}")
                     return diagnosis
                 except Exception as e:
                     error_msg = f"Server unreachable: {str(e)}"
                     diagnosis['errors'].append(error_msg)
-                    print(f"❌ {error_msg}")
+                    logger.error(f"❌ {error_msg}")
                     return diagnosis
                 
                 # 2. SSL证书检查（仅针对HTTPS）
                 if self.server_url.startswith('https'):
-                    print("🔒 Testing SSL certificate...")
+                    logger.info("🔒 Testing SSL certificate...")
                     try:
                         response = requests.head(self.server_url, timeout=10, verify=True)
                         diagnosis['ssl_valid'] = True
-                        print("✅ SSL certificate valid")
+                        logger.info("✅ SSL certificate valid")
                     except requests.exceptions.SSLError as e:
                         diagnosis['errors'].append(f"SSL verification failed: {str(e)}")
-                        print(f"⚠️ SSL certificate issue (will use unverified connection): {e}")
+                        logger.warning(f"⚠️ SSL certificate issue (will use unverified connection): {e}")
                     except Exception as e:
                         diagnosis['errors'].append(f"SSL check failed: {str(e)}")
-                        print(f"⚠️ SSL check failed: {e}")
+                        logger.warning(f"⚠️ SSL check failed: {e}")
                 else:
                     diagnosis['ssl_valid'] = True  # HTTP不需要SSL
-                    print("ℹ️ Using HTTP (no SSL check needed)")
+                    logger.info("ℹ️ Using HTTP (no SSL check needed)")
                 
                 # 3. WebDAV端点测试
-                print("📁 Testing WebDAV endpoint...")
+                logger.info("📁 Testing WebDAV endpoint...")
                 try:
                     response = requests.request("OPTIONS", self.webdav_url, timeout=10)
                     if response.status_code in [200, 204, 401]:  # 401也表示端点存在
                         diagnosis['webdav_supported'] = True
-                        print(f"✅ WebDAV endpoint available: HTTP {response.status_code}")
+                        logger.info(f"✅ WebDAV endpoint available: HTTP {response.status_code}")
                     else:
                         diagnosis['errors'].append(f"WebDAV endpoint failed: HTTP {response.status_code}")
-                        print(f"❌ WebDAV endpoint failed: HTTP {response.status_code}")
+                        logger.error(f"❌ WebDAV endpoint failed: HTTP {response.status_code}")
                 except Exception as e:
                     diagnosis['errors'].append(f"WebDAV check failed: {str(e)}")
-                    print(f"❌ WebDAV check failed: {e}")
+                    logger.error(f"❌ WebDAV check failed: {e}")
                 
                 # 4. 认证测试
                 if diagnosis['webdav_supported']:
-                    print("🔐 Testing authentication...")
+                    logger.info("🔐 Testing authentication...")
                     try:
                         auth = HTTPBasicAuth(self.username, self.password)
                         response = requests.request(
@@ -719,20 +722,20 @@ class NextCloudClient:
                         if response.status_code in [200, 207]:
                             diagnosis['auth_valid'] = True
                             diagnosis['root_accessible'] = True
-                            print(f"✅ Authentication successful: HTTP {response.status_code}")
+                            logger.info(f"✅ Authentication successful: HTTP {response.status_code}")
                         elif response.status_code == 401:
                             diagnosis['errors'].append("Authentication failed: Invalid username or password")
-                            print("❌ Authentication failed: Invalid credentials")
+                            logger.error("❌ Authentication failed: Invalid credentials")
                         else:
                             diagnosis['errors'].append(f"Auth check failed: HTTP {response.status_code}")
-                            print(f"❌ Authentication failed: HTTP {response.status_code}")
+                            logger.error(f"❌ Authentication failed: HTTP {response.status_code}")
                     except Exception as e:
                         diagnosis['errors'].append(f"Auth check failed: {str(e)}")
-                        print(f"❌ Authentication test failed: {e}")
+                        logger.error(f"❌ Authentication test failed: {e}")
             
             except Exception as e:
                 diagnosis['errors'].append(f"Diagnosis failed: {str(e)}")
-                print(f"❌ Diagnosis failed: {e}")
+                logger.error(f"❌ Diagnosis failed: {e}")
             
             return diagnosis
         
@@ -799,7 +802,7 @@ class NextCloudClient:
                 self.temp_dir.mkdir(exist_ok=True)
                 
         except Exception as e:
-            print(f"Error clearing cache: {e}")
+            logger.error(f"Error clearing cache: {e}")
     
     def get_cache_size(self) -> int:
         """获取缓存大小（字节）"""
@@ -809,7 +812,7 @@ class NextCloudClient:
                 if file_path.is_file():
                     total_size += file_path.stat().st_size
         except Exception as e:
-            print(f"Error calculating cache size: {e}")
+            logger.error(f"Error calculating cache size: {e}")
         return total_size
     
     def format_cache_size(self) -> str:

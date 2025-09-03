@@ -10,6 +10,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def _serialize_for_json(obj):
+    """将对象序列化为JSON兼容格式"""
+    if isinstance(obj, Path):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {k: _serialize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_serialize_for_json(item) for item in obj]
+    else:
+        return obj
+
 class ConfigManager:
     """配置管理器，负责持久化配置和数据"""
     
@@ -163,48 +174,53 @@ class ConfigManager:
                 return Path('.')
 
     def get_cache_directory(self) -> Path:
-        """获取缓存目录路径 - 用于存储下载的音乐文件"""
+        """获取缓存目录路径 - 用于存储下载的音乐文件
+        
+        ⚠️ iOS重要修改：现在使用Documents目录实现音乐文件持久化
+        这样可以确保iOS应用升级时音乐文件不会丢失
+        """
         try:
             import sys
             
-            # iOS环境中使用Documents/Cache目录（更稳定的访问权限）
+            # 🎵 iOS环境中使用Documents/music目录（持久化存储）
             if sys.platform == 'ios' or 'iOS' in str(sys.platform):
                 try:
                     import toga
                     if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
-                        if hasattr(toga.App.app.paths, 'cache'):
-                            cache_dir = toga.App.app.paths.cache / self.app_name
-                            cache_dir.mkdir(parents=True, exist_ok=True)
-                            return cache_dir
-                        elif hasattr(toga.App.app.paths, 'data'):
-                            cache_dir = toga.App.app.paths.data / self.app_name / 'cache'
-                            cache_dir.mkdir(parents=True, exist_ok=True)
-                            return cache_dir
+                        if hasattr(toga.App.app.paths, 'data'):
+                            # 优先使用data目录下的music子目录（持久化）
+                            music_dir = toga.App.app.paths.data / self.app_name / 'music'
+                            music_dir.mkdir(parents=True, exist_ok=True)
+                            logger.info(f"🎵 iOS音乐存储目录（data持久化）: {music_dir}")
+                            return music_dir
                         elif hasattr(toga.App.app.paths, 'app'):
-                            # 使用Documents/cache目录
-                            cache_dir = toga.App.app.paths.app / 'Documents' / self.app_name / 'cache'
-                            cache_dir.mkdir(parents=True, exist_ok=True)
-                            return cache_dir
+                            # 使用Documents/music目录（持久化）
+                            music_dir = toga.App.app.paths.app / 'Documents' / self.app_name / 'music'
+                            music_dir.mkdir(parents=True, exist_ok=True)
+                            logger.info(f"🎵 iOS音乐存储目录（Documents持久化）: {music_dir}")
+                            return music_dir
                 except Exception as e:
-                    logger.warning(f"无法获取iOS缓存路径: {e}")
+                    logger.warning(f"无法获取iOS持久化音乐路径: {e}")
                 
-                # iOS备用方案：使用相对路径
+                # iOS备用方案：使用相对路径下的Documents/music目录
                 try:
                     current_dir = Path.cwd()
-                    cache_dir = current_dir / 'Documents' / self.app_name / 'cache'
-                    cache_dir.mkdir(parents=True, exist_ok=True)
-                    return cache_dir
+                    music_dir = current_dir / 'Documents' / self.app_name / 'music'
+                    music_dir.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"🎵 iOS音乐存储备用目录: {music_dir}")
+                    return music_dir
                 except Exception as e:
-                    logger.warning(f"iOS缓存备用方案失败: {e}")
+                    logger.warning(f"iOS音乐存储备用方案失败: {e}")
                     # 最终备用方案
-                    cache_dir = Path('.') / f'{self.app_name}_cache'
+                    music_dir = Path('.') / f'{self.app_name}_music'
                     try:
-                        cache_dir.mkdir(parents=True, exist_ok=True)
-                        return cache_dir
+                        music_dir.mkdir(parents=True, exist_ok=True)
+                        logger.info(f"🎵 iOS音乐存储最终备用目录: {music_dir}")
+                        return music_dir
                     except:
                         return Path('.')
             
-            # 桌面平台的缓存目录
+            # 桌面平台保持原有缓存逻辑
             if os.name == 'nt':  # Windows
                 cache_dir = Path(os.environ.get('LOCALAPPDATA', '')) / self.app_name / 'Cache'
             elif os.name == 'posix':  # macOS/Linux
@@ -390,21 +406,40 @@ class ConfigManager:
     
     def load_playlists(self) -> Dict[str, Any]:
         """加载播放列表缓存"""
+        playlist_file = self.config_dir / "playlists.json"
+        
         try:
-            playlist_file = self.config_dir / "playlists.json"
             if playlist_file.exists():
                 with open(playlist_file, 'r', encoding='utf-8') as f:
                     playlists_data = json.load(f)
                 logger.info("播放列表缓存已加载")
                 return playlists_data
+        except json.JSONDecodeError as e:
+            logger.error(f"播放列表缓存文件损坏: {e}")
+            # 备份损坏的文件
+            try:
+                backup_file = playlist_file.with_suffix('.json.backup')
+                playlist_file.rename(backup_file)
+                logger.info(f"已备份损坏的播放列表文件到: {backup_file}")
+            except Exception as backup_error:
+                logger.error(f"备份损坏文件失败: {backup_error}")
         except Exception as e:
             logger.error(f"加载播放列表缓存失败: {e}")
         
-        return {
+        # 返回默认结构
+        default_data = {
             "playlists": [],
             "current_playlist_id": None,
             "next_id": 1
         }
+        
+        # 尝试保存默认结构到新文件
+        try:
+            self.save_playlists(default_data)
+        except Exception as e:
+            logger.error(f"保存默认播放列表失败: {e}")
+        
+        return default_data
 
     def save_playlists(self, playlists_data: Dict[str, Any]) -> None:
         """保存播放列表缓存"""
@@ -413,9 +448,12 @@ class ConfigManager:
             # 更新保存时间
             playlists_data["last_updated"] = datetime.now().isoformat()
             
+            # 序列化所有Path对象
+            serialized_data = _serialize_for_json(playlists_data)
+            
             playlist_file = self.config_dir / "playlists.json"
             with open(playlist_file, 'w', encoding='utf-8') as f:
-                json.dump(playlists_data, f, indent=2, ensure_ascii=False)
+                json.dump(serialized_data, f, indent=2, ensure_ascii=False)
             logger.info("播放列表缓存已保存")
         except Exception as e:
             logger.error(f"保存播放列表缓存失败: {e}")
@@ -534,3 +572,117 @@ class ConfigManager:
                 self._deep_merge(target[key], value)
             else:
                 target[key] = value
+
+    def get_temp_cache_directory(self) -> Path:
+        """获取真正的临时缓存目录 - 用于临时文件和正在下载的文件
+        
+        这个目录在iOS升级时会被清理，适合存储临时文件
+        """
+        try:
+            import tempfile
+            import sys
+            
+            # iOS环境中使用系统临时目录
+            if sys.platform == 'ios' or 'iOS' in str(sys.platform):
+                try:
+                    import toga
+                    if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
+                        if hasattr(toga.App.app.paths, 'cache'):
+                            temp_dir = toga.App.app.paths.cache / self.app_name / 'temp'
+                            temp_dir.mkdir(parents=True, exist_ok=True)
+                            return temp_dir
+                except:
+                    pass
+                    
+                # 使用系统临时目录
+                temp_dir = Path(tempfile.gettempdir()) / self.app_name / 'temp'
+            else:
+                temp_dir = Path(tempfile.gettempdir()) / self.app_name / 'temp'
+                
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            return temp_dir
+            
+        except Exception as e:
+            logger.warning(f"无法创建临时缓存目录: {e}")
+            return Path('.')
+
+    def get_music_directory(self) -> Path:
+        """获取音乐文件存储目录 - iOS版本使用持久化存储
+        
+        这个方法专门用于音乐文件存储，确保在iOS升级时不会丢失
+        """
+        return self.get_cache_directory()  # 现在get_cache_directory在iOS上返回持久化目录
+
+    def migrate_music_files_to_persistent_storage(self) -> bool:
+        """将音乐文件从临时缓存目录迁移到持久化存储目录
+        
+        在iOS升级后首次启动时调用此方法
+        """
+        try:
+            import sys
+            import shutil
+            
+            # 只在iOS上执行迁移
+            if not (sys.platform == 'ios' or 'iOS' in str(sys.platform)):
+                return True
+                
+            # 获取新的持久化目录和旧的缓存目录
+            new_music_dir = self.get_music_directory()
+            old_cache_dir = self.get_temp_cache_directory()
+            
+            # 检查是否有旧的音乐文件需要迁移
+            old_music_files = []
+            if old_cache_dir.exists():
+                for file_path in old_cache_dir.rglob('*.mp3'):
+                    old_music_files.append(file_path)
+                for file_path in old_cache_dir.rglob('*.m4a'):
+                    old_music_files.append(file_path)
+                for file_path in old_cache_dir.rglob('*.wav'):
+                    old_music_files.append(file_path)
+                for file_path in old_cache_dir.rglob('*.flac'):
+                    old_music_files.append(file_path)
+            
+            if not old_music_files:
+                logger.info("没有发现需要迁移的音乐文件")
+                return True
+            
+            # 执行迁移
+            migrated_count = 0
+            for old_file in old_music_files:
+                try:
+                    new_file = new_music_dir / old_file.name
+                    if not new_file.exists():
+                        shutil.move(str(old_file), str(new_file))
+                        migrated_count += 1
+                        logger.info(f"已迁移音乐文件: {old_file.name}")
+                except Exception as e:
+                    logger.warning(f"迁移文件失败 {old_file.name}: {e}")
+            
+            logger.info(f"🎵 音乐文件迁移完成，共迁移 {migrated_count} 个文件到持久化存储")
+            return True
+            
+        except Exception as e:
+            logger.error(f"音乐文件迁移失败: {e}")
+            return False
+
+    def check_and_create_persistent_directories(self) -> None:
+        """检查并创建所有必要的持久化目录"""
+        try:
+            # 确保配置目录存在
+            self.config_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 确保音乐目录存在
+            music_dir = self.get_music_directory()
+            music_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 确保日志目录存在
+            log_dir = self.get_log_directory()
+            log_dir.mkdir(parents=True, exist_ok=True)
+            
+            logger.info(f"持久化目录结构已创建:")
+            logger.info(f"  - 配置目录: {self.config_dir}")
+            logger.info(f"  - 音乐目录: {music_dir}")
+            logger.info(f"  - 日志目录: {log_dir}")
+            
+        except Exception as e:
+            logger.error(f"创建持久化目录失败: {e}")

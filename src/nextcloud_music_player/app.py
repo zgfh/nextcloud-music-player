@@ -46,6 +46,16 @@ class NextCloudMusicPlayer(toga.App):
         from .config_manager import ConfigManager
         self.config_manager = ConfigManager()
         
+        # 🎵 iOS持久化检查和迁移
+        self.config_manager.check_and_create_persistent_directories()
+        
+        # 尝试迁移音乐文件到持久化存储（iOS升级后首次启动）
+        migration_success = self.config_manager.migrate_music_files_to_persistent_storage()
+        if migration_success:
+            self.logger.info("✅ 音乐文件持久化迁移检查完成")
+        else:
+            self.logger.warning("⚠️ 音乐文件迁移过程中出现问题")
+        
         # 初始化核心组件
         self.nextcloud_client = None
         self.music_library = MusicLibrary()
@@ -103,8 +113,9 @@ class NextCloudMusicPlayer(toga.App):
             try:
                 handlers.append(logging.FileHandler(str(log_file)))
             except (PermissionError, OSError) as e:
-                print(f"⚠️ 无法创建日志文件 {log_file}: {e}")
-                print("📝 将仅使用控制台日志输出")
+                # 此时还没有logger，暂时使用print，但后面会被logger替代
+                logging.warning(f"⚠️ 无法创建日志文件 {log_file}: {e}")
+                logging.info("📝 将仅使用控制台日志输出")
             
             logging.basicConfig(
                 level=logging.INFO,
@@ -116,9 +127,9 @@ class NextCloudMusicPlayer(toga.App):
             
         except Exception as e:
             # 如果所有日志设置都失败，至少设置基本控制台日志
-            print(f"❌ 设置日志系统失败: {e}")
             logging.basicConfig(level=logging.INFO)
             self.logger = logging.getLogger(__name__)
+            self.logger.error(f"❌ 设置日志系统失败: {e}")
             self.logger.error(f"日志系统设置失败，使用基本配置: {e}")
 
 
@@ -154,7 +165,7 @@ class NextCloudMusicPlayer(toga.App):
             self._pending_ui_updates.append(task)
             self.logger.debug("已添加到待处理更新列表")
         except Exception as e:
-            print(f"❌ [TASK] 无法执行后台任务: {e}")
+            self.logger.error(f"❌ [TASK] 无法执行后台任务: {e}")
 
 
 

@@ -208,6 +208,10 @@ class MusicService:
     async def download_file(self, file_path: str, filename: str) -> bool:
         """下载文件"""
         try:
+            if self.is_file_cached(filename):
+                logger.info(f"文件已缓存，无需下载: {filename}")
+                return True
+            
             local_path = self.music_library.music_dir / filename
             if not self.nextcloud_client:
                 raise Exception("NextCloud客户端未连接")

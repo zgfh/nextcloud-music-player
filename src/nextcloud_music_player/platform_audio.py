@@ -429,12 +429,18 @@ class iOSAudioPlayer:
     def load(self, file_path: str) -> bool:
         """加载音频文件"""
         try:
-            if not os.path.exists(file_path):
-                logger.error(f"音频文件不存在: {file_path}")
+            # 确保文件路径是字符串格式
+            if hasattr(file_path, '__fspath__'):
+                file_path_str = os.fspath(file_path)
+            else:
+                file_path_str = str(file_path)
+            
+            if not os.path.exists(file_path_str):
+                logger.error(f"音频文件不存在: {file_path_str}")
                 return False
             
-            # 创建NSURL
-            file_url = self.NSURL.fileURLWithPath(self.NSString.stringWithString(file_path))
+            # 创建NSURL - 确保传入字符串
+            file_url = self.NSURL.fileURLWithPath(self.NSString.stringWithString(file_path_str))
             logger.debug(f"iOS load: 创建文件URL: {file_url}")
             
             # 创建AVAudioPlayer

@@ -4,10 +4,13 @@ Music library management for the NextCloud Music Player.
 
 import os
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 from .config_manager import ConfigManager
+
+logger = logging.getLogger(__name__)
 
 
 class MusicLibrary:
@@ -47,16 +50,19 @@ class MusicLibrary:
         # 如果不存在则更新
         if song_name in self.songs:
             return
-        self.songs[song_name] = {
-            **song_info,
-            'filename': song_name,
-            'remote_path': remote_path,
-            'size': size,
-            'modified': modified,
-            'etag': etag,
-            'is_downloaded': False,
-            'filepath': None  # Will be set when downloaded
-        }
+        if song_name in self.songs:
+            self.update_remote_song(song_name, song_info)
+        else:
+            self.songs[song_name] = {
+                **song_info,
+                'filename': song_name,
+                'remote_path': remote_path,
+                'size': size,
+                'modified': modified,
+                'etag': etag,
+                'is_downloaded': False,
+                'filepath': "初始化为音乐"  # Will be set when downloaded
+            }
         self.save_music_list()
 
     def update_remote_song(self, song_name: str, file_info: Dict) -> None:
@@ -67,8 +73,6 @@ class MusicLibrary:
                 'size': file_info.get('size', 0),
                 'modified': file_info.get('modified', ''),
                 'etag': file_info.get('etag', ''),
-                'is_downloaded': False,  # Mark for re-download
-                'filepath': None
             })
             self.save_music_list()
 
@@ -82,19 +86,33 @@ class MusicLibrary:
 
     def is_song_downloaded(self, song_name: str) -> bool:
         """Check if a song is downloaded locally."""
-        song = self.songs.get(song_name)
+        song = self.get_song_info(song_name)
         if not song:
             return False
 
         # Check if marked as downloaded and file exists
         is_downloaded = song.get('is_downloaded', False)
         filepath = song.get('filepath')
+        logger.info(f"Checking download status for song: {song_name}")
 
         if is_downloaded and filepath and os.path.exists(filepath):
+            logger.info(f"Song '{song_name}' is downloaded.")
+            return True
+        
+        if not filepath:
+            filepath = str(self.music_dir / song_name)
+            logger.info(f"Using default music directory for song: {filepath}")
+
+        if filepath and os.path.exists(filepath):
+            logger.info(f"Song '{song_name}' is now marked as downloaded.")
+            self.songs[song_name]['filepath'] = str(filepath)
+            self.songs[song_name]['is_downloaded'] = True
+            self.save_music_list()
             return True
 
         # If file doesn't exist, mark as not downloaded
         if song_name in self.songs:
+            logger.info(f"Song '{song_name}' is not downloaded. Changing is_downloaded to False.")
             self.songs[song_name]['is_downloaded'] = False
             self.songs[song_name]['filepath'] = None
             self.save_music_list()
@@ -107,7 +125,12 @@ class MusicLibrary:
 
     def get_song_info(self, song_name: str) -> Optional[Dict]:
         """Get song information."""
-        return self.songs.get(song_name)
+        song=self.songs.get(song_name)
+        if not song:
+            logger.info(f"Song '{song_name}' not found in library.")
+            self.load_music_list()
+            song=self.songs.get(song_name)
+        return 
 
     def extract_song_info_from_filename(self, filename: str) -> Dict:
         """Extract song info from filename."""
@@ -141,14 +164,19 @@ class MusicLibrary:
 
     def get_song_path(self, song_name: str) -> str:
         """Get the file path for a song."""
-        song_info = self.songs.get(song_name, {})
-        return song_info.get('filepath', "")
+        song_info = self.get_song_info(song_name)
+        logger.info(f"Getting file path for song: {song_name}, info: {song_info}")
+        filepath = song_info.get('filepath', "")
+        # 确保返回字符串格式的路径
+        if hasattr(filepath, '__fspath__'):
+            return os.fspath(filepath)
+        return str(filepath)
 
     def get_local_file_path(self, song_name: str) -> Optional[str]:
         """Get the local file path for a song if it's downloaded."""
-        song_info = self.songs.get(song_name, {})
-        if song_info.get('is_downloaded', False):
-            return song_info.get('filepath', "")
+        if self.is_song_downloaded(song_name):
+            
+            return self.get_song_path(song_name)
         return None
 
     def get_song_info(self, song_name: str) -> Dict:
@@ -210,11 +238,50 @@ class MusicLibrary:
             try:
                 self.music_list_file.unlink()
             except Exception as e:
-                print(f"Failed to delete music list file: {e}")
+                logger.error(f"Failed to delete music list file: {e}")
 
     def get_songs_count(self) -> int:
         """Get the number of songs in the library."""
         return len(self.songs)
+
+    def _make_json_serializable(self, obj):
+        """Convert objects to JSON serializable format."""
+        if isinstance(obj, Path):
+            return str(obj)
+        elif isinstance(obj, dict):
+            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        else:
+            return obj
+
+    def save_music_list(self) -> None:
+        """Save the music list to file."""
+        try:
+            # 确保所有数据都可以序列化
+            serializable_songs = self._make_json_serializable(self.songs)
+            
+            music_data = {
+                "music_list": serializable_songs,
+                "last_sync": datetime.now().isoformat(),
+                "sync_folder": getattr(self, 'sync_folder', ''),
+                "cache_stats": {
+                    "total_songs": len(self.songs),
+                    "downloaded_songs": len([s for s in self.songs.values() if s.get('is_downloaded', False)]),
+                    "cache_size": self._calculate_cache_size()
+                }
+            }
+
+            with open(self.music_list_file, 'w', encoding='utf-8') as f:
+                json.dump(music_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save music list: {e}")
+            logger.error(f"Error details: {str(e)}")
+            # 打印problematic data for debugging
+            for song_name, song_info in self.songs.items():
+                for key, value in song_info.items():
+                    if isinstance(value, Path):
+                        logger.error(f"Found Path object in song {song_name}, key {key}: {value}")
 
     def save_music_list(self) -> None:
         """Save the music list to file."""
@@ -233,7 +300,7 @@ class MusicLibrary:
             with open(self.music_list_file, 'w', encoding='utf-8') as f:
                 json.dump(music_data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"Failed to save music list: {e}")
+            logger.error(f"Failed to save music list: {e}")
 
     def load_music_list(self) -> None:
         """Load the music list from file."""
@@ -241,38 +308,12 @@ class MusicLibrary:
             if self.music_list_file.exists():
                 with open(self.music_list_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-
-                # 兼容旧格式 - 如果直接是歌曲字典，转换为新格式
-                if isinstance(data, dict) and "music_list" in data:
                     self.songs = data["music_list"]
                     self.sync_folder = data.get("sync_folder", "")
-                else:
-                    # 旧格式，直接是歌曲字典
-                    self.songs = data
-                    self.sync_folder = ""
-
-                # 验证缓存的文件是否仍然存在（仅检查已下载的文件）
-                valid_songs = {}
-                for name, info in self.songs.items():
-                    # 如果是已下载的歌曲，检查文件是否存在
-                    if info.get('is_downloaded', False):
-                        if os.path.exists(info.get('filepath', '')):
-                            valid_songs[name] = info
-                        else:
-                            # 文件不存在，标记为未下载
-                            info['is_downloaded'] = False
-                            info['filepath'] = None
-                            valid_songs[name] = info
-                    else:
-                        # 未下载的远程歌曲，保留在库中
-                        valid_songs[name] = info
-
-                if len(valid_songs) != len(self.songs):
-                    self.songs = valid_songs
-                    self.save_music_list()
+                    logger.info(f"Loaded {len(self.songs)} songs from music list.")
 
         except Exception as e:
-            print(f"Failed to load music list: {e}")
+            logger.error(f"Failed to load music list: {e}")
             self.songs = {}
             self.sync_folder = ""
 

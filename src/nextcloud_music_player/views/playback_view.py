@@ -1198,14 +1198,8 @@ class PlaybackView:
                 return
                 
             # 尝试多种方法获取本地文件路径
-            filepath = None
-            
-            # 通过music_service获取
-            if not filepath and music_service.has_song(song_name):
-                potential_path = music_service.get_local_file_path(song_name)
-                if potential_path and os.path.exists(potential_path):
-                    filepath = potential_path
-                    logger.info(f"使用music_service查询的路径: {filepath}")
+            filepath = music_service.get_local_file_path(song_name)
+            logger.info(f"使用music_service查询的路径: {filepath}")
             
             # 如果找到了本地文件，直接播放
             if filepath and os.path.exists(filepath):

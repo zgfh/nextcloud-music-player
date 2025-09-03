@@ -167,7 +167,11 @@ class PlaybackService:
     
     def set_current_song(self, song_path: str):
         """设置当前播放歌曲"""
-        self.current_song = song_path
+        # 确保路径是字符串格式，处理Path对象
+        if hasattr(song_path, '__fspath__'):
+            self.current_song = os.fspath(song_path)
+        else:
+            self.current_song = str(song_path)
     
     def get_current_song(self) -> Optional[str]:
         """获取当前播放歌曲路径"""
