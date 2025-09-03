@@ -230,6 +230,54 @@ class PlaylistManager:
         except Exception as e:
             logger.error(f"添加歌曲到播放列表失败: {e}")
             return False
+
+    def add_songs_to_current_playlist_batch(self, song_infos: List[Dict[str, Any]]) -> int:
+        """批量添加歌曲到当前播放列表，返回实际添加的歌曲数量"""
+        try:
+            current_playlist = self.get_current_playlist()
+            if not current_playlist:
+                current_playlist = self.create_default_playlist_if_needed()
+            
+            existing_songs = current_playlist.get('songs', [])
+            existing_names = {song.get('name', '') for song in existing_songs}
+            
+            added_count = 0
+            
+            # 批量添加歌曲
+            for song_info in song_infos:
+                song_name = song_info.get('name', '')
+                
+                # 检查歌曲是否已存在
+                if song_name in existing_names:
+                    logger.debug(f"歌曲已存在于播放列表中，跳过: {song_name}")
+                    continue
+                
+                # 创建歌曲条目
+                song_entry = {
+                    "name": song_name,
+                    "info": song_info,
+                    "state": {
+                        "play_count": 0,
+                        "is_favorite": False,
+                        "last_played": None
+                    }
+                }
+                
+                # 添加到播放列表
+                current_playlist.setdefault('songs', []).append(song_entry)
+                existing_names.add(song_name)
+                added_count += 1
+            
+            # 只保存一次播放列表
+            if added_count > 0:
+                self.save_current_playlist(current_playlist)
+                logger.info(f"批量添加 {added_count} 首歌曲到播放列表")
+            
+            return added_count
+            
+        except Exception as e:
+            logger.error(f"批量添加歌曲到播放列表失败: {e}")
+            return 0
     
     def remove_song_from_current_playlist(self, index: int) -> bool:
         """从当前播放列表移除歌曲"""

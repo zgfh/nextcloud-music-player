@@ -315,7 +315,7 @@ class PlaybackView:
             logger.info(f"播放列表发生改变: {change_type}")
             
             # 根据改变类型执行相应操作
-            if change_type in ["song_added", "song_removed", "cleared", "playlist_created"]:
+            if change_type in ["song_added", "song_removed", "cleared", "playlist_created", "songs_added_batch"]:
                 # 更新当前播放列表数据缓存
                 self.current_playlist_data = self.playlist_manager.get_current_playlist()
                 
@@ -927,18 +927,15 @@ class PlaybackView:
                 # 先清空当前播放列表
                 self.playlist_manager.clear_current_playlist()
                 
-                # 添加所有歌曲到播放列表
-                for music_file in music_files:
-                    self.playlist_component.add_song_to_playlist(music_file)
+                # 使用批量添加方法，一次性添加所有歌曲
+                added_count = self.playlist_component.add_songs_to_playlist_batch(music_files)
+                logger.info(f"批量添加完成，实际添加 {added_count} 首歌曲")
                 
                 # 设置播放索引
                 current_playlist = self.playlist_manager.get_current_playlist()
                 if current_playlist and 0 <= start_index < len(music_files):
                     current_playlist['current_index'] = start_index
                     self.playlist_manager.save_current_playlist(current_playlist)
-                
-                # 刷新播放列表显示
-                self.playlist_component.refresh_display()
                 
                 # 自动播放第一首歌曲（如果启用了自动播放）
                 auto_play = self.app.config_manager.get("player.auto_play_on_select", True)
@@ -950,4 +947,5 @@ class PlaybackView:
             
         except Exception as e:
             logger.error(f"处理播放选中歌曲请求失败: {e}")
+            self.show_message(f"播放失败: {str(e)}", "error")
     

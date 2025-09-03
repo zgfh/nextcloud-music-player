@@ -389,6 +389,21 @@ class PlaylistViewComponent:
         except Exception as e:
             logger.error(f"添加歌曲到播放列表失败: {e}")
             return False
+
+    def add_songs_to_playlist_batch(self, song_infos: List[Dict[str, Any]]) -> int:
+        """批量添加歌曲到播放列表，返回实际添加的歌曲数量"""
+        try:
+            added_count = self.playlist_manager.add_songs_to_current_playlist_batch(song_infos)
+            if added_count > 0:
+                # 只刷新一次显示
+                self.refresh_display()
+                if self.on_playlist_change_callback:
+                    self.on_playlist_change_callback("songs_added_batch")
+                logger.info(f"批量添加完成，共添加 {added_count} 首歌曲")
+            return added_count
+        except Exception as e:
+            logger.error(f"批量添加歌曲到播放列表失败: {e}")
+            return 0
     
     def create_playlist_from_folder(self, folder_path: str, name: str = None) -> bool:
         """从文件夹创建播放列表"""
