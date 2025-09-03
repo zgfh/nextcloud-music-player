@@ -14,6 +14,8 @@ import os
 import json
 from datetime import datetime
 from ..services.playback_service import PlaybackService
+from ..services.playlist_manager import PlaylistManager
+from .components.playlist_component import PlaylistViewComponent
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,20 @@ class PlaybackView:
             add_background_task_callback=app.add_background_task
         )
         
+        # 初始化播放列表管理器
+        self.playlist_manager = PlaylistManager(
+            config_manager=app.config_manager,
+            music_service=getattr(app, 'music_service', None)
+        )
+        
+        # 初始化播放列表视图组件
+        self.playlist_component = PlaylistViewComponent(
+            app=app,
+            playlist_manager=self.playlist_manager,
+            on_song_select_callback=self.on_playlist_song_selected,
+            on_playlist_change_callback=self.on_playlist_changed
+        )
+        
         # 设置播放控制回调
         self.playback_service.set_playback_callbacks(
             pause_callback=None,  # 由服务自己处理
@@ -56,8 +72,8 @@ class PlaybackView:
         self.playback_service.set_play_mode_by_string("repeat_one")
         logger.info("初始化播放模式为单曲循环")
         
-        # 播放列表管理
-        self.current_playlist_data = None  # 当前播放列表数据
+        # 播放列表管理 - 由播放列表管理器和组件处理
+        self.current_playlist_data = None  # 当前播放列表数据（保留以供兼容）
         self.current_song_info = None      # 当前歌曲信息（从 music_list.json 获取）
         self.current_song_state = {        # 当前歌曲播放状态
             'is_playing': False,
@@ -80,8 +96,7 @@ class PlaybackView:
         # 更新播放模式按钮状态（初始化为单曲循环）
         self.update_playmode_buttons()
         
-        # 加载当前播放列表
-        self.load_current_playlist()
+        # 播放列表组件会自动处理初始化和加载
     
     
     def build_interface(self):
@@ -128,8 +143,8 @@ class PlaybackView:
         # 音量和播放模式组合区域
         self.create_volume_and_mode_section()
         
-        # 播放列表区域
-        self.create_playlist_section()
+        # 播放列表区域 - 使用播放列表组件
+        self.playlist_box = self.playlist_component.get_widget()
         
         # 组装界面
         content_box.add(title)
@@ -143,6 +158,79 @@ class PlaybackView:
         """更新服务依赖 - 当app的服务实例更新时调用"""
         if hasattr(self.app, 'music_service'):
             self.playback_service.music_service = self.app.music_service
+            self.playlist_manager.music_service = self.app.music_service
+    
+    def on_playlist_song_selected(self, song_entry: Dict[str, Any], index: int):
+        """播放列表歌曲选择回调"""
+        try:
+            song_info = song_entry.get('info', {})
+            logger.info(f"播放列表选择歌曲: {song_info.get('name', '未知')} (索引: {index})")
+            
+            # 更新当前歌曲信息
+            self.current_song_info = song_info
+            self.update_current_song_info()
+            
+            # 如果设置了自动播放，则开始播放
+            auto_play = self.app.config_manager.get("player.auto_play_on_select", True)
+            if auto_play:
+                self.app.add_background_task(self.play_selected_song(song_info))
+                
+        except Exception as e:
+            logger.error(f"处理播放列表歌曲选择失败: {e}")
+    
+    def on_playlist_changed(self, change_type: str):
+        """播放列表改变回调"""
+        try:
+            logger.info(f"播放列表发生改变: {change_type}")
+            
+            # 根据改变类型执行相应操作
+            if change_type in ["song_added", "song_removed", "cleared", "playlist_created"]:
+                # 更新当前播放列表数据缓存
+                self.current_playlist_data = self.playlist_manager.get_current_playlist()
+                
+                # 如果播放列表被清空，停止播放
+                if change_type == "cleared":
+                    self.app.add_background_task(self.stop_music())
+                    
+        except Exception as e:
+            logger.error(f"处理播放列表改变失败: {e}")
+    
+    async def play_selected_song(self, song_info: Dict[str, Any]):
+        """播放选中的歌曲"""
+        try:
+            # 如果歌曲已下载，直接播放本地文件
+            if song_info.get('is_downloaded') and song_info.get('filepath'):
+                local_path = song_info['filepath']
+                if os.path.exists(local_path):
+                    await self.play_music_file(local_path)
+                    return
+            
+            # 否则需要先下载
+            song_name = song_info.get('name', '')
+            if self.app.music_service:
+                await self.app.play_music(song_name)
+            
+        except Exception as e:
+            logger.error(f"播放选中歌曲失败: {e}")
+    
+    async def play_music_file(self, file_path: str):
+        """播放音乐文件"""
+        try:
+            # 设置当前歌曲
+            self.playback_service.set_current_song(file_path)
+            
+            # 开始播放
+            await self.playback_service.play_music()
+            
+            # 更新播放状态
+            self.current_song_state['is_playing'] = True
+            self.current_song_state['is_paused'] = False
+            
+            # 更新UI
+            self.update_ui()
+            
+        except Exception as e:
+            logger.error(f"播放音乐文件失败: {e}")
             
     def show_message(self, message: str, message_type: str = "info"):
         """显示消息提示"""
@@ -272,44 +360,36 @@ class PlaybackView:
     def update_current_song_info(self):
         """更新当前歌曲信息（从music_library获取详细信息）"""
         try:
-            # 获取当前播放的歌曲条目
-            current_song = self.get_current_song_entry()
+            # 使用播放列表组件获取当前歌曲信息
+            current_song = self.playlist_component.get_current_song_info()
             if not current_song:
                 self.current_song_info = None
                 return
             
-            # 获取歌曲名称
-            song_name = current_song.get('name')
+            # 获取歌曲名称和信息
+            song_info = current_song.get('info', {})
+            song_name = current_song.get('name') or song_info.get('name')
+            
             if not song_name:
                 self.current_song_info = None
                 return
             
-            # 从music_library获取详细信息
+            # 从music_library获取详细信息（如果可用）
             music_library = getattr(self.app, 'music_library', None)
             if music_library:
-                song_info = music_library.get_song_info(song_name)
-                if song_info:
-                    self.current_song_info = song_info
+                detailed_info = music_library.get_song_info(song_name)
+                if detailed_info:
+                    # 合并播放列表中的信息和音乐库中的详细信息
+                    self.current_song_info = {**song_info, **detailed_info}
                     logger.debug(f"更新歌曲信息: {song_name}")
                 else:
-                    # 如果没有找到详细信息，使用基本信息
-                    self.current_song_info = {
-                        'name': song_name,
-                        'display_name': song_name,
-                        'title': song_name,
-                        'artist': '未知艺术家',
-                        'album': '未知专辑'
-                    }
-                    logger.warning(f"未找到歌曲详细信息: {song_name}")
+                    # 使用播放列表中的信息
+                    self.current_song_info = song_info
+                    logger.warning(f"未在音乐库中找到歌曲详细信息: {song_name}")
             else:
-                # 如果没有music_library，使用基本信息
-                self.current_song_info = {
-                    'name': song_name,
-                    'display_name': song_name,
-                    'title': song_name,
-                    'artist': '未知艺术家',
-                    'album': '未知专辑'
-                }
+                # 使用播放列表中的信息
+                self.current_song_info = song_info
+                logger.warning("music_library不可用")
                 logger.warning("music_library不可用")
         
         except Exception as e:
@@ -317,9 +397,10 @@ class PlaybackView:
             self.current_song_info = None
     
     def refresh_playlist_display(self):
-        """刷新播放列表显示"""
+        """刷新播放列表显示 - 使用播放列表组件"""
         try:
-            self.update_playlist_display()
+            if hasattr(self, 'playlist_component'):
+                self.playlist_component.refresh_display()
         except Exception as e:
             logger.error(f"刷新播放列表显示失败: {e}")
     
@@ -641,54 +722,9 @@ class PlaybackView:
         playlist_header.add(self.save_playlist_button)
         playlist_header.add(self.manage_playlists_button)
         
-        # 当前播放列表信息 - 减小字体
-        self.current_playlist_info = toga.Label(
-            "当前播放列表: 临时列表",
-            style=Pack(
-                padding=(0, 0, 3, 0),
-                font_size=9,
-                color="#666666"
-            )
-        )
-        
-        # 播放列表操作按钮行 - 减小按钮尺寸
-        playlist_actions = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 3, 0)))
-        
-        self.clear_playlist_button = toga.Button(
-            "🗑️",
-            on_press=self.clear_current_playlist,
-            style=Pack(
-                width=30,
-                height=20,
-                padding=(0, 2, 0, 0),
-                font_size=8
-            )
-        )
-        
-        self.remove_song_button = toga.Button(
-            "➖",
-            on_press=self.remove_selected_song,
-            style=Pack(
-                width=30,
-                height=20,
-                padding=(0, 2, 0, 0),
-                font_size=8
-            )
-        )
-        
-        playlist_actions.add(self.clear_playlist_button)
-        playlist_actions.add(self.remove_song_button)
-        
-        # 播放列表 - 减小高度
-        self.playlist_table = toga.DetailedList(
-            on_select=self.on_playlist_select,
-            style=Pack(flex=1, height=150)
-        )
-        
+        # 添加播放列表组件到布局
         self.playlist_box.add(playlist_header)
-        self.playlist_box.add(self.current_playlist_info)
-        self.playlist_box.add(playlist_actions)
-        self.playlist_box.add(self.playlist_table)
+        self.playlist_box.add(self.playlist_component.view)
     
     def start_ui_timer(self):
         """启动UI更新定时器"""
@@ -1042,94 +1078,23 @@ class PlaybackView:
             logger.error(f"更新UI失败: {e}")
     
     def update_playlist_display(self):
-        """更新播放列表显示"""
+        """更新播放列表显示 - 使用播放列表组件"""
         try:
-            # 清空现有列表
-            self.playlist_table.data.clear()
-            
-            if not self.current_playlist_data or not self.current_playlist_data.get("songs"):
-                # 如果播放列表为空，显示提示信息
-                self.playlist_table.data.append({
-                    'icon': "📝",
-                    'title': "播放列表为空",
-                    'subtitle': "请从文件列表添加音乐或加载播放列表"
-                })
-                return
-            
-            # 显示播放列表中的歌曲
-            current_index = self.current_playlist_data.get("current_index", 0)
-            songs = self.current_playlist_data["songs"]
-            
-            for i, song_entry in enumerate(songs):
-                song_info = song_entry.get("info", {})
-                song_state = song_entry.get("state", {})
-                
-                # 获取歌曲显示名称
-                title = song_info.get('title', song_info.get('display_name', song_entry['name']))
-                if title.endswith('.mp3'):
-                    title = title[:-4]
-                
-                # 获取艺术家信息
-                artist = song_info.get('artist', '未知艺术家')
-                
-                # 标记当前播放的歌曲
-                if i == current_index:
-                    icon = "🎵"
-                    if getattr(self.app, 'is_playing', False):
-                        status_text = "播放中"
-                    elif getattr(self.app, 'is_paused', False):
-                        status_text = "暂停"
-                    else:
-                        status_text = "待播放"
-                else:
-                    icon = "🎶"
-                    status_text = ""
-                
-                # 检查是否已下载
-                is_downloaded = song_info.get('is_downloaded', False)
-                if is_downloaded and song_info.get('filepath') and os.path.exists(song_info.get('filepath', '')):
-                    download_icon = "📁"
-                else:
-                    download_icon = "☁️"
-                
-                # 播放次数和收藏状态
-                play_count = song_state.get('play_count', 0)
-                is_favorite = song_state.get('is_favorite', False)
-                
-                # 构建副标题
-                subtitle_parts = [download_icon]
-                if status_text:
-                    subtitle_parts.append(status_text)
-                if artist != '未知艺术家':
-                    subtitle_parts.append(f"艺术家: {artist}")
-                if play_count > 0:
-                    subtitle_parts.append(f"播放: {play_count}次")
-                if is_favorite:
-                    subtitle_parts.append("❤️")
-                
-                subtitle = " | ".join(subtitle_parts)
-                
-                self.playlist_table.data.append({
-                    'icon': icon,
-                    'title': title,
-                    'subtitle': subtitle
-                })
-                
+            # 使用播放列表组件刷新显示
+            if hasattr(self, 'playlist_component'):
+                self.playlist_component.refresh_display()
         except Exception as e:
             logger.error(f"更新播放列表显示失败: {e}")
     
     def update_current_playlist_info(self):
-        """更新当前播放列表信息显示"""
+        """更新当前播放列表信息显示 - 使用播放列表组件"""
         try:
-            if self.current_playlist_data:
-                playlist_name = self.current_playlist_data.get("name", "未知播放列表")
-                song_count = len(self.current_playlist_data.get("songs", []))
-                current_index = self.current_playlist_data.get("current_index", 0)
-                
-                info_text = f"当前播放列表: {playlist_name} ({current_index + 1}/{song_count})"
-                self.current_playlist_info.text = info_text
-            else:
-                self.current_playlist_info.text = "当前播放列表: 无"
+            # 播放列表组件会自动处理信息显示更新
+            if hasattr(self, 'playlist_component'):
+                current_playlist = self.playlist_manager.get_current_playlist()
+                if current_playlist:
+                    self.current_playlist_data = current_playlist  # 保持兼容性
+                    self.playlist_component.refresh_display()
         except Exception as e:
             logger.error(f"更新播放列表信息失败: {e}")
     
@@ -1147,32 +1112,42 @@ class PlaybackView:
             logger.error(f"清空播放列表失败: {e}")
     
     def remove_selected_song(self, widget):
-        """移除选中的歌曲"""
+        """移除选中的歌曲 - 使用播放列表组件"""
         try:
-            # 获取当前选中的项目
-            if hasattr(self.playlist_table, 'selection') and self.playlist_table.selection:
-                selected_index = self.playlist_table.data.index(self.playlist_table.selection)
-                self.remove_song_from_playlist(selected_index)
+            # 通过播放列表组件获取选中的歌曲
+            if hasattr(self, 'playlist_component'):
+                selected_index = self.playlist_component.get_selected_index()
+                if selected_index >= 0:
+                    self.remove_song_from_playlist(selected_index)
+                else:
+                    logger.info("没有选中的歌曲")
             else:
-                logger.info("没有选中的歌曲")
+                logger.info("播放列表组件不可用")
         except Exception as e:
             logger.error(f"移除选中歌曲失败: {e}")
     
     async def on_playlist_select(self, widget, selection):
-        """播放列表项目选中事件"""
+        """播放列表项目选中事件 - 使用播放列表组件"""
         try:
             if selection and self.current_playlist_data and self.current_playlist_data.get("songs"):
-                # 获取选中的索引
-                selected_index = self.playlist_table.data.index(selection)
-                
-                # 设置为当前播放歌曲
-                self.set_current_song_index(selected_index)
-                
-                # 开始播放选中的歌曲
-                await self.play_current_song()
-                
-                # 更新UI显示
-                self.update_ui()
+                # 通过播放列表组件获取选中的索引
+                if hasattr(self, 'playlist_component'):
+                    selected_index = self.playlist_component.get_selected_index()
+                    if selected_index >= 0:
+                        # 设置为当前播放歌曲
+                        self.set_current_song_index(selected_index)
+                        
+                        # 开始播放选中的歌曲
+                        await self.play_current_song()
+                        
+                        # 更新UI显示
+                        self.update_ui()
+                    else:
+                        logger.info("无法获取选中的歌曲索引")
+                else:
+                    logger.info("播放列表组件不可用")
+        except Exception as e:
+            logger.error(f"播放列表选择事件处理失败: {e}")
                 
         except Exception as e:
             logger.error(f"播放列表选择失败: {e}")
@@ -1532,14 +1507,40 @@ class PlaybackView:
         """
         logger.info(f"处理播放选中歌曲请求，文件数: {len(music_files)}, 开始索引: {start_index}")
         try:
-            # 替换当前播放列表
-            self.handle_add_to_playlist(music_files, replace=True)
+            # 创建新播放列表或清空当前播放列表
+            if music_files:
+                # 获取第一个文件的文件夹路径作为播放列表名称
+                first_file = music_files[0]
+                folder_path = first_file.get('folder_path', '')
+                playlist_name = f"来自文件列表的播放列表"
+                
+                if folder_path:
+                    folder_name = os.path.basename(folder_path)
+                    playlist_name = f"来自 {folder_name} 的播放列表"
+                
+                # 先清空当前播放列表
+                self.playlist_manager.clear_current_playlist()
+                
+                # 添加所有歌曲到播放列表
+                for music_file in music_files:
+                    self.playlist_component.add_song_to_playlist(music_file)
+                
+                # 设置播放索引
+                current_playlist = self.playlist_manager.get_current_playlist()
+                if current_playlist and 0 <= start_index < len(music_files):
+                    current_playlist['current_index'] = start_index
+                    self.playlist_manager.save_current_playlist(current_playlist)
+                
+                # 刷新播放列表显示
+                self.playlist_component.refresh_display()
+                
+                # 自动播放第一首歌曲（如果启用了自动播放）
+                auto_play = self.app.config_manager.get("player.auto_play_on_select", True)
+                if auto_play and music_files:
+                    target_song = music_files[start_index] if start_index < len(music_files) else music_files[0]
+                    self.app.add_background_task(self.play_selected_song(target_song))
             
-            # 设置播放索引
-            if 0 <= start_index < len(music_files):
-                self.set_current_song_index(start_index)
-            
-            logger.info(f"开始播放选中歌曲，索引: {start_index}")
+            logger.info(f"处理播放选中歌曲请求完成，索引: {start_index}")
             
         except Exception as e:
             logger.error(f"处理播放选中歌曲请求失败: {e}")
@@ -1622,14 +1623,15 @@ class PlaybackView:
     async def previous_song(self, widget):
         """上一曲"""
         try:
-            if not self.current_playlist_data or not self.current_playlist_data.get("songs"):
+            current_playlist = self.playlist_manager.get_current_playlist()
+            if not current_playlist or not current_playlist.get("songs"):
                 logger.warning("播放列表为空，无法切换到上一曲")
                 return
             
-            current_index = self.current_playlist_data.get("current_index", 0)
-            songs = self.current_playlist_data["songs"]
+            current_index = current_playlist.get("current_index", 0)
+            songs = current_playlist["songs"]
             
-            # 根据播放模式确定下一首歌曲
+            # 根据播放模式确定上一首歌曲
             play_mode = self.play_mode
             
             if hasattr(play_mode, 'value') and play_mode.value == "shuffle":
@@ -1644,11 +1646,16 @@ class PlaybackView:
                 # 顺序模式：上一首
                 new_index = (current_index - 1) % len(songs)
             
-            self.set_current_song_index(new_index)
-            await self.play_current_song()
+            # 更新播放列表索引
+            current_playlist["current_index"] = new_index
+            self.playlist_manager.save_current_playlist(current_playlist)
             
-            # 更新UI显示
-            self.update_ui()
+            # 播放选中的歌曲
+            selected_song = songs[new_index]
+            await self.play_selected_song(selected_song["info"])
+            
+            # 更新播放列表显示
+            self.playlist_component.refresh_display()
             
         except Exception as e:
             logger.error(f"上一曲失败: {e}")
@@ -1656,12 +1663,13 @@ class PlaybackView:
     async def next_song(self, widget):
         """下一曲"""
         try:
-            if not self.current_playlist_data or not self.current_playlist_data.get("songs"):
+            current_playlist = self.playlist_manager.get_current_playlist()
+            if not current_playlist or not current_playlist.get("songs"):
                 logger.warning("播放列表为空，无法切换到下一曲")
                 return
             
-            current_index = self.current_playlist_data.get("current_index", 0)
-            songs = self.current_playlist_data["songs"]
+            current_index = current_playlist.get("current_index", 0)
+            songs = current_playlist["songs"]
             
             # 根据播放模式确定下一首歌曲
             play_mode = self.play_mode
@@ -1681,8 +1689,16 @@ class PlaybackView:
                 # 顺序播放或列表循环
                 new_index = (current_index + 1) % len(songs)
             
-            self.set_current_song_index(new_index)
-            await self.play_current_song()
+            # 更新播放列表索引
+            current_playlist["current_index"] = new_index
+            self.playlist_manager.save_current_playlist(current_playlist)
+            
+            # 播放选中的歌曲
+            selected_song = songs[new_index]
+            await self.play_selected_song(selected_song["info"])
+            
+            # 更新播放列表显示
+            self.playlist_component.refresh_display()
             
             # 更新UI显示
             self.update_ui()
