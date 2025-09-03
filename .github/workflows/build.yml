@@ -49,16 +49,28 @@ jobs:
         echo "=== Checking available GObject packages ==="
         apt-cache search gir1.2-webkit || true
     
+    - name: Debug pkg-config and GObject Introspection
+      run: |
+        echo "=== Checking pkg-config path ==="
+        echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
+        pkg-config --list-all | grep -i gir || true
+        echo "=== Checking available .pc files ==="
+        find /usr -name "*.pc" 2>/dev/null | grep -i gir || true
+        echo "=== Checking GObject Introspection packages ==="
+        apt-cache search gobject | grep -i introspection || true
+        dpkg -l | grep -i gir || true
+    
     - name: Install system dependencies
       run: |
         sudo apt-get update
-
         sudo apt-get install -y \
           pkg-config \
           build-essential \
           libgirepository1.0-dev \
           gir1.2-glib-2.0 \
           gir1.2-gtk-3.0 \
+          gobject-introspection \
+          libgobject-2.0-dev \
           libcairo2-dev \
           libcairo2 \
           libcairo-gobject2 \
