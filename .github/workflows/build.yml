@@ -248,6 +248,8 @@ jobs:
           pkg-config \
           build-essential \
           libgirepository1.0-dev \
+          gir1.2-glib-2.0 \
+          gir1.2-gtk-3.0 \
           libcairo2-dev \
           libcairo2 \
           libcairo-gobject2 \
@@ -318,7 +320,7 @@ jobs:
 
   # 发布开发版本（推送到 main/master 分支时）
   publish-dev:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    if: always() && (needs.build-linux.result == 'success' || needs.build-windows.result == 'success' || needs.build-macos.result == 'success' || needs.build-ios.result == 'success' || needs.build-android.result == 'success')
     needs: [build-linux, build-windows, build-macos, build-ios, build-android]
     runs-on: ubuntu-latest
     steps:
