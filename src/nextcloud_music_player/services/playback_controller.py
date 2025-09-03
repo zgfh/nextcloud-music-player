@@ -20,7 +20,7 @@ class PlayMode(Enum):
 class PlaybackController:
     """播放控制器 - 负责播放逻辑控制"""
     
-    def __init__(self, playback_service, playlist_manager, play_song_callback=None):
+    def __init__(self, playback_service, playlist_manager, play_song_callback=None, ui_update_callback=None):
         """
         初始化播放控制器
         
@@ -28,10 +28,12 @@ class PlaybackController:
             playback_service: 播放服务实例
             playlist_manager: 播放列表管理器实例
             play_song_callback: 播放歌曲的回调函数
+            ui_update_callback: UI更新回调函数
         """
         self.playback_service = playback_service
         self.playlist_manager = playlist_manager
         self.play_song_callback = play_song_callback
+        self.ui_update_callback = ui_update_callback
         self.play_mode = PlayMode.REPEAT_ONE
         
         logger.info("播放控制器初始化完成")
@@ -51,9 +53,15 @@ class PlaybackController:
             if self.playback_service.is_playing():
                 await self.playback_service.pause_music()
                 logger.info("播放已暂停")
+                # 通知UI更新按钮状态
+                if self.ui_update_callback:
+                    self.ui_update_callback(False)
             else:
                 await self.resume_music()
                 logger.info("播放已恢复")
+                # 通知UI更新按钮状态
+                if self.ui_update_callback:
+                    self.ui_update_callback(True)
         except Exception as e:
             logger.error(f"切换播放状态失败: {e}")
             raise
@@ -103,6 +111,9 @@ class PlaybackController:
         try:
             await self.playback_service.stop_music()
             logger.info("播放已停止")
+            # 通知UI更新按钮状态
+            if self.ui_update_callback:
+                self.ui_update_callback(False)
         except Exception as e:
             logger.error(f"停止播放失败: {e}")
             raise

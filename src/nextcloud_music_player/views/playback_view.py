@@ -47,7 +47,8 @@ class PlaybackView:
         self.playback_controller = PlaybackController(
             playback_service=self.playback_service,
             playlist_manager=self.playlist_manager,
-            play_song_callback=self.play_selected_song
+            play_song_callback=self.play_selected_song,
+            ui_update_callback=self.on_playback_state_changed
         )
         
         # 初始化播放控制组件
@@ -345,6 +346,29 @@ class PlaybackView:
                 
         except Exception as e:
             logger.error(f"处理播放模式改变失败: {e}")
+    
+    def on_playback_state_changed(self, is_playing: bool):
+        """播放状态改变回调 - 立即更新播放/暂停按钮"""
+        try:
+            logger.info(f"播放状态改变为: {'播放中' if is_playing else '暂停'}")
+            # 立即更新播放控制组件的按钮状态
+            if hasattr(self, 'playback_control_component') and self.playback_control_component:
+                self.playback_control_component.update_play_pause_button(is_playing)
+                
+            # 更新状态标签
+            if hasattr(self, 'status_label') and self.status_label:
+                if is_playing:
+                    self.status_label.text = "▶️ 播放中"
+                else:
+                    self.status_label.text = "⏸️ 暂停"
+                    
+            # 强制刷新UI（如果需要）
+            if hasattr(self.app, 'main_window') and self.app.main_window:
+                # 在某些平台上可能需要强制刷新
+                pass
+                    
+        except Exception as e:
+            logger.error(f"处理播放状态改变失败: {e}")
     
     async def play_selected_song(self, song_info: Dict[str, Any]):
         """播放选中的歌曲"""
@@ -932,9 +956,9 @@ class PlaybackView:
                 self.total_time_label.text = "00:00"
                 logger.debug("进度重置为00:00")
             
-            # 更新播放状态（从应用获取实时状态）
-            is_playing = getattr(self.app, 'is_playing', False)
-            is_paused = getattr(self.app, 'is_paused', False)
+            # 更新播放状态（从播放服务获取实时状态）
+            is_playing = self.playback_service.is_playing()
+            is_paused = getattr(self.playback_service, 'current_song_state', {}).get('is_paused', False)
             
             if is_playing:
                 self.status_label.text = "▶️ 播放中"
@@ -1008,9 +1032,9 @@ class PlaybackView:
                 self.song_title_label.text = "未选择歌曲"
                 self.song_info_label.text = "选择一首歌曲开始播放"
             
-            # 更新播放状态（从应用获取实时状态）
-            is_playing = getattr(self.app, 'is_playing', False)
-            is_paused = getattr(self.app, 'is_paused', False)
+            # 更新播放状态（从播放服务获取实时状态）
+            is_playing = self.playback_service.is_playing()
+            is_paused = getattr(self.playback_service, 'current_song_state', {}).get('is_paused', False)
             
             if is_playing:
                 self.status_label.text = "▶️ 播放中"
