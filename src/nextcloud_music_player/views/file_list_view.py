@@ -247,7 +247,7 @@ class FileListView:
         # 从音乐服务获取所有歌曲信息
         if music_files is None:
             music_files = self.music_service.get_all_songs()
-        
+
         self.music_files = music_files
         # 更新音乐文件到列表
         self.music_list.data.clear()
@@ -256,8 +256,13 @@ class FileListView:
             is_downloaded = file_info.get('is_downloaded', False)
             download_status = "✅" if is_downloaded else "⬇️"
             
-            # 格式化显示信息
-            title = file_info.get('display_name', file_info['name'])
+            # 检查文件是否被选中
+            file_title = file_info.get('display_name', file_info['name'])
+            is_selected = file_info['title'] in self.selected_files
+            selection_status = "☑️" if is_selected else "☐"
+            
+            # 格式化显示信息，包含选择状态
+            title = f"{selection_status} {file_title}"
             subtitle = f"{download_status} 大小: {self.format_file_size(file_info.get('size', 0))}"
             
             # 不使用图标以避免加载错误
@@ -266,9 +271,9 @@ class FileListView:
                 'subtitle': subtitle,
                 'file_info': file_info
             })
-        
+
         self.update_stats()
-    
+
     async def sync_music_list(self, widget):
         """同步音乐列表"""
         if self.is_syncing:
@@ -332,8 +337,9 @@ class FileListView:
             else:
                 self.selected_files.add(file_path)
             
+            # 刷新列表显示以更新选择状态
+            self.reload_music_list()
             self.update_button_states()
-            self.update_stats()
     
     def add_to_playlist(self, widget):
         """将选中文件添加到播放列表"""
@@ -552,8 +558,9 @@ class FileListView:
             self.selected_files = {file_info['title'] for file_info in self.music_files}
             self.select_all_button.text = "☐ 取消全选"
         
+        # 刷新列表显示以更新选择状态
+        self.reload_music_list()
         self.update_button_states()
-        self.update_stats()
     
     def update_button_states(self):
         """更新按钮状态"""
