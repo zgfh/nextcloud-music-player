@@ -73,18 +73,6 @@ class FileListView:
             )
         )
         
-        # 说明标签 - 减小字体和填充
-        description = toga.Label(
-            "📝 所有操作基于 music_list.json 进行增删查改",
-            style=Pack(
-                padding=(0, 0, 8, 0),
-                font_size=10,
-                text_align="center",
-                color="#6c757d",
-                font_style="italic"
-            )
-        )
-        
         # 操作栏 - 减少填充
         action_bar = toga.Box(style=Pack(direction=ROW, padding=5))
         
@@ -246,7 +234,6 @@ class FileListView:
         
         # 组装界面 - 使用滚动容器的内容
         content_box.add(title)
-        content_box.add(description)
         content_box.add(action_bar)
         content_box.add(playback_bar)
         content_box.add(self.stats_box)

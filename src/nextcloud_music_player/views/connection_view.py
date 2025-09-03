@@ -85,7 +85,7 @@ class ConnectionView:
         
         # 密码
         password_label = toga.Label("密码:", style=Pack(padding=(0, 0, 3, 0), color="#495057", font_size=12))
-        password_container = toga.Box(style=Pack(direction=ROW, alignment="center", padding=(0, 0, 8, 0)))
+        self.password_container = toga.Box(style=Pack(direction=ROW, alignment="center", padding=(0, 0, 8, 0)))
         
         self.password_input = toga.PasswordInput(
             placeholder="输入密码",
@@ -96,7 +96,6 @@ class ConnectionView:
             placeholder="输入密码",
             style=Pack(flex=1, padding=(0, 3, 0, 0), font_size=12)
         )
-        self.password_text_input.style.display = "none"
         
         self.show_password_button = toga.Button(
             "👁️",
@@ -104,9 +103,9 @@ class ConnectionView:
             style=Pack(width=30, height=25, font_size=10)
         )
         
-        password_container.add(self.password_input)
-        password_container.add(self.password_text_input)
-        password_container.add(self.show_password_button)
+        # 初始状态只添加密码输入框
+        self.password_container.add(self.password_input)
+        self.password_container.add(self.show_password_button)
         
         # 同步文件夹
         folder_label = toga.Label("同步文件夹路径 (可选):", style=Pack(padding=(0, 0, 3, 0), color="#495057", font_size=12))
@@ -188,7 +187,7 @@ class ConnectionView:
         form_box.add(username_label)
         form_box.add(self.username_input)
         form_box.add(password_label)
-        form_box.add(password_container)
+        form_box.add(self.password_container)
         form_box.add(folder_label)
         form_box.add(self.sync_folder_input)
         form_box.add(options_box)
@@ -266,20 +265,25 @@ class ConnectionView:
         """切换密码显示/隐藏"""
         self.password_visible = not self.password_visible
         
-        if self.password_visible:
-            self.password_input.style.display = "none"
-            self.password_text_input.style.display = "block"
-            self.show_password_button.text = "🙈"
-        else:
-            self.password_input.style.display = "block"
-            self.password_text_input.style.display = "none"
-            self.show_password_button.text = "👁️"
+        # 获取密码容器（password_container）
+        password_container = self.password_container
         
-        # 同步密码值
         if self.password_visible:
-            self.password_text_input.value = self.password_input.value
+            # 显示明文密码：移除密码输入框，添加文本输入框
+            if self.password_input in password_container.children:
+                # 同步密码值
+                self.password_text_input.value = self.password_input.value
+                password_container.remove(self.password_input)
+                password_container.insert(0, self.password_text_input)
+            self.show_password_button.text = "�"
         else:
-            self.password_input.value = self.password_text_input.value
+            # 隐藏明文密码：移除文本输入框，添加密码输入框
+            if self.password_text_input in password_container.children:
+                # 同步密码值
+                self.password_input.value = self.password_text_input.value
+                password_container.remove(self.password_text_input)
+                password_container.insert(0, self.password_input)
+            self.show_password_button.text = "👁️"
     
     async def connect_to_nextcloud(self, widget):
         """连接到NextCloud"""
