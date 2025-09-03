@@ -52,10 +52,50 @@ class PlaybackController:
                 await self.playback_service.pause_music()
                 logger.info("播放已暂停")
             else:
-                await self.playback_service.resume_music()
+                await self.resume_music()
                 logger.info("播放已恢复")
         except Exception as e:
             logger.error(f"切换播放状态失败: {e}")
+            raise
+    
+    async def resume_music(self):
+        """恢复音乐播放"""
+        try:
+            # 检查是否有暂停的音乐
+            if hasattr(self.playback_service, 'current_song_state') and self.playback_service.current_song_state.get('is_paused'):
+                # 使用播放服务的音频播放器恢复播放
+                if hasattr(self.playback_service, 'audio_player') and self.playback_service.audio_player:
+                    if self.playback_service.audio_player.play():
+                        self.playback_service.current_song_state['is_paused'] = False
+                        self.playback_service.current_song_state['is_playing'] = True
+                        logger.info("音乐已恢复播放")
+                        return
+                    else:
+                        logger.error("音频播放器恢复播放失败")
+                
+                # 备用方案：使用pygame（向后兼容）
+                try:
+                    import pygame
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.unpause()
+                        self.playback_service.current_song_state['is_paused'] = False
+                        self.playback_service.current_song_state['is_playing'] = True
+                        logger.info("音乐已恢复播放（pygame）")
+                        return
+                except ImportError:
+                    logger.warning("pygame不可用")
+                except Exception as pygame_error:
+                    logger.error(f"pygame恢复播放失败: {pygame_error}")
+            
+            # 如果没有暂停的音乐，尝试重新播放当前歌曲
+            if hasattr(self.playback_service, 'current_song') and self.playback_service.current_song:
+                await self.playback_service.play_music()
+                logger.info("重新开始播放当前歌曲")
+            else:
+                logger.warning("没有可恢复的音乐")
+                
+        except Exception as e:
+            logger.error(f"恢复音乐播放失败: {e}")
             raise
     
     async def stop_playback(self):
