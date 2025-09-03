@@ -70,6 +70,7 @@ jobs:
           gir1.2-glib-2.0 \
           gir1.2-gtk-3.0 \
           gobject-introspection \
+          libgobject-2.0-dev \
           libcairo2-dev \
           libcairo2 \
           libcairo-gobject2 \
@@ -237,7 +238,6 @@ jobs:
         name: ios-build
         path: |
           nextcloud-music-player/iOS/
-          build/
         retention-days: 7
 
   build-android:
@@ -264,18 +264,9 @@ jobs:
         pkg-config --list-all | grep -i gir || true
         echo "=== Checking available .pc files ==="
         find /usr -name "*.pc" 2>/dev/null | grep -i gir || true
-        find /usr -name "girepository*.pc" 2>/dev/null || true
         echo "=== Checking GObject Introspection packages ==="
         apt-cache search gobject | grep -i introspection || true
         dpkg -l | grep -i gir || true
-        echo "=== Testing pkg-config for girepository-2.0 ==="
-        pkg-config --exists girepository-2.0 && echo "Found!" || echo "Not found"
-        echo "=== Looking for girepository .pc files ==="
-        find /usr -name "*girepository*.pc" 2>/dev/null || true
-        echo "=== Checking pkg-config search path ==="
-        pkg-config --variable pc_path pkg-config || true
-        echo "=== Trying to locate girepository-2.0.pc ==="
-        locate girepository-2.0.pc 2>/dev/null || find /usr -name "girepository-2.0.pc" 2>/dev/null || true
     
     - name: Install system dependencies
       run: |
@@ -284,11 +275,10 @@ jobs:
           pkg-config \
           build-essential \
           libgirepository1.0-dev \
-          libgirepository-2.0-dev \
           gir1.2-glib-2.0 \
           gir1.2-gtk-3.0 \
           gobject-introspection \
-          libffi-dev \
+          libgobject-2.0-dev \
           libcairo2-dev \
           libcairo2 \
           libcairo-gobject2 \
@@ -353,7 +343,6 @@ jobs:
       with:
         name: android-build
         path: |
-          nextcloud-music-player/android/
           nextcloud-music-player/android/gradle/app/build/outputs/apk/**/*.apk
         retention-days: 7
 
