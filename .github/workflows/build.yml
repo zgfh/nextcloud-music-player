@@ -8,10 +8,6 @@ on:
   release:
     types: [published]
 
-permissions:
-  contents: write
-  packages: write
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -58,19 +54,20 @@ jobs:
         sudo apt-get update
         
         # 安装基础开发工具
-        sudo apt-get install -y 
-          pkg-config 
-          build-essential 
-          libgirepository1.0-dev 
-          libcairo2-dev 
-          libpixman-1-dev 
-          libpng-dev 
-          libjpeg-dev 
-          libfreetype6-dev 
-          libpango1.0-dev 
-          libcairo-gobject2 
-          libgirepository-1.0-1 
-          libgtk-3-0 
+        sudo apt-get install -y \
+          pkg-config \
+          build-essential \
+          libgirepository1.0-dev \
+          libcairo2-dev \
+          libcairo-gobject2-dev \
+          libpixman-1-dev \
+          libpng-dev \
+          libjpeg-dev \
+          libfreetype6-dev \
+          libpango1.0-dev \
+          libcairo-gobject2 \
+          libgirepository-1.0-1 \
+          libgtk-3-0 \
           libpango-1.0-0
         
         # 尝试安装WebKit 4.1，如果失败则尝试4.0
@@ -125,13 +122,9 @@ jobs:
     
     - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4
-      if: always()
       with:
         name: linux-build
-        path: |
-          dist/*.deb
-          dist/*.tar.gz
-        if-no-files-found: warn
+        path: dist/*.deb
 
   build-windows:
     needs: test
@@ -157,13 +150,9 @@ jobs:
     
     - name: Upload Windows artifacts
       uses: actions/upload-artifact@v4
-      if: always()
       with:
         name: windows-build
-        path: |
-          dist/*.msi
-          dist/*.exe
-        if-no-files-found: warn
+        path: dist/*.msi
 
   build-macos:
     needs: test
@@ -190,13 +179,9 @@ jobs:
     
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
-      if: always()
       with:
         name: macos-build
-        path: |
-          dist/*.dmg
-          dist/*.app
-        if-no-files-found: warn
+        path: dist/*.dmg
 
   build-ios:
     needs: test
@@ -237,8 +222,7 @@ jobs:
         path: |
           iOS/
           build/
-          *.ipa
-        if-no-files-found: warn
+        retention-days: 7
 
   build-android:
     needs: test
@@ -257,7 +241,9 @@ jobs:
         sudo apt-get install -y \
           pkg-config \
           build-essential \
+          libgirepository1.0-dev \
           libcairo2-dev \
+          libcairo-gobject2-dev \
           libpixman-1-dev \
           libpng-dev \
           libjpeg-dev \
@@ -319,8 +305,7 @@ jobs:
         path: |
           android/
           dist/*.apk
-          *.aab
-        if-no-files-found: warn
+        retention-days: 7
 
   # 发布开发版本（推送到 main/master 分支时）
   publish-dev:
@@ -334,11 +319,6 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: artifacts
-    
-    - name: List downloaded artifacts
-      run: |
-        echo "=== Downloaded artifacts ==="
-        find artifacts -type f | head -20 || echo "No artifacts found"
     
     - name: Create development release
       uses: softprops/action-gh-release@v1
@@ -359,15 +339,11 @@ jobs:
           **Changes:**
           ${{ github.event.head_commit.message }}
         files: |
-          artifacts/linux-build/*.deb
-          artifacts/linux-build/*.tar.gz
-          artifacts/windows-build/*.msi
-          artifacts/windows-build/*.exe
-          artifacts/macos-build/*.dmg
-          artifacts/macos-build/*.app
-          artifacts/ios-build/**/*
-          artifacts/android-build/*.apk
-          artifacts/android-build/*.aab
+          artifacts/linux-build/*
+          artifacts/windows-build/*
+          artifacts/macos-build/*
+          artifacts/ios-build/*
+          artifacts/android-build/*
         prerelease: true
         token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -388,13 +364,9 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          artifacts/linux-build/*.deb
-          artifacts/linux-build/*.tar.gz
-          artifacts/windows-build/*.msi
-          artifacts/windows-build/*.exe
-          artifacts/macos-build/*.dmg
-          artifacts/macos-build/*.app
-          artifacts/ios-build/**/*
-          artifacts/android-build/*.apk
-          artifacts/android-build/*.aab
+          artifacts/linux-build/*
+          artifacts/windows-build/*
+          artifacts/macos-build/*
+          artifacts/ios-build/*
+          artifacts/android-build/*
         token: ${{ secrets.GITHUB_TOKEN }}
