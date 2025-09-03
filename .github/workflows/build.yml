@@ -237,7 +237,7 @@ jobs:
       with:
         name: ios-build
         path: |
-          iOS/
+          nextcloud-music-player/iOS/
           build/
         retention-days: 7
 
@@ -344,8 +344,8 @@ jobs:
       with:
         name: android-build
         path: |
-          android/
-          dist/*.apk
+          nextcloud-music-player/android/
+          nextcloud-music-player/android/gradle/app/build/outputs/apk/**/*.apk
         retention-days: 7
 
   # 发布开发版本（推送到 main/master 分支时）
@@ -353,6 +353,8 @@ jobs:
     if: always() && (needs.build-linux.result == 'success' || needs.build-windows.result == 'success' || needs.build-macos.result == 'success' || needs.build-ios.result == 'success' || needs.build-android.result == 'success')
     needs: [build-linux, build-windows, build-macos, build-ios, build-android]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
     
@@ -380,11 +382,11 @@ jobs:
           **Changes:**
           ${{ github.event.head_commit.message }}
         files: |
-          artifacts/linux-build/*
-          artifacts/windows-build/*
-          artifacts/macos-build/*
-          artifacts/ios-build/*
-          artifacts/android-build/*
+          artifacts/linux-build/**/*.deb
+          artifacts/windows-build/**/*.msi
+          artifacts/macos-build/**/*.dmg
+          artifacts/ios-build/**/*
+          artifacts/android-build/**/*.apk
         prerelease: true
         token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -393,6 +395,8 @@ jobs:
     if: github.event_name == 'release'
     needs: [build-linux, build-windows, build-macos, build-ios, build-android]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
     
@@ -405,9 +409,9 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          artifacts/linux-build/*
-          artifacts/windows-build/*
-          artifacts/macos-build/*
-          artifacts/ios-build/*
-          artifacts/android-build/*
+          artifacts/linux-build/**/*.deb
+          artifacts/windows-build/**/*.msi
+          artifacts/macos-build/**/*.dmg
+          artifacts/ios-build/**/*
+          artifacts/android-build/**/*.apk
         token: ${{ secrets.GITHUB_TOKEN }}
