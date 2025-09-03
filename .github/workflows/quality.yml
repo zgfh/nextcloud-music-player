@@ -12,6 +12,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Run dependency check
+      run: |
+        chmod +x scripts/check_dependencies.sh
+        ./scripts/check_dependencies.sh
+    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -20,7 +25,35 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgirepository1.0-dev libcairo2-dev
+        
+        # 检查 Ubuntu 版本和可用包
+        echo "=== System information ==="
+        lsb_release -a || cat /etc/os-release
+        echo "=== Available girepository packages ==="
+        apt-cache search girepository | grep dev || true
+        
+        # 安装基础依赖
+        sudo apt-get install -y \
+          pkg-config \
+          build-essential \
+          libcairo2-dev \
+          libglib2.0-dev \
+          gobject-introspection
+        
+        # 智能选择 girepository 包
+        if apt-cache show libgirepository1.0-dev >/dev/null 2>&1; then
+          echo "Installing libgirepository1.0-dev (newer Ubuntu versions)"
+          sudo apt-get install -y libgirepository1.0-dev
+        else
+          echo "Trying alternative GObject packages"
+          sudo apt-get install -y \
+            python3-gi-dev \
+            libglib2.0-dev || true
+        fi
+        
+        # 验证安装
+        pkg-config --exists glib-2.0 && echo "✓ glib-2.0 found" || echo "✗ glib-2.0 missing"
+        pkg-config --exists cairo && echo "✓ cairo found" || echo "✗ cairo missing"
     
     - name: Install dependencies
       run: |
@@ -61,7 +94,35 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgirepository1.0-dev libcairo2-dev
+        
+        # 检查 Ubuntu 版本和可用包
+        echo "=== System information ==="
+        lsb_release -a || cat /etc/os-release
+        echo "=== Available girepository packages ==="
+        apt-cache search girepository | grep dev || true
+        
+        # 安装基础依赖
+        sudo apt-get install -y \
+          pkg-config \
+          build-essential \
+          libcairo2-dev \
+          libglib2.0-dev \
+          gobject-introspection
+        
+        # 智能选择 girepository 包
+        if apt-cache show libgirepository1.0-dev >/dev/null 2>&1; then
+          echo "Installing libgirepository1.0-dev (newer Ubuntu versions)"
+          sudo apt-get install -y libgirepository1.0-dev
+        else
+          echo "Trying alternative GObject packages"
+          sudo apt-get install -y \
+            python3-gi-dev \
+            libglib2.0-dev || true
+        fi
+        
+        # 验证安装
+        pkg-config --exists glib-2.0 && echo "✓ glib-2.0 found" || echo "✗ glib-2.0 missing"
+        pkg-config --exists cairo && echo "✓ cairo found" || echo "✗ cairo missing"
     
     - name: Install dependencies
       run: |
