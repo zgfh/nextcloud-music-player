@@ -172,7 +172,8 @@ jobs:
     - name: Build macOS app
       run: |
         python -m briefcase build macOS
-        python -m briefcase package macOS
+        # 使用 ad-hoc 签名（适用于开发和测试），不需要交互输入
+        python -m briefcase package macOS --adhoc-sign --no-input
     
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
