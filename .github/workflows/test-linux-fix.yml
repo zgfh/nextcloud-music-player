@@ -1,0 +1,96 @@
+name: Test Linux Build Fix
+
+on:
+  workflow_dispatch:  # 手动触发
+  push:
+    paths:
+      - '.github/workflows/**'
+      - 'pyproject.toml'
+
+jobs:
+  test-linux-deps:
+    runs-on: ubuntu-24.04  # 明确使用Ubuntu 24.04
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Check Ubuntu version
+      run: |
+        lsb_release -a
+        echo "=== Available WebKit packages ==="
+        apt-cache search webkit2gtk
+        echo "=== Available GObject packages ==="
+        apt-cache search gir1.2-webkit
+    
+    - name: Install system dependencies - Basic
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          pkg-config \
+          build-essential \
+          libgirepository1.0-dev \
+          libcairo2-dev \
+          libpango1.0-dev \
+          libcairo-gobject2 \
+          libgirepository-1.0-1 \
+          libgtk-3-0 \
+          libpango-1.0-0
+    
+    - name: Install WebKit (try modern first)
+      run: |
+        # Try WebKit 4.1 first (Ubuntu 24.04)
+        if sudo apt-get install -y libwebkit2gtk-4.1-dev gir1.2-webkit2-4.1 libwebkit2gtk-4.1-0; then
+          echo "✓ Successfully installed WebKit 4.1"
+        # Fallback to WebKit 4.0 
+        elif sudo apt-get install -y libwebkit2gtk-4.0-dev gir1.2-webkit2-4.0; then
+          echo "✓ Successfully installed WebKit 4.0"
+        # Try alternative package names
+        elif sudo apt-get install -y libwebkit2gtk-4.0-dev gir1.2-webkit-4.0; then
+          echo "✓ Successfully installed WebKit 4.0 (alternative names)"
+        else
+          echo "✗ Failed to install any WebKit packages"
+          echo "Available packages:"
+          apt-cache search webkit2gtk | head -20
+          exit 1
+        fi
+    
+    - name: Install audio dependencies
+      run: |
+        sudo apt-get install -y \
+          libasound2-dev \
+          libpulse-dev \
+          portaudio19-dev \
+          libgstreamer1.0-dev \
+          libgstreamer-plugins-base1.0-dev || echo "Some audio packages failed, continuing..."
+    
+    - name: Verify installations
+      run: |
+        echo "=== Checking pkg-config packages ==="
+        pkg-config --list-all | grep -E "(cairo|pango|webkit|gtk)" || true
+        echo "=== Checking specific packages ==="
+        pkg-config --exists cairo && echo "✓ cairo" || echo "✗ cairo"
+        pkg-config --exists pango && echo "✓ pango" || echo "✗ pango"
+        pkg-config --exists gtk+-3.0 && echo "✓ gtk+-3.0" || echo "✗ gtk+-3.0"
+        pkg-config --exists gobject-introspection-1.0 && echo "✓ gobject-introspection" || echo "✗ gobject-introspection"
+        pkg-config --exists webkit2gtk-4.1 && echo "✓ webkit2gtk-4.1" || echo "✗ webkit2gtk-4.1"
+        pkg-config --exists webkit2gtk-4.0 && echo "✓ webkit2gtk-4.0" || echo "✗ webkit2gtk-4.0"
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install briefcase
+        pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
+        pip install pygame>=2.0.0 mutagen>=1.45.0 || echo "Audio packages failed, continuing..."
+    
+    - name: Test briefcase create
+      run: |
+        echo "=== Testing briefcase create ==="
+        python -m briefcase create linux || {
+          echo "=== Briefcase create failed, checking logs ==="
+          find . -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \;
+          exit 1
+        }

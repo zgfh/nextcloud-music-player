@@ -42,32 +42,81 @@ jobs:
       with:
         python-version: '3.11'
     
+    - name: Check available packages
+      run: |
+        echo "=== Checking available WebKit packages ==="
+        apt-cache search webkit2gtk || true
+        echo "=== Checking available GObject packages ==="
+        apt-cache search gir1.2-webkit || true
+    
     - name: Install system dependencies
       run: |
         sudo apt-get update
+        
+        # 安装基础开发工具
         sudo apt-get install -y \
+          pkg-config \
+          build-essential \
           libgirepository1.0-dev \
           libcairo2-dev \
           libpango1.0-dev \
-          libwebkitgtk-3.0-dev \
-          gir1.2-webkit-3.0 \
           libcairo-gobject2 \
           libgirepository-1.0-1 \
           libgtk-3-0 \
-          libpango-1.0-0 \
-          libwebkit2gtk-4.0-37 \
-          gir1.2-webkit2-4.0
+          libpango-1.0-0
+        
+        # 尝试安装WebKit 4.1，如果失败则尝试4.0
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          gir1.2-webkit2-4.1 \
+          libwebkit2gtk-4.1-0 || \
+        sudo apt-get install -y \
+          libwebkit2gtk-4.0-dev \
+          gir1.2-webkit2-4.0 \
+          libwebkit2gtk-4.0-37
+        
+        # 安装音频相关依赖
+        sudo apt-get install -y \
+          libasound2-dev \
+          libpulse-dev \
+          portaudio19-dev \
+          libgstreamer1.0-dev \
+          libgstreamer-plugins-base1.0-dev || true
     
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install briefcase
         pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
+        # 安装音频相关的Python包（用于Linux构建）
+        pip install pygame>=2.0.0 mutagen>=1.45.0 || true
+    
+    - name: Test build environment
+      run: |
+        python test_linux_build.py
     
     - name: Build Linux app
       run: |
-        python -m briefcase build linux
-        python -m briefcase package linux
+        echo "=== Starting Linux build process ==="
+        echo "Python version: $(python --version)"
+        echo "Briefcase version: $(python -m briefcase --version)"
+        
+        # 尝试构建
+        python -m briefcase build linux || {
+          echo "=== Build failed, checking logs ==="
+          find . -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \; || true
+          exit 1
+        }
+        
+        # 尝试打包
+        python -m briefcase package linux || {
+          echo "=== Package failed, checking logs ==="
+          find . -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \; || true
+          exit 1
+        }
+        
+        echo "=== Build completed successfully ==="
+        ls -la dist/ || true
     
     - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4

@@ -91,20 +91,22 @@ requires = [
 ]
 system_requires = [
     "libgirepository1.0-dev",
-    "libcairo2-dev",
+    "libcairo2-dev", 
     "libpango1.0-dev",
-    "libwebkitgtk-3.0-dev",
-    "gir1.2-webkit-3.0",
+    "libwebkit2gtk-4.1-dev | libwebkit2gtk-4.0-dev",
+    "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
+    "pkg-config",
+    "build-essential",
 ]
 
 [tool.briefcase.app.nextcloud-music-player.linux.system.debian]
 system_runtime_requires = [
     "libcairo-gobject2",
-    "libgirepository-1.0-1",
+    "libgirepository-1.0-1", 
     "libgtk-3-0",
     "libpango-1.0-0",
-    "libwebkit2gtk-4.0-37",
-    "gir1.2-webkit2-4.0",
+    "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37",
+    "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
 ]
 
 [tool.briefcase.app.nextcloud-music-player.windows]
