@@ -235,6 +235,12 @@ jobs:
       with:
         python-version: '3.11'
     
+    - name: Check available Cairo packages
+      run: |
+        echo "=== Checking available Cairo packages ==="
+        apt-cache search cairo | grep -i gobject || true
+        apt-cache search libcairo || true
+    
     - name: Install system dependencies
       run: |
         sudo apt-get update
@@ -243,7 +249,6 @@ jobs:
           build-essential \
           libgirepository1.0-dev \
           libcairo2-dev \
-          libcairo-gobject2-dev || true \
           libpixman-1-dev \
           libpng-dev \
           libjpeg-dev \
