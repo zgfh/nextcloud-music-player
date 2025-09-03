@@ -1,6 +1,6 @@
 [build-system]
-requires = ["briefcase"]
-build-backend = "briefcase"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 formal_name = "NextCloud Music Player"
@@ -33,6 +33,24 @@ dependencies = [
     "requests>=2.25.0",
     "httpx>=0.24.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "flake8",
+    "isort",
+    "mypy",
+    "briefcase",
+]
+
+# 明确指定包的位置
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"nextcloud_music_player.resources" = ["*"]
 
 [project.urls]
 Homepage = "https://example.com/nextcloud-music-player"

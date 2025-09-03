@@ -36,7 +36,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install briefcase
-        pip install -e .
+        pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
     
     - name: Create iOS app structure
       run: |
@@ -100,7 +100,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install briefcase
-        pip install -e .
+        pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
     
     - name: Create Android app structure
       run: |

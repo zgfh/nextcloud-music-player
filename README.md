@@ -118,7 +118,8 @@ sudo apt-get install -f  # 如果有依赖问题
 
 3. **安装依赖**
    ```bash
-   pip install -e .
+   pip install briefcase
+   pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
    ```
 
 4. **运行应用**

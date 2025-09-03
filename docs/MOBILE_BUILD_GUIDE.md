@@ -20,7 +20,7 @@
    
    # 安装 Python 依赖
    pip install briefcase
-   pip install -e .
+   pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
    ```
 
 2. **创建 iOS 项目**
