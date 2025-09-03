@@ -293,8 +293,8 @@ class PlaylistViewComponent:
                 selected_song = songs[selected_index]
                 self.on_song_select_callback(selected_song, selected_index)
             
-            # 刷新显示以更新当前播放标记
-            self.refresh_display()
+            # 只更新播放状态指示器，不刷新整个列表以保持选择状态
+            self.update_playing_indicator(selected_index)
             
         except Exception as e:
             logger.error(f"处理歌曲选择失败: {e}")
@@ -435,6 +435,62 @@ class PlaylistViewComponent:
         except Exception as e:
             logger.error(f"显示信息消息失败: {e}")
     
+    def update_playing_indicator(self, current_index: int):
+        """更新播放状态指示器，不重新构建整个列表"""
+        try:
+            current_playlist = self.playlist_manager.get_current_playlist()
+            if not current_playlist:
+                return
+            
+            songs = current_playlist.get('songs', [])
+            if not songs or current_index >= len(songs):
+                return
+            
+            # 更新表格中每个项目的图标，只更新必要的部分
+            for i, data_item in enumerate(self.playlist_table.data):
+                if i >= len(songs):
+                    continue
+                    
+                song_entry = songs[i]
+                song_info = song_entry.get("info", {})
+                
+                # 确定新的图标
+                if i == current_index:
+                    # 检查播放状态
+                    if getattr(self.app, 'is_playing', False):
+                        new_icon = "🎵"
+                        status = "播放中"
+                    elif getattr(self.app, 'is_paused', False):
+                        new_icon = "⏸️"
+                        status = "暂停"
+                    else:
+                        new_icon = "🎵"
+                        status = "待播放"
+                else:
+                    new_icon = "🎶"
+                    status = ""
+                
+                # 更新图标
+                if data_item['icon'] != new_icon:
+                    data_item['icon'] = new_icon
+                    
+                    # 更新副标题中的状态信息
+                    subtitle_parts = data_item['subtitle'].split(" | ")
+                    
+                    # 移除旧的状态信息
+                    subtitle_parts = [part for part in subtitle_parts if part not in ["播放中", "暂停", "待播放"]]
+                    
+                    # 添加新的状态信息
+                    if status:
+                        subtitle_parts.insert(1, status)  # 在下载状态后插入
+                    
+                    data_item['subtitle'] = " | ".join(subtitle_parts)
+            
+            logger.debug(f"更新播放指示器完成，当前索引: {current_index}")
+            
+        except Exception as e:
+            logger.error(f"更新播放指示器失败: {e}")
+
     def update_current_song_indicator(self, song_index: int):
         """更新当前播放歌曲的指示器"""
         try:
@@ -442,7 +498,8 @@ class PlaylistViewComponent:
             if current_playlist:
                 current_playlist['current_index'] = song_index
                 self.playlist_manager.save_current_playlist(current_playlist)
-                self.refresh_display()
+                # 使用新的更新方法而不是刷新整个列表
+                self.update_playing_indicator(song_index)
         except Exception as e:
             logger.error(f"更新当前歌曲指示器失败: {e}")
     
