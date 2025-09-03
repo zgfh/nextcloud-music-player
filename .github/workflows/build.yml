@@ -8,6 +8,10 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -121,9 +125,13 @@ jobs:
     
     - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: linux-build
-        path: dist/*.deb
+        path: |
+          dist/*.deb
+          dist/*.tar.gz
+        if-no-files-found: warn
 
   build-windows:
     needs: test
@@ -149,9 +157,13 @@ jobs:
     
     - name: Upload Windows artifacts
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: windows-build
-        path: dist/*.msi
+        path: |
+          dist/*.msi
+          dist/*.exe
+        if-no-files-found: warn
 
   build-macos:
     needs: test
@@ -178,9 +190,13 @@ jobs:
     
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: macos-build
-        path: dist/*.dmg
+        path: |
+          dist/*.dmg
+          dist/*.app
+        if-no-files-found: warn
 
   build-ios:
     needs: test
@@ -221,7 +237,8 @@ jobs:
         path: |
           iOS/
           build/
-        retention-days: 7
+          *.ipa
+        if-no-files-found: warn
 
   build-android:
     needs: test
@@ -302,7 +319,8 @@ jobs:
         path: |
           android/
           dist/*.apk
-        retention-days: 7
+          *.aab
+        if-no-files-found: warn
 
   # 发布开发版本（推送到 main/master 分支时）
   publish-dev:
@@ -316,6 +334,11 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: artifacts
+    
+    - name: List downloaded artifacts
+      run: |
+        echo "=== Downloaded artifacts ==="
+        find artifacts -type f | head -20 || echo "No artifacts found"
     
     - name: Create development release
       uses: softprops/action-gh-release@v1
@@ -336,11 +359,15 @@ jobs:
           **Changes:**
           ${{ github.event.head_commit.message }}
         files: |
-          artifacts/linux-build/*
-          artifacts/windows-build/*
-          artifacts/macos-build/*
-          artifacts/ios-build/*
-          artifacts/android-build/*
+          artifacts/linux-build/*.deb
+          artifacts/linux-build/*.tar.gz
+          artifacts/windows-build/*.msi
+          artifacts/windows-build/*.exe
+          artifacts/macos-build/*.dmg
+          artifacts/macos-build/*.app
+          artifacts/ios-build/**/*
+          artifacts/android-build/*.apk
+          artifacts/android-build/*.aab
         prerelease: true
         token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -361,9 +388,13 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          artifacts/linux-build/*
-          artifacts/windows-build/*
-          artifacts/macos-build/*
-          artifacts/ios-build/*
-          artifacts/android-build/*
+          artifacts/linux-build/*.deb
+          artifacts/linux-build/*.tar.gz
+          artifacts/windows-build/*.msi
+          artifacts/windows-build/*.exe
+          artifacts/macos-build/*.dmg
+          artifacts/macos-build/*.app
+          artifacts/ios-build/**/*
+          artifacts/android-build/*.apk
+          artifacts/android-build/*.aab
         token: ${{ secrets.GITHUB_TOKEN }}
