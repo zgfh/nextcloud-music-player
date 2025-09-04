@@ -37,10 +37,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+    # Use system Python instead of setup-python to avoid version mismatch with Briefcase
+    - name: Set up system Python
+      run: |
+        echo "Using system Python to avoid Briefcase version mismatch"
+        python3 --version
+        python3 -m pip --version || {
+          echo "Installing pip for system Python"
+          sudo apt-get update
+          sudo apt-get install -y python3-pip python3-venv
+        }
     
 
     - name: Debug pkg-config and GObject Introspection
@@ -143,28 +149,28 @@ jobs:
     
     - name: Install Python dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install briefcase
-        pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
+        python3 -m pip install --upgrade pip
+        python3 -m pip install briefcase
+        python3 -m pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
         # 安装音频相关的Python包（用于Linux构建）
-        pip install pygame>=2.0.0 mutagen>=1.45.0 || true
+        python3 -m pip install pygame>=2.0.0 mutagen>=1.45.0 || true
     
 
     - name: Build Linux app
       run: |
         echo "=== Starting Linux build process ==="
-        echo "Python version: $(python --version)"
-        echo "Briefcase version: $(python -m briefcase --version)"
+        echo "Python version: $(python3 --version)"
+        echo "Briefcase version: $(python3 -m briefcase --version)"
         
         # 尝试构建
-        python -m briefcase build linux || {
+        python3 -m briefcase build linux || {
           echo "=== Build failed, checking logs ==="
           find . -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \; || true
           exit 1
         }
         
         # 尝试打包
-        python -m briefcase package linux || {
+        python3 -m briefcase package linux || {
           echo "=== Package failed, checking logs ==="
           find . -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \; || true
           exit 1
@@ -399,10 +405,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+    # Use system Python instead of setup-python to avoid version mismatch
+    - name: Set up system Python
+      run: |
+        echo "Using system Python for consistency"
+        python3 --version
+        python3 -m pip --version || {
+          echo "Installing pip for system Python"
+          sudo apt-get update
+          sudo apt-get install -y python3-pip python3-venv
+        }
     
     - name: Check available Cairo packages
       run: |
@@ -520,22 +532,22 @@ jobs:
 
     - name: Install Python dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install briefcase
-        pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
+        python3 -m pip install --upgrade pip
+        python3 -m pip install briefcase
+        python3 -m pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
     
     - name: Create Android app
       run: |
-        python -m briefcase create android
+        python3 -m briefcase create android
     
     - name: Build Android app
       run: |
-        python -m briefcase build android
+        python3 -m briefcase build android
       continue-on-error: true  # Android构建可能因为环境配置而失败
     
     - name: Package Android app
       run: |
-        python -m briefcase package android
+        python3 -m briefcase package android
       continue-on-error: true
     
     - name: Upload Android artifacts
