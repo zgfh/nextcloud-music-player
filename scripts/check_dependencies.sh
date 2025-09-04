@@ -51,12 +51,18 @@ echo ""
 echo "=== GObject Introspection 检查 ==="
 
 if [ "$PKG_MGR" = "apt" ]; then
-    echo "检查可用的 girepository 包:"
-    apt-cache search girepository | grep -E "(dev|devel)" || echo "未找到 girepository 包"
+    echo "检查官方推荐的包:"
+    for pkg in "libgirepository1.0-dev" "libcairo2-dev" "gir1.2-gtk-3.0" "libcanberra-gtk3-module"; do
+        if apt-cache show "$pkg" >/dev/null 2>&1; then
+            echo "✓ $pkg 可用"
+        else
+            echo "✗ $pkg 不可用"
+        fi
+    done
     
     echo ""
     echo "检查已安装的 GI 相关包:"
-    dpkg -l | grep -i gir | grep -E "(1\.0|2\.0)" || echo "未找到已安装的 GI 包"
+    dpkg -l | grep -E "(girepository|gobject|gir1.2)" | grep -E "(1\.0|2\.0)" || echo "未找到已安装的 GI 包"
 fi
 
 # 检查 pkg-config 文件
@@ -116,10 +122,19 @@ if [ "$PKG_MGR" = "apt" ]; then
     elif pkg-config --exists girepository-2.0; then
         echo "✓ 当前配置正常，girepository-2.0 可用"
     else
-        echo "建议安装以下包之一:"
-        echo "  Ubuntu 22.04+: sudo apt-get install libgirepository1.0-dev"
-        echo "  Ubuntu 20.04:  sudo apt-get install libgirepository-2.0-dev"
-        echo "  通用方案:      sudo apt-get install python3-gi-dev gobject-introspection"
+        echo "根据 Ubuntu 版本使用不同的 girepository 包:"
+        echo ""
+        echo "Ubuntu 24.04+:"
+        echo "  sudo apt install libgirepository-2.0-dev libcairo2-dev gir1.2-gtk-3.0"
+        echo ""
+        echo "Ubuntu 22.04 及更早版本:"
+        echo "  sudo apt install libgirepository1.0-dev libcairo2-dev gir1.2-gtk-3.0"
+        echo ""
+        echo "完整的官方推荐安装命令:"
+        echo "  sudo apt install git build-essential pkg-config python3-dev python3-venv libcairo2-dev gir1.2-gtk-3.0 libcanberra-gtk3-module"
+        echo "  # 然后根据版本添加对应的 girepository 包"
+        echo ""
+        echo "参考: https://github.com/beeware/toga/issues/3143"
     fi
 fi
 

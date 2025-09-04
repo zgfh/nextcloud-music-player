@@ -2,67 +2,79 @@
 
 ## 问题描述
 
-在 GitHub Actions 的 Ubuntu 环境中构建项目时，经常遇到以下两种相互矛盾的错误：
+在 GitHub Actions 的 Ubuntu 环境中构建项目时，经常遇到以下错误：
 
-1. **删除 `libgobject-2.0-dev` 时**：
-   ```
-   Dependency 'girepository-2.0' is required but not found.
-   ```
+```
+../meson.build:31:9: ERROR: Dependency 'girepository-2.0' is required but not found.
+```
 
-2. **保留 `libgobject-2.0-dev` 时**：
-   ```
-   libgobject-2.0-dev 找不到
-   ```
+## 问题根源
 
-## 问题原因
+根据 [Toga Issue #3143](https://github.com/beeware/toga/issues/3143)，这个问题的根源是：
 
-这个问题源于不同 Ubuntu 版本对 GObject Introspection 包的命名和依赖关系不同：
-
-- **Ubuntu 22.04 及更新版本**：使用 `libgirepository1.0-dev`
-- **Ubuntu 20.04 及更早版本**：使用 `libgirepository-2.0-dev`
-- **包名变化**：某些版本中 `libgobject-2.0-dev` 不存在或已重命名
+1. **PyGObject >= 3.51.0 需要 `girepository-2.0`**
+2. **不同 Ubuntu 版本提供不同的包**：
+   - **Ubuntu 24.04+**: 使用 `libgirepository-2.0-dev`
+   - **Ubuntu 22.04 及更早版本**: 使用 `libgirepository1.0-dev`
+3. **官方推荐的包名在不同版本间不兼容**
 
 ## 解决方案
 
-### 1. 官方推荐依赖包
+### 1. 根据 Ubuntu 版本智能选择包
 
-根据 Briefcase 和 Toga 官方文档，最可靠的解决方案是使用官方推荐的依赖包：
+根据 [Toga Issue #3143](https://github.com/beeware/toga/issues/3143) 的解决方案，我们需要根据 Ubuntu 版本选择正确的包：
 
 ```bash
-# 官方推荐的完整安装命令
-sudo apt install git build-essential pkg-config python3-dev python3-venv libgirepository1.0-dev libcairo2-dev gir1.2-gtk-3.0 libcanberra-gtk3-module
+# 获取 Ubuntu 版本
+UBUNTU_VERSION=$(lsb_release -rs 2>/dev/null || echo "unknown")
 
-# 补充其他必要依赖
-sudo apt-get install -y libglib2.0-dev gobject-introspection libpango1.0-dev libgtk-3-dev
+# 安装基础依赖
+sudo apt-get install -y \
+  git \
+  build-essential \
+  pkg-config \
+  python3-dev \
+  python3-venv \
+  libcairo2-dev \
+  gir1.2-gtk-3.0 \
+  libcanberra-gtk3-module \
+  libglib2.0-dev \
+  gobject-introspection
+
+# 根据版本选择正确的 girepository 包
+if [[ "$UBUNTU_VERSION" =~ ^(24\.|25\.|26\.) ]]; then
+  # Ubuntu 24.04+
+  sudo apt-get install -y libgirepository-2.0-dev
+else
+  # Ubuntu 22.04 及更早版本
+  sudo apt-get install -y libgirepository1.0-dev
+fi
 ```
 
 ### 2. CI 配置更新
 
-我们在 CI 配置中采用了官方推荐的包组合：
+我们在 CI 配置中实施了智能版本检测：
 
 ```yaml
 - name: Install system dependencies
   run: |
     sudo apt-get update
     
-    # 使用官方推荐的依赖包安装
-    sudo apt-get install -y \
-      git \
-      build-essential \
-      pkg-config \
-      python3-dev \
-      python3-venv \
-      libgirepository1.0-dev \
-      libcairo2-dev \
-      gir1.2-gtk-3.0 \
-      libcanberra-gtk3-module
+    # 获取 Ubuntu 版本
+    UBUNTU_VERSION=$(lsb_release -rs 2>/dev/null || echo "unknown")
+    echo "Ubuntu version: $UBUNTU_VERSION"
     
-    # 补充其他必要的依赖
-    sudo apt-get install -y \
-      libglib2.0-dev \
-      gobject-introspection \
-      libpango1.0-dev \
-      libgtk-3-dev
+    # 安装基础依赖
+    sudo apt-get install -y git build-essential pkg-config python3-dev python3-venv libcairo2-dev gir1.2-gtk-3.0 libcanberra-gtk3-module libglib2.0-dev gobject-introspection
+    
+    # 根据 Ubuntu 版本选择正确的 girepository 包
+    if [[ "$UBUNTU_VERSION" =~ ^(24\.|25\.|26\.) ]]; then
+      echo "Ubuntu 24.04+ detected - using libgirepository-2.0-dev"
+      sudo apt-get install -y libgirepository-2.0-dev
+    else
+      echo "Ubuntu 22.04 or earlier detected - using libgirepository1.0-dev"
+      sudo apt-get install -y libgirepository1.0-dev
+    fi
 ```
 
 ### 3. 依赖验证
@@ -114,7 +126,10 @@ fi
 # 运行依赖检查脚本
 ./scripts/check_dependencies.sh
 
-# 使用官方推荐命令安装依赖
+# Ubuntu 24.04+ 安装命令
+sudo apt install git build-essential pkg-config python3-dev python3-venv libgirepository-2.0-dev libcairo2-dev gir1.2-gtk-3.0 libcanberra-gtk3-module
+
+# Ubuntu 22.04 及更早版本安装命令
 sudo apt install git build-essential pkg-config python3-dev python3-venv libgirepository1.0-dev libcairo2-dev gir1.2-gtk-3.0 libcanberra-gtk3-module
 
 # 补充安装其他依赖
@@ -132,10 +147,15 @@ sudo apt-get install -y libglib2.0-dev gobject-introspection libpango1.0-dev lib
 ## 兼容性
 
 这个解决方案支持：
-- ✅ Ubuntu 20.04 (GitHub Actions ubuntu-20.04)
-- ✅ Ubuntu 22.04 (GitHub Actions ubuntu-22.04) 
-- ✅ Ubuntu 24.04 (GitHub Actions ubuntu-latest)
+- ✅ Ubuntu 24.04+ (GitHub Actions ubuntu-latest) - 使用 `libgirepository-2.0-dev`
+- ✅ Ubuntu 22.04 (GitHub Actions ubuntu-22.04) - 使用 `libgirepository1.0-dev`
+- ✅ Ubuntu 20.04 及更早版本 - 使用 `libgirepository1.0-dev`
 - ✅ 其他基于 Debian 的发行版
+
+## 参考链接
+
+- [Toga Issue #3143: PyGObject>=3.51.0 depends on libgirepository 2.0](https://github.com/beeware/toga/issues/3143)
+- [PyGObject Dependencies Documentation](https://pygobject.readthedocs.io/en/latest/getting_started.html#ubuntu-getting-started)
 
 ## 验证
 
