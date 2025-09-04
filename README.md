@@ -1,7 +1,7 @@
 
 # NextCloud Music Player 🎵
 
-免责: 大模型生成的项目,开发学习使用,不保证质量
+免责声明: 大模型生成的项目,开发学习使用,不保证质量
 
 <div align="center">
 
