@@ -1,10 +1,1 @@
-"""
-Views package for NextCloud Music Player
-"""
-
-from .connection_view import ConnectionView
-from .file_list_view import FileListView  
-from .playback_view import PlaybackView
-from .view_manager import ViewManager
-
-__all__ = ['ConnectionView', 'FileListView', 'PlaybackView', 'ViewManager']
+"""\nViews package for NextCloud Music Player\n"""\n\nfrom .connection_view import ConnectionView\nfrom .file_list_view import FileListView  \nfrom .playback_view import PlaybackView\nfrom .view_manager import ViewManager\nfrom .test_view_view import TestViewView\n\n__all__ = ['ConnectionView', 'FileListView', 'PlaybackView', 'ViewManager', "TestViewView"]

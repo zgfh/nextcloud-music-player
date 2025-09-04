@@ -31,3 +31,5 @@ src/nextcloud_music_player/views/components/__init__.py
 src/nextcloud_music_player/views/components/lyrics_component.py
 src/nextcloud_music_player/views/components/playback_control_component.py
 src/nextcloud_music_player/views/components/playlist_component.py
+tests/test_basic.py
+tests/test_minimal.py
