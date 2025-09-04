@@ -67,10 +67,25 @@ url = "https://example.com/nextcloud-music-player"
 author = "Your Name"
 author_email = "your.email@example.com"
 description = "A cross-platform music player with NextCloud integration"
+# 添加许可证信息以符合分发要求
+license = "BSD-3-Clause"
 
 [tool.briefcase.app.nextcloud-music-player]
 formal_name = "NextCloud Music Player"
 description = "A cross-platform music player with NextCloud integration"
+long_description = """NextCloud Music Player is a cross-platform music player application built with BeeWare that seamlessly integrates with your NextCloud server. 
+
+Key Features:
+• Stream and download music from your NextCloud server
+• Modern, intuitive user interface with playback controls
+• Support for common audio formats (MP3, WAV, OGG)
+• Playlist management with shuffle and repeat modes
+• Offline playback with smart caching
+• Cross-platform compatibility (Windows, macOS, Linux, iOS, Android)
+• Background audio playback support
+• Volume control and progress tracking
+
+The application provides a native desktop and mobile experience while keeping your music library synchronized across all your devices through NextCloud integration."""
 icon = "src/nextcloud_music_player/resources/icon"
 sources = [
     "src/nextcloud_music_player",
@@ -90,6 +105,19 @@ requires = [
     "toga-gtk~=0.4.0",
     "pygame>=2.0.0",
 ]
+long_description = """NextCloud Music Player is a cross-platform music player application built with BeeWare that seamlessly integrates with your NextCloud server. 
+
+Key Features:
+• Stream and download music from your NextCloud server
+• Modern, intuitive user interface with playback controls
+• Support for common audio formats (MP3, WAV, OGG)
+• Playlist management with shuffle and repeat modes
+• Offline playback with smart caching
+• Cross-platform compatibility (Windows, macOS, Linux, iOS, Android)
+• Background audio playback support
+• Volume control and progress tracking
+
+The application provides a native desktop and mobile experience while keeping your music library synchronized across all your devices through NextCloud integration."""
 system_requires = [
     "libgirepository1.0-dev | libgirepository-2.0-dev",
     "libcairo2-dev", 
