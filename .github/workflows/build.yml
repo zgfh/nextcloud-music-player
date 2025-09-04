@@ -11,17 +11,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
-          pip install -r requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y pkg-config build-essential libcairo2-dev libpango1.0-dev libglib2.0-dev libgdk-pixbuf2.0-dev libffi-dev libgirepository1.0-dev
 
-      - name: Run tests
+      - name: Install Python dependencies
         run: |
-          pytest
+          python -m pip install --upgrade pip
+          pip install briefcase
+          pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
+
+      - name: Echo Briefcase version
+        run: |
+          echo "Briefcase version: $(python -m briefcase --version)"
+
+      - name: Build with Briefcase
+        run: |
+          python -m briefcase build linux || {
+            echo "=== Build failed, checking logs ==="
+            find . -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \; || true
+            exit 1
+          }
+
+      - name: Package with Briefcase
+        run: |
+          python -m briefcase package linux || {
+            echo "=== Package failed, checking logs ==="
+            find . -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \; || true
+            exit 1
+          }
