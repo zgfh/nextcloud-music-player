@@ -23,6 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Sound/Audio :: Players",
 ]
 dependencies = [
@@ -90,7 +91,7 @@ requires = [
     "pygame>=2.0.0",
 ]
 system_requires = [
-    "libgirepository1.0-dev",
+    "libgirepository1.0-dev | libgirepository-2.0-dev",
     "libcairo2-dev", 
     "libpango1.0-dev",
     "libwebkit2gtk-4.1-dev | libwebkit2gtk-4.0-dev",
@@ -102,11 +103,31 @@ system_requires = [
 [tool.briefcase.app.nextcloud-music-player.linux.system.debian]
 system_runtime_requires = [
     "libcairo-gobject2",
-    "libgirepository-1.0-1", 
+    "libgirepository-1.0-1 | libgirepository-2.0-1", 
     "libgtk-3-0",
     "libpango-1.0-0",
     "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37",
     "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
+]
+
+# Ubuntu 24.04+ 特殊配置
+[tool.briefcase.app.nextcloud-music-player.linux.system.ubuntu.noble]
+system_requires = [
+    "libgirepository-2.0-dev",
+    "libcairo2-dev", 
+    "libpango1.0-dev",
+    "libwebkit2gtk-4.1-dev",
+    "gir1.2-webkit2-4.1",
+    "pkg-config",
+    "build-essential",
+]
+system_runtime_requires = [
+    "libcairo-gobject2",
+    "libgirepository-2.0-1", 
+    "libgtk-3-0",
+    "libpango-1.0-0",
+    "libwebkit2gtk-4.1-0",
+    "gir1.2-webkit2-4.1",
 ]
 
 [tool.briefcase.app.nextcloud-music-player.windows]

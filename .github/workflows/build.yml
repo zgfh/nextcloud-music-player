@@ -17,7 +17,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: '3.12'
     
     - name: Install dependencies
       run: |
@@ -40,7 +40,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: '3.12'
     
 
     - name: Debug pkg-config and GObject Introspection
@@ -154,14 +154,43 @@ jobs:
       run: |
         echo "=== Starting Linux build process ==="
         echo "Python version: $(python --version)"
+        echo "System python3 version: $(python3 --version)"
         echo "Briefcase version: $(python -m briefcase --version)"
         
-        # 尝试构建
-        python -m briefcase build linux || {
-          echo "=== Build failed, checking logs ==="
+        # 方法1: 尝试直接构建
+        echo "=== Method 1: Direct build ==="
+        if python -m briefcase build linux; then
+          echo "✓ Direct build successful"
+          BUILD_SUCCESS=true
+        else
+          echo "✗ Direct build failed"
+          BUILD_SUCCESS=false
+        fi
+        
+        # 方法2: 如果直接构建失败，尝试使用 Docker
+        if [ "$BUILD_SUCCESS" = false ]; then
+          echo "=== Method 2: Docker build fallback ==="
+          if command -v docker >/dev/null 2>&1; then
+            echo "Docker available, attempting Docker build..."
+            python -m briefcase build linux --target docker || {
+              echo "Docker build also failed"
+              DOCKER_SUCCESS=false
+            }
+            if [ "${DOCKER_SUCCESS:-true}" != false ]; then
+              echo "✓ Docker build successful"
+              BUILD_SUCCESS=true
+            fi
+          else
+            echo "Docker not available"
+          fi
+        fi
+        
+        # 如果构建失败，显示日志并退出
+        if [ "$BUILD_SUCCESS" = false ]; then
+          echo "=== All build methods failed, checking logs ==="
           find . -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \; || true
           exit 1
-        }
+        fi
         
         # 尝试打包
         python -m briefcase package linux || {
@@ -402,7 +431,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: '3.12'
     
     - name: Check available Cairo packages
       run: |
