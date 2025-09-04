@@ -24,38 +24,48 @@
 
 ## 解决方案
 
-### 1. 智能包检测策略
+### 1. 官方推荐依赖包
 
-我们在 CI 配置中实施了智能检测策略：
+根据 Briefcase 和 Toga 官方文档，最可靠的解决方案是使用官方推荐的依赖包：
 
 ```bash
-# 检查 Ubuntu 版本和可用包
-echo "=== System information ==="
-lsb_release -a || cat /etc/os-release
-echo "=== Available girepository packages ==="
-apt-cache search girepository | grep dev || true
+# 官方推荐的完整安装命令
+sudo apt install git build-essential pkg-config python3-dev python3-venv libgirepository1.0-dev libcairo2-dev gir1.2-gtk-3.0 libcanberra-gtk3-module
 
-# 安装基础依赖
-sudo apt-get install -y \
-  pkg-config \
-  build-essential \
-  libcairo2-dev \
-  libglib2.0-dev \
-  gobject-introspection
-
-# 智能选择 girepository 包
-if apt-cache show libgirepository1.0-dev >/dev/null 2>&1; then
-  echo "Installing libgirepository1.0-dev (newer Ubuntu versions)"
-  sudo apt-get install -y libgirepository1.0-dev
-else
-  echo "Trying alternative GObject packages"
-  sudo apt-get install -y \
-    python3-gi-dev \
-    libglib2.0-dev || true
-fi
+# 补充其他必要依赖
+sudo apt-get install -y libglib2.0-dev gobject-introspection libpango1.0-dev libgtk-3-dev
 ```
 
-### 2. 依赖验证
+### 2. CI 配置更新
+
+我们在 CI 配置中采用了官方推荐的包组合：
+
+```yaml
+- name: Install system dependencies
+  run: |
+    sudo apt-get update
+    
+    # 使用官方推荐的依赖包安装
+    sudo apt-get install -y \
+      git \
+      build-essential \
+      pkg-config \
+      python3-dev \
+      python3-venv \
+      libgirepository1.0-dev \
+      libcairo2-dev \
+      gir1.2-gtk-3.0 \
+      libcanberra-gtk3-module
+    
+    # 补充其他必要的依赖
+    sudo apt-get install -y \
+      libglib2.0-dev \
+      gobject-introspection \
+      libpango1.0-dev \
+      libgtk-3-dev
+```
+
+### 3. 依赖验证
 
 安装后进行验证以确保依赖正确：
 
@@ -104,13 +114,11 @@ fi
 # 运行依赖检查脚本
 ./scripts/check_dependencies.sh
 
-# 手动安装依赖（Ubuntu 22.04+）
-sudo apt-get update
-sudo apt-get install -y libgirepository1.0-dev libcairo2-dev
+# 使用官方推荐命令安装依赖
+sudo apt install git build-essential pkg-config python3-dev python3-venv libgirepository1.0-dev libcairo2-dev gir1.2-gtk-3.0 libcanberra-gtk3-module
 
-# 手动安装依赖（Ubuntu 20.04）
-sudo apt-get update
-sudo apt-get install -y python3-gi-dev libcairo2-dev
+# 补充安装其他依赖
+sudo apt-get install -y libglib2.0-dev gobject-introspection libpango1.0-dev libgtk-3-dev
 ```
 
 ### CI 环境
