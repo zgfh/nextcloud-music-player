@@ -109,10 +109,31 @@ class ConnectionView:
         
         # 同步文件夹
         folder_label = toga.Label("同步文件夹路径 (可选):", style=Pack(padding=(0, 0, 3, 0), color="#495057", font_size=12))
+        
+        # 文件夹选择容器
+        folder_container = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 8, 0)))
+        
         self.sync_folder_input = toga.TextInput(
             placeholder="/Music 或留空表示根目录",
-            style=Pack(padding=(0, 0, 8, 0), font_size=12)
+            style=Pack(flex=1, padding=(0, 3, 0, 0), font_size=12),
+            on_change=self.on_sync_folder_changed
         )
+        
+        self.browse_folder_button = toga.Button(
+            "📁 浏览",
+            on_press=self.browse_folder,
+            style=Pack(
+                width=60,
+                height=25,
+                padding=3,
+                background_color="#17a2b8",
+                color="white",
+                font_size=10
+            )
+        )
+        
+        folder_container.add(self.sync_folder_input)
+        folder_container.add(self.browse_folder_button)
         
         # 配置选项 - 减少填充
         options_box = toga.Box(style=Pack(direction=COLUMN, padding=3))
@@ -189,7 +210,7 @@ class ConnectionView:
         form_box.add(password_label)
         form_box.add(self.password_container)
         form_box.add(folder_label)
-        form_box.add(self.sync_folder_input)
+        form_box.add(folder_container)
         form_box.add(options_box)
         form_box.add(button_box)
         
@@ -249,9 +270,46 @@ class ConnectionView:
             for key, value in connection_config.items():
                 self.app.config_manager.set(f"connection.{key}", value)
             
-            logger.info("连接配置已保存")
+            # 重要：将配置保存到文件
+            success = self.app.config_manager.save_config()
+            if success:
+                logger.info("连接配置已保存到文件")
+            else:
+                logger.error("连接配置保存到文件失败")
         except Exception as e:
             logger.error(f"保存连接配置失败: {e}")
+    
+    def on_sync_folder_changed(self, widget):
+        """当同步文件夹输入发生变化时自动保存"""
+        try:
+            # 延迟保存，避免用户快速输入时频繁保存
+            import threading
+            def delayed_save():
+                import time
+                time.sleep(2)  # 等待2秒，如果用户继续输入则重置计时器
+                try:
+                    new_value = widget.value.strip()
+                    current_value = self.app.config_manager.get("connection.default_sync_folder", "")
+                    if new_value != current_value:
+                        self.app.config_manager.set("connection.default_sync_folder", new_value)
+                        success = self.app.config_manager.save_config()
+                        if success:
+                            logger.info(f"同步目录已自动保存: {new_value}")
+                        else:
+                            logger.error("同步目录自动保存失败")
+                except Exception as e:
+                    logger.error(f"自动保存同步目录失败: {e}")
+            
+            # 取消之前的延迟保存任务
+            if hasattr(self, '_save_timer'):
+                self._save_timer.cancel()
+            
+            # 启动新的延迟保存任务
+            self._save_timer = threading.Timer(2.0, delayed_save)
+            self._save_timer.start()
+            
+        except Exception as e:
+            logger.error(f"处理同步文件夹变化失败: {e}")
     
     async def auto_connect(self):
         """自动连接"""
@@ -443,4 +501,70 @@ class ConnectionView:
             self.update_connection_status(True)
         else:
             self.update_connection_status(False)
+    
+    def browse_folder(self, widget):
+        """浏览文件夹"""
+        try:
+            # 检查是否已连接
+            if not self.app.nextcloud_client:
+                self.show_message("请先连接到NextCloud服务器", "error")
+                return
+            
+            # 导入文件夹选择器
+            from .folder_selector import FolderSelector
+            
+            # 创建文件夹选择器
+            current_folder = self.sync_folder_input.value.strip()
+            folder_selector = FolderSelector(
+                app=self.app,
+                nextcloud_client=self.app.nextcloud_client,
+                initial_path=current_folder
+            )
+            
+            # 设置回调函数
+            def on_folder_selected(selected_path):
+                self.sync_folder_input.value = selected_path
+                self.show_message(f"已选择文件夹: {selected_path or '/'}", "success")
+                
+                # 自动保存同步目录配置
+                try:
+                    self.app.config_manager.set("connection.default_sync_folder", selected_path)
+                    success = self.app.config_manager.save_config()
+                    if success:
+                        logger.info(f"同步目录已保存: {selected_path}")
+                    else:
+                        logger.error("同步目录保存失败")
+                except Exception as e:
+                    logger.error(f"保存同步目录配置失败: {e}")
+                
+                # 清空嵌入的选择器
+                self.message_box.clear()
+            
+            # 尝试显示文件夹选择器
+            success = folder_selector.show_dialog(on_folder_selected)
+            if not success:
+                # 如果不支持对话框，在当前视图中显示选择器
+                self.show_embedded_folder_selector(folder_selector, on_folder_selected)
+                
+        except Exception as e:
+            logger.error(f"打开文件夹浏览器失败: {e}")
+            self.show_message(f"无法打开文件夹浏览器: {str(e)}", "error")
+    
+    def show_embedded_folder_selector(self, folder_selector, callback):
+        """在当前视图中嵌入显示文件夹选择器"""
+        try:
+            # 清空消息区域，用于显示文件夹选择器
+            self.message_box.clear()
+            
+            # 设置回调
+            folder_selector.on_path_selected = callback
+            
+            # 添加文件夹选择器到消息区域
+            self.message_box.add(folder_selector.container)
+            
+            self.show_message("请在下方选择文件夹", "info")
+            
+        except Exception as e:
+            logger.error(f"嵌入文件夹选择器失败: {e}")
+            self.show_message("无法显示文件夹选择器", "error")
     

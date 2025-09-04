@@ -823,3 +823,130 @@ class NextCloudClient:
                 return f"{size:.1f} {unit}"
             size /= 1024.0
         return f"{size:.1f} TB"
+    
+    async def list_directories(self, folder_path: str = "") -> List[Dict]:
+        """列出指定路径下的所有目录"""
+        
+        def _sync_list_directories():
+            directories = []
+            
+            try:
+                from urllib.parse import urljoin, quote, unquote
+                import requests
+                from requests.auth import HTTPBasicAuth
+                import xml.etree.ElementTree as ET
+                
+                # 构造正确的WebDAV URL
+                base_url = self.webdav_url.rstrip('/')
+                if folder_path:
+                    # 确保文件夹路径以/开头和结尾，但要先解码再编码避免双重编码
+                    clean_path = folder_path.strip('/')
+                    # 先尝试解码（如果已编码），然后重新编码
+                    try:
+                        decoded_path = unquote(clean_path)
+                        encoded_path = quote(decoded_path)
+                    except:
+                        encoded_path = quote(clean_path)
+                    url = f"{base_url}/{encoded_path}/"
+                else:
+                    url = f"{base_url}/"
+                
+                logger.info(f"WebDAV请求URL: {url}")
+                
+                # WebDAV PROPFIND请求体
+                propfind_body = '''<?xml version="1.0"?>
+                <d:propfind xmlns:d="DAV:">
+                    <d:prop>
+                        <d:displayname/>
+                        <d:resourcetype/>
+                        <d:getlastmodified/>
+                    </d:prop>
+                </d:propfind>'''
+                
+                auth = HTTPBasicAuth(self.username, self.password)
+                
+                # 修改请求头
+                headers = {
+                    "Depth": "1",
+                    "Content-Type": "application/xml; charset=utf-8",
+                    "User-Agent": "NextCloud-Music-Player/1.0"
+                }
+                
+                response = requests.request(
+                    method="PROPFIND",
+                    url=url,
+                    auth=auth,
+                    headers=headers,
+                    data=propfind_body.encode('utf-8'),
+                    timeout=30,
+                    verify=False  # 在测试环境中跳过SSL验证
+                )
+                
+                logger.info(f"WebDAV响应状态: {response.status_code}")
+                
+                if response.status_code not in [200, 207]:
+                    logger.error(f"WebDAV PROPFIND failed with status {response.status_code}")
+                    logger.error(f"响应内容: {response.text}")
+                    
+                    # 抛出异常而不是使用备用目录列表
+                    raise Exception(f"无法连接到NextCloud服务器，状态码: {response.status_code}")
+                
+                # 解析XML响应
+                try:
+                    root = ET.fromstring(response.text)
+                    namespaces = {'d': 'DAV:'}
+                    
+                    for response_elem in root.findall('.//d:response', namespaces):
+                        href_elem = response_elem.find('.//d:href', namespaces)
+                        displayname_elem = response_elem.find('.//d:displayname', namespaces)
+                        resourcetype_elem = response_elem.find('.//d:resourcetype', namespaces)
+                        modified_elem = response_elem.find('.//d:getlastmodified', namespaces)
+                        
+                        if href_elem is not None:
+                            file_path = href_elem.text
+                            # 解码URL编码的路径
+                            decoded_path = unquote(file_path) if file_path else ""
+                            
+                            # 获取文件名
+                            if displayname_elem is not None and displayname_elem.text:
+                                file_name = displayname_elem.text
+                            else:
+                                file_name = Path(decoded_path).name
+                            
+                            # 检查是否是目录（包含collection元素）
+                            collection_elem = resourcetype_elem.find('.//d:collection', namespaces) if resourcetype_elem is not None else None
+                            
+                            if collection_elem is not None and file_name:
+                                # 跳过当前目录本身和父目录
+                                if file_name not in ['.', '..', ''] and not decoded_path.endswith(f'/{folder_path}/'):
+                                    # 构建相对路径（去掉webdav基础路径）
+                                    webdav_base = f"/remote.php/dav/files/{self.username}/"
+                                    if decoded_path.startswith(webdav_base):
+                                        relative_path = decoded_path[len(webdav_base):].rstrip('/')
+                                    else:
+                                        relative_path = decoded_path.strip('/')
+                                    
+                                    directories.append({
+                                        'name': file_name,
+                                        'path': relative_path,  # 存储未编码的相对路径
+                                        'modified': modified_elem.text if modified_elem is not None else '',
+                                        'type': 'directory'
+                                    })
+                    
+                    return directories
+                    
+                except ET.ParseError as e:
+                    logger.error(f"XML解析失败: {e}")
+                    raise Exception(f"服务器响应格式错误，无法解析: {str(e)}")
+                
+            except Exception as e:
+                logger.error(f"Directory listing failed: {e}")
+                # 重新抛出异常而不是使用备用目录列表
+                raise Exception(f"无法获取文件夹列表: {str(e)}")
+        
+        # 在线程池中运行同步函数
+        import concurrent.futures
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            result = await loop.run_in_executor(executor, _sync_list_directories)
+            return result
