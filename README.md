@@ -1,7 +1,5 @@
 
-# NextCloud Music Player 🎵
-
-免责: 大模型生成的项目,开发学习使用,不保证质量
+# Screenshot to UI Converter 🤖
 
 <div align="center">
 
@@ -12,22 +10,312 @@
 ![Build](https://github.com/zgfh/nextcloud-music-player/actions/workflows/build.yml/badge.svg)
 ![Release](https://github.com/zgfh/nextcloud-music-player/actions/workflows/release.yml/badge.svg)
 
-**一个基于 BeeWare 的跨平台音乐播放器，支持 NextCloud 云端音乐同步**
+**AI-powered tool to convert screenshots to optimized UI code using Stable Diffusion, ControlNet, and code generation models**
 
-[功能特性](#-功能特性) • [安装说明](#-安装说明) • [使用指南](#-使用指南) • [开发指南](#-开发指南) • [自动化构建](#-自动化构建与发布) • [贡献](#-贡献) • [许可证](#-许可证)
+[功能特性](#-功能特性) • [安装说明](#-安装说明) • [使用指南](#-使用指南) • [开发指南](#-开发指南) • [AI模型集成](#-ai模型集成) • [贡献](#-贡献) • [许可证](#-许可证)
 
 </div>
 
 ## 📖 项目简介
 
-NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜欢使用 NextCloud 云存储服务的用户设计。它能够无缝连接到您的 NextCloud 服务器，同步音乐文件到本地缓存，并提供流畅的音乐播放体验。
+Screenshot to UI Converter 是一款基于人工智能的工具，专门用于将用户界面截图转换为优化的代码。它集成了最先进的AI模型，包括Stable Diffusion、ControlNet和代码生成模型，为开发者提供高效的UI开发工作流。
 
 ### 🎯 设计理念
 
-- **云端同步**：与 NextCloud 无缝集成，自动同步音乐库
-- **跨平台**：基于 BeeWare Toga 框架，支持 macOS、Linux、Windows、iOS 和 Android
-- **智能缓存**：本地缓存管理，支持离线播放
-- **用户友好**：直观的界面设计，简单易用
+- **AI驱动**：集成Stable Diffusion、ControlNet等先进AI模型
+- **步骤可控**：提供分步处理流程，每步都有用户选择选项
+- **多框架支持**：支持React、Vue.js、HTML/CSS、Flutter、Swift UI
+- **跨平台**：基于BeeWare Toga框架，支持桌面和移动端
+- **代码优化**：生成清洁、模块化、可维护的代码
+
+## ✨ 功能特性
+
+### 🤖 AI处理管道
+- **图像分析**：智能分析截图内容、布局和视觉样式
+- **组件检测**：使用计算机视觉技术识别UI组件
+- **布局分析**：自动分析和重构界面布局结构
+- **样式提取**：智能提取颜色、字体、间距等设计元素
+- **代码生成**：基于AI模型生成优化的UI代码
+
+### 🎨 支持的UI框架
+- **React**：生成现代React组件(JSX)
+- **Vue.js**：生成Vue单文件组件(.vue)
+- **HTML/CSS**：生成纯HTML/CSS代码
+- **Flutter**：生成Dart/Flutter界面代码
+- **Swift UI**：生成iOS Swift UI代码
+
+### 🔧 用户交互功能
+- **分步处理**：每个AI处理步骤都提供进度反馈
+- **用户选择**：在关键步骤提供多个选项供用户选择
+- **实时预览**：显示处理过程和中间结果
+- **代码编辑**：支持生成后的代码编辑和优化
+
+### 📱 界面特性
+- **直观操作**：简单的拖拽和点击操作
+- **进度跟踪**：实时显示AI处理进度
+- **结果展示**：美观的代码展示和语法高亮
+- **导出功能**：支持代码复制和文件保存
+
+## 🚀 安装说明
+
+### 📦 快速开始
+
+```bash
+# 克隆仓库
+git clone https://github.com/zgfh/nextcloud-music-player.git
+cd nextcloud-music-player
+
+# 安装基础依赖
+pip install -r requirements.txt
+
+# 运行演示
+python demo.py
+```
+
+### 🧠 AI模型依赖 (可选)
+
+```bash
+# 安装AI模型依赖 (需要更多存储空间和计算资源)
+pip install torch transformers diffusers controlnet-aux opencv-python
+
+# 或者安装所有AI功能
+pip install -e ".[ai]"
+```
+
+### 系统要求
+
+- **Python**: 3.8 或更高版本
+- **操作系统**: macOS 10.14+、Ubuntu 18.04+、Windows 10+
+- **内存**: 建议 8GB+ (使用AI模型时)
+- **存储**: 2GB+ 可用空间 (AI模型缓存)
+
+## 📱 使用指南
+
+### 基本工作流程
+
+1. **启动应用**
+   ```bash
+   python -m briefcase dev
+   # 或运行演示
+   python demo.py
+   ```
+
+2. **上传截图**
+   - 点击"选择截图"按钮
+   - 选择要转换的UI截图
+   - 选择目标框架 (React/Vue/HTML/Flutter/Swift)
+
+3. **AI处理管道**
+   - 图像分析：自动分析截图内容
+   - 组件检测：选择自动检测或手动选择
+   - 布局分析：选择布局系统 (Flexbox/Grid/Absolute)
+   - 样式提取：提取颜色、字体等视觉元素
+   - 代码生成：选择代码风格 (简洁/注释/模块化)
+
+4. **查看结果**
+   - 查看生成的代码
+   - 复制到剪贴板或保存为文件
+   - 开始新的转换
+
+### 演示模式
+
+```bash
+# 运行完整演示
+python demo.py
+
+# 查看生成的代码文件
+ls demo_output_*
+```
+
+演示将生成以下文件：
+- `demo_output_react.jsx` - React组件
+- `demo_output_vue.vue` - Vue单文件组件  
+- `demo_output_html.html` - HTML/CSS页面
+
+## 🛠 开发指南
+
+### 项目结构
+
+```
+screenshot-to-ui-converter/
+├── src/nextcloud_music_player/
+│   ├── app.py                      # 主应用类
+│   ├── ai_processor.py             # AI处理核心模块
+│   ├── ui_converter_views.py       # UI界面组件
+│   └── resources/                  # 资源文件
+├── tests/                          # 单元测试
+│   ├── test_ai_processor.py        # AI处理器测试
+│   ├── test_ui_converter_views.py  # UI组件测试
+│   └── test_basic.py               # 基础功能测试
+├── demo.py                         # 演示脚本
+└── pyproject.toml                  # 项目配置
+```
+
+### 核心组件
+
+#### AIProcessor
+AI处理的核心引擎，负责：
+- 图像分析和组件检测
+- 布局分析和样式提取
+- 多框架代码生成
+- 进度回调和用户交互
+
+#### ViewManager
+UI界面管理，包含：
+- ScreenshotUploaderView：截图上传界面
+- ProcessingView：AI处理进度界面
+- CodeOutputView：代码结果展示界面
+
+### 开发环境设置
+
+```bash
+# 安装开发依赖
+pip install -e ".[dev]"
+
+# 运行测试
+python -m pytest tests/ -v
+
+# 代码格式化
+black src/ tests/
+flake8 src/ tests/
+```
+
+### 添加新的UI框架支持
+
+1. 在 `AIProcessor.supported_frameworks` 中添加框架定义
+2. 实现对应的 `_generate_{framework}_code` 方法
+3. 添加相应的测试用例
+4. 更新文档
+
+## 🧠 AI模型集成
+
+### 支持的AI模型
+
+#### 图像处理模型
+- **ControlNet**：用于UI组件边界检测
+- **Stable Diffusion**：用于样式和布局理解
+- **计算机视觉模型**：用于组件分类和识别
+
+#### 代码生成模型
+- **Transformer模型**：用于生成高质量代码
+- **语言模型**：用于代码优化和注释生成
+
+### 模型配置
+
+```python
+# AI模型配置 (可选)
+AI_MODELS = {
+    "controlnet": {
+        "model_id": "lllyasviel/sd-controlnet-canny",
+        "enabled": True
+    },
+    "stable_diffusion": {
+        "model_id": "runwayml/stable-diffusion-v1-5", 
+        "enabled": True
+    },
+    "code_generator": {
+        "model_id": "microsoft/CodeT5-large",
+        "enabled": True
+    }
+}
+```
+
+### 离线模式
+
+应用支持离线模式，使用预训练的轻量级模型：
+- 基于规则的组件检测
+- 模板化的代码生成
+- 启发式的布局分析
+
+## 🧪 测试
+
+### 运行测试套件
+
+```bash
+# 运行所有测试
+python -m pytest tests/ -v
+
+# 运行特定测试
+python -m pytest tests/test_ai_processor.py -v
+
+# 生成覆盖率报告
+python -m pytest tests/ --cov=src/nextcloud_music_player
+```
+
+### 测试组件
+
+- **test_ai_processor.py**：AI处理核心功能测试
+- **test_ui_converter_views.py**：UI组件交互测试
+- **test_basic.py**：基础导入和初始化测试
+- **test_minimal.py**：最小环境兼容性测试
+
+## 🚀 构建和部署
+
+### 桌面应用
+
+```bash
+# 构建应用
+python -m briefcase build
+
+# 打包分发
+python -m briefcase package
+```
+
+### 移动应用
+
+```bash
+# iOS (需要macOS + Xcode)
+python -m briefcase create iOS
+python -m briefcase build iOS
+
+# Android (需要Android SDK)
+python -m briefcase create android
+python -m briefcase build android
+```
+
+## 📄 许可证
+
+本项目采用 BSD 3-Clause 许可证。详见 [LICENSE](LICENSE) 文件。
+
+## 🤝 贡献
+
+欢迎贡献代码！请按照以下步骤：
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
+
+### 贡献指南
+
+- 确保代码通过所有测试
+- 遵循现有的代码风格
+- 为新功能添加相应的测试
+- 更新相关文档
+
+## 📞 支持与反馈
+
+- **问题报告**: [GitHub Issues](https://github.com/zgfh/nextcloud-music-player/issues)
+- **功能请求**: [GitHub Discussions](https://github.com/zgfh/nextcloud-music-player/discussions)
+- **文档**: [项目 Wiki](https://github.com/zgfh/nextcloud-music-player/wiki)
+
+## 🙏 致谢
+
+- [BeeWare Project](https://beeware.org/) - 跨平台Python UI框架
+- [Hugging Face](https://huggingface.co/) - AI模型和工具
+- [Stable Diffusion](https://stability.ai/) - 图像生成和理解
+- [ControlNet](https://github.com/lllyasviel/ControlNet) - 精确的图像控制
+
+---
+
+<div align="center">
+
+**如果这个项目对您有帮助，请给它一个 ⭐ Star！**
+
+Made with ❤️ and 🤖 by the Screenshot to UI Converter Team
+
+</div>
 
 ## ✨ 功能特性
 

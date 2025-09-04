@@ -3,19 +3,19 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nextcloud-music-player"
+name = "screenshot-to-ui-converter"
 version = "0.1.0"
-description = "A cross-platform music player with NextCloud integration"
+description = "AI-powered tool to convert screenshots to optimized UI code using Stable Diffusion, ControlNet, and code generation models"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {file = "LICENSE"}
 authors = [
     {name = "Your Name", email = "your.email@example.com"},
 ]
-keywords = ["music", "player", "nextcloud", "beeware", "toga"]
+keywords = ["screenshot", "ui", "ai", "converter", "stable-diffusion", "controlnet", "code-generation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -23,12 +23,15 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Topic :: Multimedia :: Sound/Audio :: Players",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
 ]
 dependencies = [
     "toga>=0.4.0",
     "requests>=2.25.0",
     "httpx>=0.24.0",
+    "pillow>=8.0.0",
+    "numpy>=1.20.0",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +43,13 @@ dev = [
     "isort",
     "mypy",
     "briefcase",
+]
+ai = [
+    "torch>=1.11.0",
+    "transformers>=4.20.0",
+    "diffusers>=0.21.0",
+    "controlnet-aux>=0.0.7",
+    "opencv-python>=4.5.0",
 ]
 
 # 明确指定包的位置
@@ -55,7 +65,7 @@ Homepage = "https://example.com/nextcloud-music-player"
 "Source Code" = "https://github.com/example/nextcloud-music-player"
 
 [project.scripts]
-nextcloud-music-player = "nextcloud_music_player.__main__:main"
+screenshot-to-ui = "nextcloud_music_player.__main__:main"
 
 [tool.briefcase]
 project_name = "NextCloud Music Player"

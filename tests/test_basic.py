@@ -1,5 +1,5 @@
 """
-基础测试用例
+基础测试用例 - Screenshot to UI Converter
 """
 import unittest
 from unittest.mock import patch, MagicMock
@@ -20,36 +20,43 @@ class TestBasic(unittest.TestCase):
         except ImportError as e:
             self.fail(f"导入失败: {e}")
     
-    def test_config_manager(self):
-        """测试配置管理器"""
+    def test_ai_processor_import(self):
+        """测试 AI 处理器导入"""
         try:
-            from nextcloud_music_player.config_manager import ConfigManager
-            config = ConfigManager()
-            self.assertIsNotNone(config)
+            from nextcloud_music_player.ai_processor import AIProcessor
+            processor = AIProcessor()
+            self.assertIsNotNone(processor)
+            processor.cleanup()
         except ImportError:
-            self.skipTest("ConfigManager 不可用")
+            self.skipTest("AIProcessor 不可用")
     
-    def test_nextcloud_client(self):
-        """测试 NextCloud 客户端"""
+    def test_ui_converter_views_import(self):
+        """测试 UI 转换器视图导入"""
         try:
-            from nextcloud_music_player.nextcloud_client import NextCloudClient
-            # 不进行实际连接，只测试类的创建
-            client = NextCloudClient("http://test.com", "user", "pass")
-            self.assertIsNotNone(client)
+            from nextcloud_music_player.ui_converter_views import ViewManager
+            # 只测试导入，不创建实例（需要mock app）
+            self.assertTrue(hasattr(ViewManager, '__init__'))
         except ImportError:
-            self.skipTest("NextCloudClient 不可用")
+            self.skipTest("UI Converter Views 不可用")
 
-class TestMusicLibrary(unittest.TestCase):
-    """音乐库测试用例"""
+class TestAIProcessor(unittest.TestCase):
+    """AI处理器测试用例"""
     
-    def test_music_library_import(self):
-        """测试音乐库导入"""
+    def test_ai_processor_initialization(self):
+        """测试AI处理器初始化"""
         try:
-            from nextcloud_music_player.music_library import MusicLibrary
-            library = MusicLibrary()
-            self.assertIsNotNone(library)
+            from nextcloud_music_player.ai_processor import AIProcessor
+            processor = AIProcessor()
+            
+            # 测试基本属性
+            self.assertIsNotNone(processor.supported_frameworks)
+            self.assertIn('react', processor.supported_frameworks)
+            self.assertIn('vue', processor.supported_frameworks)
+            
+            # 清理
+            processor.cleanup()
         except ImportError:
-            self.skipTest("MusicLibrary 不可用")
+            self.skipTest("AIProcessor 不可用")
 
 class TestServices(unittest.TestCase):
     """服务测试用例"""
