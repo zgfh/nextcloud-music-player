@@ -38,6 +38,9 @@ class FileListView:
         self.build_interface()
         logger.info("文件列表视图初始化完成")
         
+        # 更新文件夹显示
+        self.update_folder_display()
+        
         # 从 music_list.json 加载音乐列表
         self.reload_music_list()
         # 软件启动时异步更新下载状态 - 使用线程调用同步版本
@@ -53,8 +56,33 @@ class FileListView:
         # 可以在这里处理同步文件夹变化的UI更新
         logger.info(f"同步文件夹已更新: {sync_folder}")
         
+        # 更新文件夹显示
+        self.update_folder_display()
+        
         # 从 music_list.json 加载音乐列表
         self.reload_music_list()
+    
+    def update_folder_display(self):
+        """更新文件夹显示标签"""
+        try:
+            sync_folder = self.music_service.config_manager.get("connection.default_sync_folder", "").strip()
+            if sync_folder:
+                self.folder_button.text = f"📁 同步文件夹: {sync_folder}"
+            else:
+                self.folder_button.text = "📁 同步文件夹: (根目录)"
+        except Exception as e:
+            logger.warning(f"更新文件夹显示失败: {e}")
+            self.folder_button.text = "📁 同步文件夹: (未设置)"
+    
+    def goto_connection_settings(self, widget):
+        """跳转到连接设置界面"""
+        try:
+            # 通过视图管理器切换到连接设置视图
+            self.view_manager.switch_to_view('connection')
+            logger.info("已切换到连接设置界面")
+        except Exception as e:
+            logger.error(f"跳转到连接设置失败: {e}")
+            self.show_message("跳转到连接设置失败", "error")
     
     def build_interface(self):
         """构建文件列表界面 - iOS优化版本"""
@@ -90,16 +118,10 @@ class FileListView:
             )
         )
         
-        # 文件夹输入 - 减小字体
-        self.folder_input = toga.TextInput(
-            placeholder="指定同步文件夹路径 (可选)",
-            style=Pack(flex=1, padding=(0, 3, 0, 3), font_size=11)
-        )
-        
-        # 搜索输入框 - 减小字体
+        # 搜索输入框 - 固定宽度，设置高度与按钮一致
         self.search_input = toga.TextInput(
             placeholder="搜索歌曲、艺术家或专辑...",
-            style=Pack(flex=1, padding=(0, 3, 0, 3), font_size=11)
+            style=Pack(width=200, height=30, padding=(0, 3, 0, 3), font_size=11)
         )
         
         # 搜索按钮 - 减小尺寸
@@ -110,9 +132,26 @@ class FileListView:
         )
         
         action_bar.add(self.sync_button)
-        action_bar.add(self.folder_input)
         action_bar.add(self.search_input)
         action_bar.add(self.search_button)
+        
+        # 文件夹信息栏 - 单独一行，可点击跳转到设置
+        folder_bar = toga.Box(style=Pack(direction=ROW, padding=5))
+        
+        self.folder_button = toga.Button(
+            "📁 同步文件夹: (未设置)",
+            on_press=self.goto_connection_settings,
+            style=Pack(
+                flex=1,
+                padding=3,
+                font_size=12,
+                text_align="left",
+                background_color="#f8f9fa",
+                color="#495057"
+            )
+        )
+        
+        folder_bar.add(self.folder_button)
         
         # 播放控制栏 - 减小填充和按钮
         playback_bar = toga.Box(style=Pack(direction=ROW, padding=5))
@@ -235,6 +274,7 @@ class FileListView:
         # 组装界面 - 使用滚动容器的内容
         content_box.add(title)
         content_box.add(action_bar)
+        content_box.add(folder_bar)
         content_box.add(playback_bar)
         content_box.add(self.stats_box)
         content_box.add(self.music_list)
@@ -285,8 +325,8 @@ class FileListView:
             self.sync_button.enabled = False
             self.sync_button.text = "📥 同步中..."
             
-            # 获取同步文件夹路径
-            sync_folder = self.folder_input.value.strip()
+            # 从配置获取同步文件夹路径，不再从输入框获取
+            sync_folder = self.music_service.config_manager.get("connection.default_sync_folder", "").strip()
             
             logger.info(f"开始同步音乐文件，文件夹路径: '{sync_folder}'")
             self.show_message(f"正在同步文件夹: {sync_folder or '根目录'}", "info")
@@ -715,12 +755,8 @@ class FileListView:
         # 从 music_list.json 刷新显示状态
         self.reload_music_list()
         
-        # 从连接视图加载文件夹路径
-        # 获取连接配置信息
-        connection_config = self.music_service.get_connection_config()
-        default_folder = connection_config.get("default_sync_folder", "")
-        if default_folder and not self.folder_input.value:
-            self.folder_input.value = default_folder
+        # 更新文件夹显示
+        self.update_folder_display()
             
     async def update_download_status(self):
         """异步更新下载状态"""

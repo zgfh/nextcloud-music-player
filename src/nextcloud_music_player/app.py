@@ -36,6 +36,16 @@ from .config_manager import ConfigManager
 
 class NextCloudMusicPlayer(toga.App):
     """NextCloud音乐播放器主应用类"""
+    
+    def __init__(self):
+        super().__init__(
+            formal_name="NextCloud Music Player",
+            app_id="com.example.nextcloud-music-player",
+            app_name="nextcloud-music-player",
+            description="A cross-platform music player with NextCloud integration",
+            author="Your Name",
+            version="0.1.0"
+        )
 
     def startup(self):
         """应用启动初始化"""
