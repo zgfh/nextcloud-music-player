@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class PlaylistViewComponent:
     """播放列表视图组件 - 负责播放列表的界面显示和用户交互"""
     
-    def __init__(self, app, playlist_manager, on_song_select_callback=None, on_playlist_change_callback=None):
+    def __init__(self, app, playlist_manager, on_song_select_callback=None, on_playlist_change_callback=None, playback_service=None):
         """
         初始化播放列表视图组件
         
@@ -23,11 +23,13 @@ class PlaylistViewComponent:
             playlist_manager: 播放列表管理器
             on_song_select_callback: 选择歌曲时的回调函数
             on_playlist_change_callback: 播放列表改变时的回调函数
+            playback_service: 播放服务实例，用于获取播放状态
         """
         self.app = app
         self.playlist_manager = playlist_manager
         self.on_song_select_callback = on_song_select_callback
         self.on_playlist_change_callback = on_playlist_change_callback
+        self.playback_service = playback_service
         
         # UI组件
         self.playlist_box = None
@@ -47,7 +49,8 @@ class PlaylistViewComponent:
         self.playlist_box = toga.Box(style=Pack(
             direction=COLUMN,
             padding=3,
-            background_color="#ffffff"
+            background_color="#ffffff",
+            flex=1
         ))
         
         # 播放列表头部 - 信息和控制按钮在同一行
@@ -70,25 +73,27 @@ class PlaylistViewComponent:
     def create_playlist_header(self):
         """创建播放列表头部 - 信息标签和控制按钮在同一行"""
         self.playlist_header_box = toga.Box(style=Pack(
-            direction=COLUMN,
-            padding=2
+            direction=ROW,  # 改为水平布局，让信息标签和控制按钮在同一行
+            padding=2,
+            alignment="center"
         ))
         
-        # 播放列表信息标签
+        # 播放列表信息标签 - 占据左侧剩余空间
         self.playlist_info_label = toga.Label(
             "正在加载播放列表...",
             style=Pack(
                 font_size=11,
-                padding=(2, 0),
+                padding=(2, 5, 2, 0),  # 右侧留出一些空间
                 color="#666666",
-                text_align="center"
+                text_align="left",  # 左对齐
+                flex=1  # 占据剩余空间
             )
         )
         
-        # 控制按钮行
+        # 控制按钮容器
         self.playlist_controls_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=2,
+            padding=(2, 0),
             alignment="center"
         ))
         
@@ -137,13 +142,13 @@ class PlaylistViewComponent:
             )
         )
         
-        # 添加按钮
+        # 添加按钮到控制按钮容器
         self.playlist_controls_box.add(clear_button)
         self.playlist_controls_box.add(remove_button)
         self.playlist_controls_box.add(refresh_button)
         self.playlist_controls_box.add(manage_button)
         
-        # 组装头部
+        # 组装头部 - 信息标签在左，控制按钮在右
         self.playlist_header_box.add(self.playlist_info_label)
         self.playlist_header_box.add(self.playlist_controls_box)
     
@@ -221,16 +226,31 @@ class PlaylistViewComponent:
             
             # 确定图标和状态
             if index == current_index:
-                # 检查播放状态
-                if getattr(self.app, 'is_playing', False):
-                    icon = "🎵"
-                    status = "播放中"
-                elif getattr(self.app, 'is_paused', False):
-                    icon = "⏸️"
-                    status = "暂停"
+                # 检查播放状态 - 使用 playback_service 获取真实状态
+                if self.playback_service:
+                    is_playing = self.playback_service.is_playing()
+                    is_paused = getattr(self.playback_service, 'current_song_state', {}).get('is_paused', False)
+                    
+                    if is_playing:
+                        icon = "播放中 🔊"
+                        status = "播放中"
+                    elif is_paused:
+                        icon = "暂停 ⏸"
+                        status = "暂停"
+                    else:
+                        icon = "待播放 ●"
+                        status = "待播放"
                 else:
-                    icon = "🎵"
-                    status = "待播放"
+                    # 如果没有 playback_service，回退到 app 属性检查
+                    if getattr(self.app, 'is_playing', False):
+                        icon = "播放中 🔊"
+                        status = "播放中"
+                    elif getattr(self.app, 'is_paused', False):
+                        icon = "暂停 ⏸"
+                        status = "暂停"
+                    else:
+                        icon = "待播放 ●"
+                        status = "待播放"
             else:
                 icon = "🎶"
                 status = ""
@@ -479,16 +499,31 @@ class PlaylistViewComponent:
                 
                 # 确定新的图标
                 if i == current_index:
-                    # 检查播放状态
-                    if getattr(self.app, 'is_playing', False):
-                        new_icon = "🎵"
-                        status = "播放中"
-                    elif getattr(self.app, 'is_paused', False):
-                        new_icon = "⏸️"
-                        status = "暂停"
+                    # 检查播放状态 - 使用 playback_service 获取真实状态
+                    if self.playback_service:
+                        is_playing = self.playback_service.is_playing()
+                        is_paused = getattr(self.playback_service, 'current_song_state', {}).get('is_paused', False)
+                        
+                        if is_playing:
+                            new_icon = "播放中 🔊"
+                            status = "播放中"
+                        elif is_paused:
+                            new_icon = "暂停 ⏸"
+                            status = "暂停"
+                        else:
+                            new_icon = "待播放 ●"
+                            status = "待播放"
                     else:
-                        new_icon = "🎵"
-                        status = "待播放"
+                        # 如果没有 playback_service，回退到 app 属性检查
+                        if getattr(self.app, 'is_playing', False):
+                            new_icon = "播放中 🔊"
+                            status = "播放中"
+                        elif getattr(self.app, 'is_paused', False):
+                            new_icon = "暂停 ⏸"
+                            status = "暂停"
+                        else:
+                            new_icon = "待播放 ●"
+                            status = "待播放"
                 else:
                     new_icon = "🎶"
                     status = ""

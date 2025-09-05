@@ -63,7 +63,8 @@ class PlaybackView:
             app=app,
             playlist_manager=self.playlist_manager,
             on_song_select_callback=self.on_playlist_song_selected,
-            on_playlist_change_callback=self.on_playlist_changed
+            on_playlist_change_callback=self.on_playlist_changed,
+            playback_service=self.playback_service
         )
         
         # 初始化歌词显示组件
@@ -346,9 +347,11 @@ class PlaybackView:
             # 更新状态标签
             if hasattr(self, 'status_label') and self.status_label:
                 if is_playing:
-                    self.status_label.text = "▶️ 播放中"
+                    self.status_label.text = "播放中 🔊"
+                    self.status_label.style.color = "#28a745"  # 绿色表示播放
                 else:
-                    self.status_label.text = "⏸️ 暂停"
+                    self.status_label.text = "暂停 ⏸"
+                    self.status_label.style.color = "#ffc107"  # 黄色表示暂停
                     
             # 强制刷新UI（如果需要）
             if hasattr(self.app, 'main_window') and self.app.main_window:
@@ -634,13 +637,13 @@ class PlaybackView:
         
         # 播放状态 - 紧凑显示
         self.status_label = toga.Label(
-            "⏹️",
+            "停止 ●",
             style=Pack(
-                font_size=10,
+                font_size=11,  # 增加字体大小以更好显示emoji
                 text_align="right",
                 padding=(0, 0, 0, 0),
                 color="#495057",
-                width=25
+                width=80  # 增加宽度以容纳emoji文字
             )
         )
         
@@ -754,16 +757,19 @@ class PlaybackView:
             is_paused = getattr(self.playback_service, 'current_song_state', {}).get('is_paused', False)
             
             if is_playing:
-                self.status_label.text = "▶️ 播放中"
+                self.status_label.text = "播放中 🔊"
+                self.status_label.style.color = "#28a745"  # 绿色表示播放
                 # 更新播放控制组件的播放/暂停按钮
                 if hasattr(self, 'playback_control_component') and self.playback_control_component:
                     self.playback_control_component.update_play_pause_button(True)
             elif is_paused:
-                self.status_label.text = "⏸️ 暂停"
+                self.status_label.text = "暂停 ⏸"
+                self.status_label.style.color = "#ffc107"  # 黄色表示暂停
                 if hasattr(self, 'playback_control_component') and self.playback_control_component:
                     self.playback_control_component.update_play_pause_button(False)
             else:
-                self.status_label.text = "⏹️ 停止"
+                self.status_label.text = "停止 ●"
+                self.status_label.style.color = "#6c757d"  # 灰色表示停止
                 if hasattr(self, 'playback_control_component') and self.playback_control_component:
                     self.playback_control_component.update_play_pause_button(False)
                 
@@ -839,14 +845,17 @@ class PlaybackView:
             is_paused = getattr(self.playback_service, 'current_song_state', {}).get('is_paused', False)
             
             if is_playing:
-                self.status_label.text = "▶️ 播放中"
+                self.status_label.text = "播放中 🔊"
+                self.status_label.style.color = "#28a745"  # 绿色表示播放
                 # 更新播放控制组件的播放/暂停按钮
                 self.playback_control_component.update_play_pause_button(True)
             elif is_paused:
-                self.status_label.text = "⏸️ 暂停"
+                self.status_label.text = "暂停 ⏸"
+                self.status_label.style.color = "#ffc107"  # 黄色表示暂停
                 self.playback_control_component.update_play_pause_button(False)
             else:
-                self.status_label.text = "⏹️ 停止"
+                self.status_label.text = "停止 ●"
+                self.status_label.style.color = "#6c757d"  # 灰色表示停止
                 self.playback_control_component.update_play_pause_button(False)
             
             # 更新播放进度 - 使用播放控制组件
