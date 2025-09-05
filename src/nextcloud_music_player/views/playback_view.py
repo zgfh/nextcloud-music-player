@@ -153,11 +153,11 @@ class PlaybackView:
             visibility="hidden"
         ))
         
-        # 精简的标题 - 增大字体和间距便于手机查看
+        # 精简的标题 - 减少间距以节省空间
         title = toga.Label(
             "🎵 音乐播放器",
             style=Pack(
-                padding=(4, 0, 6, 0),
+                padding=(2, 0, 3, 0),  # 减少padding
                 font_size=16,
                 font_weight="bold",
                 text_align="center"
@@ -167,18 +167,18 @@ class PlaybackView:
         # 当前播放信息区域 - 精简版
         self.create_now_playing_section()
         
-        # 视图切换按钮 - 移到顶部，增大尺寸便于手机操作
+        # 视图切换按钮 - 靠左显示更美观
         view_switch_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=5,
-            alignment="center"
+            padding=3,  # 减少padding
+            alignment="left"  # 改为左对齐
         ))
         
         self.playlist_tab_button = toga.Button(
             "播放列表",
             on_press=self.show_playlist_view,
             style=Pack(
-                width=90,
+                width=100,  # 固定宽度限制按钮大小
                 height=35,
                 padding=(0, 4),
                 font_size=12,
@@ -191,21 +191,22 @@ class PlaybackView:
             "歌词",
             on_press=self.show_lyrics_view,
             style=Pack(
-                width=90,
+                width=100,  # 固定宽度限制按钮大小
                 height=35,
                 padding=(0, 4),
                 font_size=12
             )
         )
         
+        # 靠左排列按钮
         view_switch_box.add(self.playlist_tab_button)
         view_switch_box.add(self.lyrics_tab_button)
         
-        # 内容区域容器 - 给予更多flex空间，减少padding以增大播放控制区域
+        # 内容区域容器 - 减少padding以减少空白区域
         self.content_container = toga.Box(style=Pack(
             direction=COLUMN,
             flex=1,
-            padding=(0, 8)
+            padding=(2, 3)  # 减少padding
         ))
         
         # 播放列表区域 - 使用播放列表组件
@@ -631,10 +632,10 @@ class PlaybackView:
     
     
     def create_now_playing_section(self):
-        """创建当前播放信息区域 - 手机操作优化版本"""
+        """创建当前播放信息区域 - 减少空白间距"""
         self.now_playing_box = toga.Box(style=Pack(
             direction=ROW,  # 改为水平布局
-            padding=5,
+            padding=3,  # 减少padding
             background_color="#f8f9fa",
             alignment="center"
         ))
@@ -646,7 +647,7 @@ class PlaybackView:
                 font_size=14,
                 font_weight="bold",
                 text_align="left",
-                padding=(0, 8, 0, 0),
+                padding=(0, 6, 0, 0),  # 减少padding
                 color="#212529",
                 flex=1
             )

@@ -45,10 +45,10 @@ class PlaylistViewComponent:
     
     def create_ui(self):
         """创建播放列表UI"""
-        # 主容器
+        # 主容器 - 减少padding以减少空白区域
         self.playlist_box = toga.Box(style=Pack(
             direction=COLUMN,
-            padding=3,
+            padding=1,  # 减少padding
             background_color="#ffffff",
             flex=1
         ))
@@ -62,7 +62,7 @@ class PlaylistViewComponent:
             on_select=self.on_song_selected,
             style=Pack(
                 flex=1,
-                padding=(2, 0)
+                padding=(1, 0)  # 减少padding
             )
         )
         
@@ -74,7 +74,7 @@ class PlaylistViewComponent:
         """创建播放列表头部 - 信息标签和控制按钮在同一行"""
         self.playlist_header_box = toga.Box(style=Pack(
             direction=ROW,  # 改为水平布局，让信息标签和控制按钮在同一行
-            padding=2,
+            padding=1,  # 减少padding
             alignment="center"
         ))
         
@@ -83,7 +83,7 @@ class PlaylistViewComponent:
             "正在加载播放列表...",
             style=Pack(
                 font_size=11,
-                padding=(2, 5, 2, 0),  # 右侧留出一些空间
+                padding=(1, 3, 1, 0),  # 减少padding
                 color="#666666",
                 text_align="left",  # 左对齐
                 flex=1  # 占据剩余空间
@@ -93,16 +93,16 @@ class PlaylistViewComponent:
         # 控制按钮容器
         self.playlist_controls_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=(2, 0),
+            padding=(1, 0),  # 减少padding
             alignment="center"
         ))
         
-        # 创建紧凑的控制按钮 - 手机操作优化
+        # 创建紧凑的控制按钮 - 使用flex实现响应式宽度
         clear_button = toga.Button(
             "🗑️",
             on_press=self.clear_playlist,
             style=Pack(
-                width=40,
+                flex=1,  # 使用flex实现响应式宽度
                 height=32,
                 padding=(0, 3),
                 font_size=12
@@ -113,7 +113,7 @@ class PlaylistViewComponent:
             "❌",
             on_press=self.remove_selected_song,
             style=Pack(
-                width=40,
+                flex=1,  # 使用flex实现响应式宽度
                 height=32,
                 padding=(0, 3),
                 font_size=12
@@ -124,7 +124,7 @@ class PlaylistViewComponent:
             "🔄",
             on_press=self.refresh_display_action,
             style=Pack(
-                width=40,
+                flex=1,  # 使用flex实现响应式宽度
                 height=32,
                 padding=(0, 3),
                 font_size=12
@@ -135,7 +135,7 @@ class PlaylistViewComponent:
             "📋",
             on_press=self.show_playlist_manager,
             style=Pack(
-                width=40,
+                flex=1,  # 使用flex实现响应式宽度
                 height=32,
                 padding=(0, 3),
                 font_size=12

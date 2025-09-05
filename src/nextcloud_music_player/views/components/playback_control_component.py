@@ -76,20 +76,25 @@ class PlaybackControlComponent:
         self.container.add(self.controls_box)  # 播放按钮在底部
     
     def create_playback_buttons(self):
-        """创建播放控制按钮 - 平台自适应的触摸优化设计"""
+        """创建播放控制按钮 - 使用相对百分比宽度的响应式设计"""
         self.controls_box = toga.Box(style=Pack(
             direction=ROW,
             padding=self.paddings["controls"],  # 使用平台自适应的padding
-            alignment="center"
+            alignment="center",
+            flex=1  # 使容器能够填充可用空间
         ))
         
-        # 上一曲按钮 - 使用平台自适应尺寸
+        # 计算平台自适应的高度
+        button_height = self.button_sizes["primary_height"]
+        secondary_height = self.button_sizes["secondary_height"]
+        
+        # 上一曲按钮 - 使用flex和百分比宽度
         self.prev_button = toga.Button(
             "⏮️",
             on_press=self._on_previous_song,
             style=Pack(
-                width=self.button_sizes["secondary_width"],
-                height=self.button_sizes["secondary_height"],
+                flex=0.8,  # 相对宽度，占可用空间的0.8倍
+                height=secondary_height,
                 padding=self.paddings["button"],
                 font_size=self.font_sizes["icon_secondary"],
                 background_color="#f8f9fa",
@@ -97,13 +102,13 @@ class PlaybackControlComponent:
             )
         )
         
-        # 播放/暂停按钮 - 使用平台自适应尺寸，作为主要控制按钮
+        # 播放/暂停按钮 - 作为主要控制按钮，稍大一些
         self.play_pause_button = toga.Button(
             "▶️",
             on_press=self._on_toggle_playback,
             style=Pack(
-                width=self.button_sizes["primary_width"],
-                height=self.button_sizes["primary_height"],
+                flex=1.2,  # 相对宽度，占可用空间的1.2倍（最大）
+                height=button_height,
                 padding=self.paddings["button"],
                 font_size=self.font_sizes["icon_primary"],
                 background_color="#007bff",
@@ -111,13 +116,13 @@ class PlaybackControlComponent:
             )
         )
         
-        # 下一曲按钮 - 使用平台自适应尺寸
+        # 下一曲按钮 - 使用flex和百分比宽度
         self.next_button = toga.Button(
             "⏭️",
             on_press=self._on_next_song,
             style=Pack(
-                width=self.button_sizes["secondary_width"],
-                height=self.button_sizes["secondary_height"],
+                flex=0.8,  # 相对宽度，占可用空间的0.8倍
+                height=secondary_height,
                 padding=self.paddings["button"],
                 font_size=self.font_sizes["icon_secondary"],
                 background_color="#f8f9fa",
@@ -125,13 +130,13 @@ class PlaybackControlComponent:
             )
         )
         
-        # 停止按钮 - 使用平台自适应尺寸
+        # 停止按钮 - 使用flex和百分比宽度，确保在所有设备上可见
         self.stop_button = toga.Button(
             "⏹️",
             on_press=self._on_stop_playback,
             style=Pack(
-                width=self.button_sizes["secondary_width"],
-                height=self.button_sizes["secondary_height"],
+                flex=0.8,  # 相对宽度，占可用空间的0.8倍
+                height=secondary_height,
                 padding=self.paddings["button"],
                 font_size=self.font_sizes["icon_secondary"],
                 background_color="#dc3545",
@@ -146,18 +151,20 @@ class PlaybackControlComponent:
         self.controls_box.add(self.stop_button)
     
     def create_compact_volume_and_mode_controls(self):
-        """创建紧凑的音量和播放模式控制 - 平台自适应布局"""
+        """创建紧凑的音量和播放模式控制 - 使用相对百分比宽度的响应式设计"""
         self.volume_mode_box = toga.Box(style=Pack(
             direction=ROW,
             padding=self.paddings["volume_mode"],  # 使用平台自适应的padding
-            alignment="center"
+            alignment="center",
+            flex=1  # 使容器能够填充可用空间
         ))
         
-        # 音量控制 - 增大尺寸便于手机操作
+        # 音量控制 - 使用flex布局，减少占用空间
         volume_box = toga.Box(style=Pack(
             direction=ROW,
             padding=(0, 8, 0, 0),
-            alignment="center"
+            alignment="center",
+            flex=1  # 音量控制占正常空间
         ))
         
         volume_label = toga.Label(
@@ -173,7 +180,7 @@ class PlaybackControlComponent:
             value=70,
             on_change=self._on_volume_change,
             style=Pack(
-                width=120,
+                flex=1,  # 滑块占剩余空间
                 padding=(0, 0, 0, 0)
             )
         )
@@ -181,19 +188,20 @@ class PlaybackControlComponent:
         volume_box.add(volume_label)
         volume_box.add(self.volume_slider)
         
-        # 播放模式按钮 - 增大尺寸便于手机操作
+        # 播放模式按钮 - 使用flex布局确保所有按钮可见，给更多空间
         mode_box = toga.Box(style=Pack(
             direction=ROW,
             padding=(0, 0, 0, 8),
-            alignment="center"
+            alignment="center",
+            flex=1.5  # 模式按钮区域占更多空间，让按钮更大
         ))
         
-        # 播放模式按钮 - 使用平台自适应尺寸
+        # 播放模式按钮 - 使用flex确保均匀分布
         self.normal_button = toga.Button(
             "🔁",
             on_press=lambda widget: self._set_play_mode("normal"),
             style=Pack(
-                width=self.button_sizes["small_width"],
+                flex=1,  # 均匀分布
                 height=self.button_sizes["small_height"],
                 padding=self.paddings["mode_button"],
                 font_size=self.font_sizes["icon_small"],
@@ -206,7 +214,7 @@ class PlaybackControlComponent:
             "🔂",
             on_press=lambda widget: self._set_play_mode("repeat_one"),
             style=Pack(
-                width=self.button_sizes["small_width"],
+                flex=1,  # 均匀分布
                 height=self.button_sizes["small_height"],
                 padding=self.paddings["mode_button"],
                 font_size=self.font_sizes["icon_small"],
@@ -219,7 +227,7 @@ class PlaybackControlComponent:
             "🔁",
             on_press=lambda widget: self._set_play_mode("repeat_all"),
             style=Pack(
-                width=self.button_sizes["small_width"],
+                flex=1,  # 均匀分布
                 height=self.button_sizes["small_height"],
                 padding=self.paddings["mode_button"],
                 font_size=self.font_sizes["icon_small"],
@@ -232,7 +240,7 @@ class PlaybackControlComponent:
             "🔀",
             on_press=lambda widget: self._set_play_mode("shuffle"),
             style=Pack(
-                width=self.button_sizes["small_width"],
+                flex=1,  # 均匀分布
                 height=self.button_sizes["small_height"],
                 padding=self.paddings["mode_button"],
                 font_size=self.font_sizes["icon_small"],
@@ -358,11 +366,12 @@ class PlaybackControlComponent:
         self.update_mode_buttons()
     
     def create_progress_section(self):
-        """创建播放进度区域 - 平台自适应版本"""
+        """创建播放进度区域 - 使用相对百分比宽度的响应式设计"""
         self.progress_box = toga.Box(style=Pack(
             direction=ROW,  # 改为水平布局，更紧凑
             padding=self.paddings["progress"],  # 使用平台自适应的padding
-            alignment="center"
+            alignment="center",
+            flex=1  # 使容器能够填充可用空间
         ))
         
         # 当前时间标签 - 使用平台自适应字体大小
@@ -371,18 +380,19 @@ class PlaybackControlComponent:
             style=Pack(
                 font_size=self.font_sizes["text_normal"],
                 padding=(0, 6, 0, 0),  # 增加右边距
-                color="#666666"
+                color="#666666",
+                width=45  # 固定宽度确保布局稳定
             )
         )
         
-        # 进度条（使用滑块模拟） - 增大宽度便于手机操作
+        # 进度条（使用滑块模拟） - 使用flex占据剩余空间
         self.progress_slider = toga.Slider(
             min=0,
             max=100,
             value=0,
             on_change=self._on_seek,
             style=Pack(
-                width=200,      # 适合触摸操作的宽度
+                flex=1,         # 占据剩余空间，自适应屏幕宽度
                 padding=(0, 8)  # 增加左右间距
             )
         )
@@ -393,7 +403,8 @@ class PlaybackControlComponent:
             style=Pack(
                 font_size=self.font_sizes["text_normal"],
                 padding=(0, 0, 0, 6),  # 增加左边距
-                color="#666666"
+                color="#666666",
+                width=45  # 固定宽度确保布局稳定
             )
         )
         
