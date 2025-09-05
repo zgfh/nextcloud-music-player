@@ -35,79 +35,87 @@ class PlaybackControlComponent:
         
         logger.info("播放控制组件初始化完成")
     
+    @property
+    def widget(self):
+        """获取主要控件容器"""
+        return self.container
+    
     def create_controls(self):
-        """创建播放控制按钮"""
-        # 主控制容器
+        """创建播放控制按钮 - iOS优化的紧凑布局"""
+        # 主控制容器 - 紧凑版本
         self.container = toga.Box(style=Pack(
             direction=COLUMN,
-            padding=5,
+            padding=3,
             alignment="center"
         ))
         
         # 创建播放控制按钮行
         self.create_playback_buttons()
         
-        # 创建音量和播放模式控制
-        self.create_volume_and_mode_controls()
+        # 创建进度显示区域 - 在按钮上方
+        self.create_progress_section()
         
-        # 添加到主容器
-        self.container.add(self.controls_box)
-        self.container.add(self.progress_box)  # 先添加进度条
-        self.container.add(self.volume_mode_box)
+        # 创建音量和播放模式控制 - 一行式布局
+        self.create_compact_volume_and_mode_controls()
+        
+        # 添加到主容器 - 紧凑布局顺序
+        self.container.add(self.progress_box)  # 进度条在顶部
+        self.container.add(self.volume_mode_box)  # 音量和模式在中间
+        self.container.add(self.controls_box)  # 播放按钮在底部
     
     def create_playback_buttons(self):
-        """创建播放控制按钮"""
+        """创建播放控制按钮 - 紧凑版本"""
         self.controls_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=8,
+            padding=3,
             alignment="center"
         ))
         
-        # 上一曲按钮
+        # 上一曲按钮 - 紧凑版本
         self.prev_button = toga.Button(
             "⏮️",
             on_press=self._on_previous_song,
             style=Pack(
-                width=45,
-                height=35,
-                padding=(0, 3),
-                font_size=14
+                width=35,
+                height=30,
+                padding=(0, 2),
+                font_size=12
             )
         )
         
-        # 播放/暂停按钮
+        # 播放/暂停按钮 - 稍大一些
         self.play_pause_button = toga.Button(
             "▶️",
             on_press=self._on_toggle_playback,
             style=Pack(
-                width=60,
-                height=40,
-                padding=(0, 8),
-                font_size=16
+                width=45,
+                height=32,
+                padding=(0, 4),
+                font_size=14
             )
         )
         
-        # 下一曲按钮
+        # 下一曲按钮 - 紧凑版本
         self.next_button = toga.Button(
             "⏭️",
             on_press=self._on_next_song,
             style=Pack(
-                width=45,
-                height=35,
-                padding=(0, 3),
-                font_size=14
+                width=35,
+                height=30,
+                padding=(0, 2),
+                font_size=12
             )
         )
         
-        # 停止按钮
+        # 停止按钮 - 紧凑版本
         self.stop_button = toga.Button(
             "⏹️",
             on_press=self._on_stop_playback,
             style=Pack(
-                width=45,
-                height=35,
-                padding=(0, 3),
-                font_size=14
+                width=35,
+                height=30,
+                padding=(0, 2),
+                font_size=12
             )
         )
         
@@ -116,6 +124,102 @@ class PlaybackControlComponent:
         self.controls_box.add(self.play_pause_button)
         self.controls_box.add(self.next_button)
         self.controls_box.add(self.stop_button)
+    
+    def create_compact_volume_and_mode_controls(self):
+        """创建紧凑的音量和播放模式控制 - 一行布局"""
+        self.volume_mode_box = toga.Box(style=Pack(
+            direction=ROW,
+            padding=2,
+            alignment="center"
+        ))
+        
+        # 音量控制 - 紧凑版本
+        volume_box = toga.Box(style=Pack(
+            direction=ROW,
+            padding=(0, 5, 0, 0),
+            alignment="center"
+        ))
+        
+        volume_label = toga.Label(
+            "🔊",
+            style=Pack(
+                font_size=10,
+                padding=(0, 2, 0, 0)
+            )
+        )
+        
+        self.volume_slider = toga.Slider(
+            range=(0, 100),
+            value=70,
+            on_change=self._on_volume_change,
+            style=Pack(
+                width=100,
+                padding=(0, 0, 0, 0)
+            )
+        )
+        
+        volume_box.add(volume_label)
+        volume_box.add(self.volume_slider)
+        
+        # 播放模式按钮 - 紧凑版本
+        mode_box = toga.Box(style=Pack(
+            direction=ROW,
+            padding=(0, 0, 0, 5),
+            alignment="center"
+        ))
+        
+        # 播放模式按钮 - 更小尺寸
+        self.normal_button = toga.Button(
+            "🔁",
+            on_press=lambda widget: self._set_play_mode("normal"),
+            style=Pack(
+                width=28,
+                height=25,
+                padding=(0, 1),
+                font_size=10
+            )
+        )
+        
+        self.repeat_one_button = toga.Button(
+            "🔂",
+            on_press=lambda widget: self._set_play_mode("repeat_one"),
+            style=Pack(
+                width=28,
+                height=25,
+                padding=(0, 1),
+                font_size=10
+            )
+        )
+        
+        self.repeat_all_button = toga.Button(
+            "🔁",
+            on_press=lambda widget: self._set_play_mode("repeat_all"),
+            style=Pack(
+                width=28,
+                height=25,
+                padding=(0, 1),
+                font_size=10
+            )
+        )
+        
+        self.shuffle_button = toga.Button(
+            "🔀",
+            on_press=lambda widget: self._set_play_mode("shuffle"),
+            style=Pack(
+                width=28,
+                height=25,
+                padding=(0, 1),
+                font_size=10
+            )
+        )
+        
+        mode_box.add(self.normal_button)
+        mode_box.add(self.repeat_one_button)
+        mode_box.add(self.repeat_all_button)
+        mode_box.add(self.shuffle_button)
+        
+        self.volume_mode_box.add(volume_box)
+        self.volume_mode_box.add(mode_box)
     
     def create_volume_and_mode_controls(self):
         """创建音量和播放模式控制"""
@@ -226,53 +330,52 @@ class PlaybackControlComponent:
         self.update_mode_buttons()
     
     def create_progress_section(self):
-        """创建播放进度区域"""
+        """创建播放进度区域 - 紧凑版本"""
         self.progress_box = toga.Box(style=Pack(
-            direction=COLUMN,
-            padding=8
+            direction=ROW,  # 改为水平布局，更紧凑
+            padding=1,
+            alignment="center"
         ))
         
-        # 时间显示
-        time_box = toga.Box(style=Pack(direction=ROW, padding=(0, 0, 3, 0)))
-        
+        # 当前时间标签 - 紧凑版本
         self.current_time_label = toga.Label(
             "00:00",
             style=Pack(
-                flex=0, 
-                padding=(0, 5, 0, 0),
-                color="#495057",
-                font_size=10
+                font_size=9,
+                padding=(0, 2, 0, 0),
+                color="#666666"
             )
         )
         
-        self.total_time_label = toga.Label(
-            "00:00",
-            style=Pack(
-                flex=0, 
-                text_align="right",
-                color="#495057",
-                font_size=10
-            )
-        )
-        
-        # 进度条（使用滑块模拟）
+        # 进度条（使用滑块模拟） - 紧凑版本
         self.progress_slider = toga.Slider(
             min=0,
             max=100,
             value=0,
             on_change=self._on_seek,
-            style=Pack(flex=1, padding=(0, 5))
+            style=Pack(
+                width=150,
+                padding=(0, 3)
+            )
+        )
+        
+        # 总时间标签 - 紧凑版本
+        self.total_time_label = toga.Label(
+            "00:00",
+            style=Pack(
+                font_size=9,
+                padding=(0, 0, 0, 2),
+                color="#666666"
+            )
         )
         
         # 添加防抖控制变量
         self._updating_progress = False  # 标记是否正在程序更新进度条
         self._last_user_seek_time = 0  # 用户最后一次拖拽时间
         
-        time_box.add(self.current_time_label)
-        time_box.add(self.progress_slider)
-        time_box.add(self.total_time_label)
-        
-        self.progress_box.add(time_box)
+        self.progress_box.add(self.current_time_label)
+        self.progress_box.add(self.progress_slider)
+        self.progress_box.add(self.total_time_label)
     
     async def _on_previous_song(self, widget):
         """上一曲按钮点击处理"""

@@ -132,42 +132,71 @@ class PlaybackView:
     
     
     def build_interface(self):
-        """构建播放界面 - iOS优化版本"""
-        # 创建可滚动视图容器，减少padding
-        self.container = toga.ScrollContainer(
-            content=toga.Box(style=Pack(direction=COLUMN, padding=8)),
-            style=Pack(flex=1)
-        )
+        """构建播放界面 - iOS优化版本：播放列表在上，控制区域在下"""
+        # 创建主容器，不使用滚动容器以更好地控制布局
+        self.container = toga.Box(style=Pack(direction=COLUMN, flex=1))
         
-        # 获取容器内容
-        content_box = self.container.content
-        
-        # 消息显示区域 - 减少padding
+        # 消息显示区域 - 最小化
         self.message_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=5,
+            padding=2,
             visibility="hidden"
         ))
         
-        # 标题 - 减少字体大小和padding
+        # 精简的标题 - 更小字体和间距
         title = toga.Label(
             "🎵 音乐播放器",
             style=Pack(
-                padding=(0, 0, 8, 0),
-                font_size=16,
+                padding=(2, 0, 4, 0),
+                font_size=14,
                 font_weight="bold",
                 text_align="center"
             )
         )
         
-        # 添加消息框
-        content_box.add(self.message_box)
-        
-        # 当前播放信息区域
+        # 当前播放信息区域 - 精简版
         self.create_now_playing_section()
         
-        # 播放控制区域 - 使用播放控制组件（包含进度显示）
-        self.playback_controls_widget = self.playback_control_component.widget
+        # 视图切换按钮 - 移到顶部
+        view_switch_box = toga.Box(style=Pack(
+            direction=ROW,
+            padding=3,
+            alignment="center"
+        ))
+        
+        self.playlist_tab_button = toga.Button(
+            "播放列表",
+            on_press=self.show_playlist_view,
+            style=Pack(
+                width=70,
+                height=25,
+                padding=(0, 2),
+                font_size=10,
+                background_color="#007bff",
+                color="white"
+            )
+        )
+        
+        self.lyrics_tab_button = toga.Button(
+            "歌词",
+            on_press=self.show_lyrics_view,
+            style=Pack(
+                width=70,
+                height=25,
+                padding=(0, 2),
+                font_size=10
+            )
+        )
+        
+        view_switch_box.add(self.playlist_tab_button)
+        view_switch_box.add(self.lyrics_tab_button)
+        
+        # 内容区域容器 - 给予更多flex空间
+        self.content_container = toga.Box(style=Pack(
+            direction=COLUMN,
+            flex=1,
+            padding=(0, 5)
+        ))
         
         # 播放列表区域 - 使用播放列表组件
         self.playlist_box = self.playlist_component.get_widget()
@@ -192,57 +221,20 @@ class PlaybackView:
             )
             self.lyrics_box.add(lyrics_placeholder)
         
-        # 组装界面
-        content_box.add(title)
-        content_box.add(self.now_playing_box)
-        content_box.add(self.playback_controls_widget)  # 使用新的播放控制组件（包含进度显示）
-        
-        # 创建视图切换按钮
-        view_switch_box = toga.Box(style=Pack(
-            direction=ROW,
-            padding=5,
-            alignment="center"
-        ))
-        
-        self.playlist_tab_button = toga.Button(
-            "播放列表",
-            on_press=self.show_playlist_view,
-            style=Pack(
-                width=80,
-                height=30,
-                padding=(0, 2),
-                font_size=11,
-                background_color="#007bff",
-                color="white"
-            )
-        )
-        
-        self.lyrics_tab_button = toga.Button(
-            "歌词",
-            on_press=self.show_lyrics_view,
-            style=Pack(
-                width=80,
-                height=30,
-                padding=(0, 2),
-                font_size=11
-            )
-        )
-        
-        view_switch_box.add(self.playlist_tab_button)
-        view_switch_box.add(self.lyrics_tab_button)
-        
-        # 内容区域容器
-        self.content_container = toga.Box(style=Pack(
-            direction=COLUMN,
-            flex=1
-        ))
-        
         # 默认显示播放列表
         self.current_view = "playlist"
         self.content_container.add(self.playlist_box)
         
-        content_box.add(view_switch_box)
-        content_box.add(self.content_container)
+        # 播放控制区域 - 移到最底部，使用播放控制组件的紧凑布局
+        self.playback_controls_widget = self.playback_control_component.widget
+        
+        # 组装界面 - 新的顺序：标题->当前播放->视图切换->内容区域->播放控制
+        self.container.add(self.message_box)
+        self.container.add(title)
+        self.container.add(self.now_playing_box)
+        self.container.add(view_switch_box)
+        self.container.add(self.content_container)
+        self.container.add(self.playback_controls_widget)  # 播放控制移到最底部
         
     def show_playlist_view(self, widget):
         """显示播放列表视图"""
@@ -499,28 +491,52 @@ class PlaybackView:
     def set_current_song_index(self, index: int):
         """设置当前播放歌曲索引"""
         try:
-            if not self.current_playlist_data or not self.current_playlist_data["songs"]:
+            # 直接操作播放列表管理器
+            current_playlist = self.playlist_manager.get_current_playlist()
+            if not current_playlist or not current_playlist.get("songs"):
+                logger.warning("设置播放索引失败：没有当前播放列表")
                 return
             
-            if 0 <= index < len(self.current_playlist_data["songs"]):
-                self.current_playlist_data["current_index"] = index
-                self.save_current_playlist()
+            songs = current_playlist["songs"]
+            if 0 <= index < len(songs):
+                current_playlist["current_index"] = index
+                self.playlist_manager.save_current_playlist(current_playlist)
+                
+                # 同步更新缓存（保持兼容性）
+                self.current_playlist_data = current_playlist
+                
+                # 更新当前歌曲信息
                 self.update_current_song_info()
+                
                 logger.info(f"设置当前播放索引: {index}")
+            else:
+                logger.warning(f"播放索引超出范围: {index}, 歌曲总数: {len(songs)}")
+                
         except Exception as e:
             logger.error(f"设置播放索引失败: {e}")
     
     def get_current_song_entry(self) -> Optional[Dict[str, Any]]:
-        """获取当前播放歌曲条目"""
+        """获取当前播放歌曲条目 - 直接从播放列表管理器获取最新数据"""
         try:
-            if not self.current_playlist_data or not self.current_playlist_data["songs"]:
+            # 直接从播放列表管理器获取最新的播放列表数据
+            current_playlist = self.playlist_manager.get_current_playlist()
+            if not current_playlist or not current_playlist.get("songs"):
+                logger.debug("get_current_song_entry: 没有当前播放列表或歌曲列表为空")
                 return None
             
-            current_index = self.current_playlist_data.get("current_index", 0)
-            if 0 <= current_index < len(self.current_playlist_data["songs"]):
-                return self.current_playlist_data["songs"][current_index]
+            current_index = current_playlist.get("current_index", 0)
+            songs = current_playlist["songs"]
             
+            logger.debug(f"get_current_song_entry: 播放列表有 {len(songs)} 首歌，当前索引: {current_index}")
+            
+            if 0 <= current_index < len(songs):
+                song_entry = songs[current_index]
+                logger.debug(f"get_current_song_entry: 返回歌曲: {song_entry.get('name', 'Unknown')}")
+                return song_entry
+            
+            logger.debug("get_current_song_entry: 索引超出范围")
             return None
+            
         except Exception as e:
             logger.error(f"获取当前歌曲条目失败: {e}")
             return None
@@ -533,7 +549,12 @@ class PlaybackView:
                 current_song["state"].update(state_updates)
                 if 'last_played' not in state_updates and any(k in state_updates for k in ['play_count']):
                     current_song["state"]["last_played"] = datetime.now().isoformat()
-                self.save_current_playlist()
+                
+                # 保存更新后的播放列表
+                current_playlist = self.playlist_manager.get_current_playlist()
+                if current_playlist:
+                    self.playlist_manager.save_current_playlist(current_playlist)
+                    
         except Exception as e:
             logger.error(f"更新歌曲状态失败: {e}")
     
@@ -542,16 +563,21 @@ class PlaybackView:
         try:
             # 使用播放列表组件获取当前歌曲信息
             current_song = self.playlist_component.get_current_song_info()
+            logger.debug(f"从播放列表组件获取的当前歌曲: {current_song is not None}")
+            
             if not current_song:
                 self.current_song_info = None
+                logger.debug("播放列表组件返回空歌曲，设置为None")
                 return
             
             # 获取歌曲名称和信息
             song_info = current_song.get('info', {})
             song_name = current_song.get('name') or song_info.get('name')
+            logger.debug(f"歌曲名称: {song_name}")
             
             if not song_name:
                 self.current_song_info = None
+                logger.debug("歌曲名称为空，设置为None")
                 return
             
             # 从music_library获取详细信息（如果可用）
@@ -561,16 +587,15 @@ class PlaybackView:
                 if detailed_info:
                     # 合并播放列表中的信息和音乐库中的详细信息
                     self.current_song_info = {**song_info, **detailed_info}
-                    logger.debug(f"更新歌曲信息: {song_name}")
+                    logger.debug(f"合并音乐库信息，更新歌曲信息: {song_name}")
                 else:
                     # 使用播放列表中的信息
                     self.current_song_info = song_info
-                    logger.warning(f"未在音乐库中找到歌曲详细信息: {song_name}")
+                    logger.debug(f"使用播放列表信息: {song_name}")
             else:
                 # 使用播放列表中的信息
                 self.current_song_info = song_info
-                logger.warning("music_library不可用")
-                logger.warning("music_library不可用")
+                logger.debug("music_library不可用，使用播放列表信息")
         
         except Exception as e:
             logger.error(f"更新当前歌曲信息失败: {e}")
@@ -586,48 +611,40 @@ class PlaybackView:
     
     
     def create_now_playing_section(self):
-        """创建当前播放信息区域 - iOS优化版本"""
+        """创建当前播放信息区域 - iOS紧凑版本"""
         self.now_playing_box = toga.Box(style=Pack(
-            direction=COLUMN,
-            padding=8,
-            background_color="#f8f9fa"
+            direction=ROW,  # 改为水平布局
+            padding=3,
+            background_color="#f8f9fa",
+            alignment="center"
         ))
         
-        # 当前歌曲信息 - 减小字体
+        # 当前歌曲信息 - 单行显示
         self.song_title_label = toga.Label(
             "未选择歌曲",
             style=Pack(
-                font_size=14,
+                font_size=12,
                 font_weight="bold",
-                text_align="center",
-                padding=(0, 0, 3, 0),
-                color="#212529"
+                text_align="left",
+                padding=(0, 5, 0, 0),
+                color="#212529",
+                flex=1
             )
         )
         
-        self.song_info_label = toga.Label(
-            "选择一首歌曲开始播放",
+        # 播放状态 - 紧凑显示
+        self.status_label = toga.Label(
+            "⏹️",
             style=Pack(
                 font_size=10,
-                color="#666666",
-                text_align="center",
-                padding=(0, 0, 5, 0)
-            )
-        )
-        
-        # 播放状态 - 减小字体
-        self.status_label = toga.Label(
-            "⏹️ 停止",
-            style=Pack(
-                font_size=12,
-                text_align="center",
-                padding=(3, 0),
-                color="#495057"
+                text_align="right",
+                padding=(0, 0, 0, 0),
+                color="#495057",
+                width=25
             )
         )
         
         self.now_playing_box.add(self.song_title_label)
-        self.now_playing_box.add(self.song_info_label)
         self.now_playing_box.add(self.status_label)
     
     
@@ -790,26 +807,32 @@ class PlaybackView:
             self.update_current_song_info()
             
             current_song = self.get_current_song_entry()
+            logger.debug(f"更新UI - 当前歌曲条目: {current_song is not None}")
+            logger.debug(f"更新UI - 当前歌曲信息: {self.current_song_info is not None}")
+            
             if current_song and self.current_song_info:
                 song_info = self.current_song_info
                 
-                # 显示歌曲标题
+                # 显示歌曲标题和艺术家信息
                 display_title = song_info.get('title', song_info.get('display_name', song_info.get('name', '未知歌曲')))
                 if display_title.endswith('.mp3'):
                     display_title = display_title[:-4]
                 
-                self.song_title_label.text = display_title
-                
-                # 显示艺术家信息
+                # 在标题中包含艺术家信息
                 artist = song_info.get('artist', '未知艺术家')
-                album = song_info.get('album', '')
-                if album and album != '未知专辑':
-                    self.song_info_label.text = f"艺术家: {artist} | 专辑: {album}"
+                if artist and artist != '未知艺术家':
+                    new_title = f"{display_title} - {artist}"
                 else:
-                    self.song_info_label.text = f"艺术家: {artist}"
+                    new_title = display_title
+                
+                # 只有当标题真正改变时才更新（避免不必要的UI刷新）
+                if self.song_title_label.text != new_title:
+                    self.song_title_label.text = new_title
+                    logger.debug(f"更新歌曲标题: {new_title}")
             else:
-                self.song_title_label.text = "未选择歌曲"
-                self.song_info_label.text = "选择一首歌曲开始播放"
+                if self.song_title_label.text != "未选择歌曲":
+                    self.song_title_label.text = "未选择歌曲"
+                    logger.debug("设置为未选择歌曲")
             
             # 更新播放状态（从播放服务获取实时状态）
             is_playing = self.playback_service.is_playing()
@@ -840,16 +863,22 @@ class PlaybackView:
             # 更新音量显示（音量控制现在由播放控制组件处理）
             # 播放控制组件会自己处理音量显示更新
             
-            # 更新播放列表
-            self.update_playlist_display()
-            
-            # 更新当前播放列表信息
-            self.update_current_playlist_info()
+            # 更新播放列表 - 由播放列表组件自己处理
+            if hasattr(self, 'playlist_component') and self.playlist_component:
+                self.playlist_component.update_display()
             
             # 更新播放模式按钮状态
             # 更新播放控制组件的播放模式按钮
             if hasattr(self, 'playback_control_component') and self.playback_control_component:
                 self.playback_control_component.update_mode_buttons()
+            
+            # 强制刷新UI（确保所有更改都被显示）
+            try:
+                if hasattr(self.app, 'main_window') and self.app.main_window:
+                    # 触发UI重绘
+                    pass
+            except Exception as refresh_error:
+                logger.debug(f"UI刷新失败（可忽略）: {refresh_error}")
             
         except Exception as e:
             logger.error(f"更新UI失败: {e}")
@@ -874,7 +903,10 @@ class PlaybackView:
                     current_song = self.get_current_song_entry()
                     if current_song:
                         current_song["info"] = updated_info
-                        self.save_current_playlist()
+                        # 保存更新后的播放列表
+                        current_playlist = self.playlist_manager.get_current_playlist()
+                        if current_playlist:
+                            self.playlist_manager.save_current_playlist(current_playlist)
                     
                     # 更新播放状态
                     self.update_current_song_state(

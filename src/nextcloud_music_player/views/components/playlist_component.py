@@ -46,20 +46,12 @@ class PlaylistViewComponent:
         # 主容器
         self.playlist_box = toga.Box(style=Pack(
             direction=COLUMN,
-            padding=5,
+            padding=3,
             background_color="#ffffff"
         ))
         
-        # 播放列表信息标签
-        self.playlist_info_label = toga.Label(
-            "正在加载播放列表...",
-            style=Pack(
-                font_size=12,
-                padding=(5, 0),
-                color="#666666",
-                text_align="center"
-            )
-        )
+        # 播放列表头部 - 信息和控制按钮在同一行
+        self.create_playlist_header()
         
         # 播放列表表格
         self.playlist_table = toga.DetailedList(
@@ -67,79 +59,95 @@ class PlaylistViewComponent:
             on_select=self.on_song_selected,
             style=Pack(
                 flex=1,
-                padding=(5, 0)
+                padding=(2, 0)
             )
         )
         
-        # 播放列表控制按钮
-        self.create_playlist_controls()
-        
         # 组装UI
-        self.playlist_box.add(self.playlist_info_label)
+        self.playlist_box.add(self.playlist_header_box)
         self.playlist_box.add(self.playlist_table)
-        self.playlist_box.add(self.playlist_controls_box)
     
-    def create_playlist_controls(self):
-        """创建播放列表控制按钮"""
+    def create_playlist_header(self):
+        """创建播放列表头部 - 信息标签和控制按钮在同一行"""
+        self.playlist_header_box = toga.Box(style=Pack(
+            direction=COLUMN,
+            padding=2
+        ))
+        
+        # 播放列表信息标签
+        self.playlist_info_label = toga.Label(
+            "正在加载播放列表...",
+            style=Pack(
+                font_size=11,
+                padding=(2, 0),
+                color="#666666",
+                text_align="center"
+            )
+        )
+        
+        # 控制按钮行
         self.playlist_controls_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=5,
+            padding=2,
             alignment="center"
         ))
         
-        # 清空播放列表按钮
+        # 创建紧凑的控制按钮
         clear_button = toga.Button(
-            "🗑️ 清空",
+            "🗑️",
             on_press=self.clear_playlist,
             style=Pack(
-                width=80,
-                height=35,
-                padding=(0, 5),
-                font_size=12
+                width=30,
+                height=25,
+                padding=(0, 2),
+                font_size=10
             )
         )
         
-        # 移除选中歌曲按钮
         remove_button = toga.Button(
-            "❌ 移除",
+            "❌",
             on_press=self.remove_selected_song,
             style=Pack(
-                width=80,
-                height=35,
-                padding=(0, 5),
-                font_size=12
+                width=30,
+                height=25,
+                padding=(0, 2),
+                font_size=10
             )
         )
         
-        # 刷新播放列表按钮
         refresh_button = toga.Button(
-            "🔄 刷新",
+            "🔄",
             on_press=self.refresh_display_action,
             style=Pack(
-                width=80,
-                height=35,
-                padding=(0, 5),
-                font_size=12
+                width=30,
+                height=25,
+                padding=(0, 2),
+                font_size=10
             )
         )
         
-        # 播放列表管理按钮
         manage_button = toga.Button(
-            "📋 管理",
+            "📋",
             on_press=self.show_playlist_manager,
             style=Pack(
-                width=80,
-                height=35,
-                padding=(0, 5),
-                font_size=12
+                width=30,
+                height=25,
+                padding=(0, 2),
+                font_size=10
             )
         )
         
+        # 添加按钮
         self.playlist_controls_box.add(clear_button)
         self.playlist_controls_box.add(remove_button)
         self.playlist_controls_box.add(refresh_button)
         self.playlist_controls_box.add(manage_button)
+        
+        # 组装头部
+        self.playlist_header_box.add(self.playlist_info_label)
+        self.playlist_header_box.add(self.playlist_controls_box)
     
+        
     def refresh_display(self):
         """刷新播放列表显示"""
         try:
@@ -485,21 +493,39 @@ class PlaylistViewComponent:
                     new_icon = "🎶"
                     status = ""
                 
-                # 更新图标
-                if data_item['icon'] != new_icon:
-                    data_item['icon'] = new_icon
-                    
-                    # 更新副标题中的状态信息
-                    subtitle_parts = data_item['subtitle'].split(" | ")
-                    
-                    # 移除旧的状态信息
-                    subtitle_parts = [part for part in subtitle_parts if part not in ["播放中", "暂停", "待播放"]]
-                    
-                    # 添加新的状态信息
-                    if status:
-                        subtitle_parts.insert(1, status)  # 在下载状态后插入
-                    
-                    data_item['subtitle'] = " | ".join(subtitle_parts)
+                # 更新图标 - 检查data_item是否为字典
+                if hasattr(data_item, 'icon'):
+                    # 如果是Row对象，直接设置属性
+                    if data_item.icon != new_icon:
+                        data_item.icon = new_icon
+                        
+                        # 更新副标题中的状态信息
+                        subtitle_parts = data_item.subtitle.split(" | ")
+                        
+                        # 移除旧的状态信息
+                        subtitle_parts = [part for part in subtitle_parts if part not in ["播放中", "暂停", "待播放"]]
+                        
+                        # 添加新的状态信息
+                        if status:
+                            subtitle_parts.insert(1, status)  # 在下载状态后插入
+                        
+                        data_item.subtitle = " | ".join(subtitle_parts)
+                elif isinstance(data_item, dict):
+                    # 如果是字典，按字典方式访问
+                    if data_item.get('icon') != new_icon:
+                        data_item['icon'] = new_icon
+                        
+                        # 更新副标题中的状态信息
+                        subtitle_parts = data_item['subtitle'].split(" | ")
+                        
+                        # 移除旧的状态信息
+                        subtitle_parts = [part for part in subtitle_parts if part not in ["播放中", "暂停", "待播放"]]
+                        
+                        # 添加新的状态信息
+                        if status:
+                            subtitle_parts.insert(1, status)  # 在下载状态后插入
+                        
+                        data_item['subtitle'] = " | ".join(subtitle_parts)
             
             logger.debug(f"更新播放指示器完成，当前索引: {current_index}")
             
@@ -523,14 +549,20 @@ class PlaylistViewComponent:
         try:
             current_playlist = self.playlist_manager.get_current_playlist()
             if not current_playlist:
+                logger.debug("get_current_song_info: 没有当前播放列表")
                 return None
             
             songs = current_playlist.get('songs', [])
             current_index = current_playlist.get('current_index', 0)
             
-            if 0 <= current_index < len(songs):
-                return songs[current_index]
+            logger.debug(f"get_current_song_info: 播放列表有 {len(songs)} 首歌，当前索引: {current_index}")
             
+            if 0 <= current_index < len(songs):
+                song_info = songs[current_index]
+                logger.debug(f"get_current_song_info: 返回当前歌曲: {song_info.get('name', 'Unknown')}")
+                return song_info
+            
+            logger.debug("get_current_song_info: 索引超出范围")
             return None
             
         except Exception as e:
@@ -576,6 +608,10 @@ class PlaylistViewComponent:
         except Exception as e:
             logger.error(f"获取上一首歌曲信息失败: {e}")
             return None
+    
+    def update_display(self):
+        """更新显示（与refresh_display相同，为了兼容性）"""
+        self.refresh_display()
     
     @property
     def view(self):
