@@ -18,6 +18,7 @@ from ..services.playlist_manager import PlaylistManager
 from ..services.playback_controller import PlaybackController, PlayMode
 from .components.playlist_component import PlaylistViewComponent
 from .components.playback_control_component import PlaybackControlComponent
+from ..utils.platform_ui import get_safe_area_bottom_padding
 
 logger = logging.getLogger(__name__)
 
@@ -133,9 +134,17 @@ class PlaybackView:
     
     
     def build_interface(self):
-        """构建播放界面 - iOS优化版本：播放列表在上，控制区域在下"""
+        """构建播放界面 - 平台自适应版本：播放列表在上，控制区域在下，动态底部安全区域"""
+        # 获取平台自适应的底部安全区域大小
+        safe_bottom_padding = get_safe_area_bottom_padding()
+        
         # 创建主容器，不使用滚动容器以更好地控制布局
-        self.container = toga.Box(style=Pack(direction=COLUMN, flex=1))
+        # 使用平台自适应的底部padding为系统手势留出空间
+        self.container = toga.Box(style=Pack(
+            direction=COLUMN, 
+            flex=1,
+            padding=(0, 0, safe_bottom_padding, 0)  # 动态底部安全区域
+        ))
         
         # 消息显示区域 - 最小化
         self.message_box = toga.Box(style=Pack(
@@ -144,12 +153,12 @@ class PlaybackView:
             visibility="hidden"
         ))
         
-        # 精简的标题 - 更小字体和间距
+        # 精简的标题 - 增大字体和间距便于手机查看
         title = toga.Label(
             "🎵 音乐播放器",
             style=Pack(
-                padding=(2, 0, 4, 0),
-                font_size=14,
+                padding=(4, 0, 6, 0),
+                font_size=16,
                 font_weight="bold",
                 text_align="center"
             )
@@ -158,10 +167,10 @@ class PlaybackView:
         # 当前播放信息区域 - 精简版
         self.create_now_playing_section()
         
-        # 视图切换按钮 - 移到顶部
+        # 视图切换按钮 - 移到顶部，增大尺寸便于手机操作
         view_switch_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=3,
+            padding=5,
             alignment="center"
         ))
         
@@ -169,10 +178,10 @@ class PlaybackView:
             "播放列表",
             on_press=self.show_playlist_view,
             style=Pack(
-                width=70,
-                height=25,
-                padding=(0, 2),
-                font_size=10,
+                width=90,
+                height=35,
+                padding=(0, 4),
+                font_size=12,
                 background_color="#007bff",
                 color="white"
             )
@@ -182,21 +191,21 @@ class PlaybackView:
             "歌词",
             on_press=self.show_lyrics_view,
             style=Pack(
-                width=70,
-                height=25,
-                padding=(0, 2),
-                font_size=10
+                width=90,
+                height=35,
+                padding=(0, 4),
+                font_size=12
             )
         )
         
         view_switch_box.add(self.playlist_tab_button)
         view_switch_box.add(self.lyrics_tab_button)
         
-        # 内容区域容器 - 给予更多flex空间
+        # 内容区域容器 - 给予更多flex空间，减少padding以增大播放控制区域
         self.content_container = toga.Box(style=Pack(
             direction=COLUMN,
             flex=1,
-            padding=(0, 5)
+            padding=(0, 8)
         ))
         
         # 播放列表区域 - 使用播放列表组件
@@ -227,15 +236,23 @@ class PlaybackView:
         self.content_container.add(self.playlist_box)
         
         # 播放控制区域 - 移到最底部，使用播放控制组件的紧凑布局
-        self.playback_controls_widget = self.playback_control_component.widget
+        # 创建播放控制包装容器，增加额外的底部安全空间
+        playback_controls_wrapper = toga.Box(style=Pack(
+            direction=COLUMN,
+            padding=(0, 0, safe_bottom_padding // 2, 0),  # 使用动态安全区域的一半作为额外间距
+            alignment="center"
+        ))
         
-        # 组装界面 - 新的顺序：标题->当前播放->视图切换->内容区域->播放控制
+        self.playback_controls_widget = self.playback_control_component.widget
+        playback_controls_wrapper.add(self.playback_controls_widget)
+        
+        # 组装界面 - 新的顺序：标题->当前播放->视图切换->内容区域->播放控制（带动态安全区域）
         self.container.add(self.message_box)
         self.container.add(title)
         self.container.add(self.now_playing_box)
         self.container.add(view_switch_box)
         self.container.add(self.content_container)
-        self.container.add(self.playback_controls_widget)  # 播放控制移到最底部
+        self.container.add(playback_controls_wrapper)  # 使用包装后的播放控制，增加动态底部安全区域
         
     def show_playlist_view(self, widget):
         """显示播放列表视图"""
@@ -614,36 +631,36 @@ class PlaybackView:
     
     
     def create_now_playing_section(self):
-        """创建当前播放信息区域 - iOS紧凑版本"""
+        """创建当前播放信息区域 - 手机操作优化版本"""
         self.now_playing_box = toga.Box(style=Pack(
             direction=ROW,  # 改为水平布局
-            padding=3,
+            padding=5,
             background_color="#f8f9fa",
             alignment="center"
         ))
         
-        # 当前歌曲信息 - 单行显示
+        # 当前歌曲信息 - 单行显示，增大字体
         self.song_title_label = toga.Label(
             "未选择歌曲",
             style=Pack(
-                font_size=12,
+                font_size=14,
                 font_weight="bold",
                 text_align="left",
-                padding=(0, 5, 0, 0),
+                padding=(0, 8, 0, 0),
                 color="#212529",
                 flex=1
             )
         )
         
-        # 播放状态 - 紧凑显示
+        # 播放状态 - 增大字体和宽度
         self.status_label = toga.Label(
             "停止 ●",
             style=Pack(
-                font_size=11,  # 增加字体大小以更好显示emoji
+                font_size=13,  # 增加字体大小以更好显示emoji
                 text_align="right",
                 padding=(0, 0, 0, 0),
                 color="#495057",
-                width=80  # 增加宽度以容纳emoji文字
+                width=100  # 增加宽度以容纳emoji文字
             )
         )
         

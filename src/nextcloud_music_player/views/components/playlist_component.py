@@ -97,15 +97,15 @@ class PlaylistViewComponent:
             alignment="center"
         ))
         
-        # 创建紧凑的控制按钮
+        # 创建紧凑的控制按钮 - 手机操作优化
         clear_button = toga.Button(
             "🗑️",
             on_press=self.clear_playlist,
             style=Pack(
-                width=30,
-                height=25,
-                padding=(0, 2),
-                font_size=10
+                width=40,
+                height=32,
+                padding=(0, 3),
+                font_size=12
             )
         )
         
@@ -113,10 +113,10 @@ class PlaylistViewComponent:
             "❌",
             on_press=self.remove_selected_song,
             style=Pack(
-                width=30,
-                height=25,
-                padding=(0, 2),
-                font_size=10
+                width=40,
+                height=32,
+                padding=(0, 3),
+                font_size=12
             )
         )
         
@@ -124,10 +124,10 @@ class PlaylistViewComponent:
             "🔄",
             on_press=self.refresh_display_action,
             style=Pack(
-                width=30,
-                height=25,
-                padding=(0, 2),
-                font_size=10
+                width=40,
+                height=32,
+                padding=(0, 3),
+                font_size=12
             )
         )
         
@@ -135,10 +135,10 @@ class PlaylistViewComponent:
             "📋",
             on_press=self.show_playlist_manager,
             style=Pack(
-                width=30,
-                height=25,
-                padding=(0, 2),
-                font_size=10
+                width=40,
+                height=32,
+                padding=(0, 3),
+                font_size=12
             )
         )
         

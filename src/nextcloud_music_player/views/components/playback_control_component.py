@@ -8,6 +8,12 @@ from toga.style.pack import COLUMN, ROW
 import asyncio
 import logging
 from typing import Optional, Callable, Any
+from ...utils.platform_ui import (
+    get_safe_area_bottom_padding, 
+    get_button_touch_size, 
+    get_control_padding, 
+    get_font_sizes
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +36,12 @@ class PlaybackControlComponent:
         # 防止重复点击的标志
         self._button_busy = False
         
+        # 获取平台相关的UI参数
+        self.button_sizes = get_button_touch_size()
+        self.paddings = get_control_padding()
+        self.font_sizes = get_font_sizes()
+        self.safe_area_bottom = get_safe_area_bottom_padding()
+        
         # 创建UI组件
         self.create_controls()
         
@@ -41,11 +53,11 @@ class PlaybackControlComponent:
         return self.container
     
     def create_controls(self):
-        """创建播放控制按钮 - iOS优化的紧凑布局"""
-        # 主控制容器 - 紧凑版本
+        """创建播放控制按钮 - 平台自适应的手机操作布局"""
+        # 主控制容器 - 使用平台自适应的底部安全区域
         self.container = toga.Box(style=Pack(
             direction=COLUMN,
-            padding=3,
+            padding=self.paddings["container"],  # 使用平台自适应的padding
             alignment="center"
         ))
         
@@ -64,58 +76,66 @@ class PlaybackControlComponent:
         self.container.add(self.controls_box)  # 播放按钮在底部
     
     def create_playback_buttons(self):
-        """创建播放控制按钮 - 紧凑版本"""
+        """创建播放控制按钮 - 平台自适应的触摸优化设计"""
         self.controls_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=3,
+            padding=self.paddings["controls"],  # 使用平台自适应的padding
             alignment="center"
         ))
         
-        # 上一曲按钮 - 紧凑版本
+        # 上一曲按钮 - 使用平台自适应尺寸
         self.prev_button = toga.Button(
             "⏮️",
             on_press=self._on_previous_song,
             style=Pack(
-                width=35,
-                height=30,
-                padding=(0, 2),
-                font_size=12
+                width=self.button_sizes["secondary_width"],
+                height=self.button_sizes["secondary_height"],
+                padding=self.paddings["button"],
+                font_size=self.font_sizes["icon_secondary"],
+                background_color="#f8f9fa",
+                color="#495057"
             )
         )
         
-        # 播放/暂停按钮 - 稍大一些
+        # 播放/暂停按钮 - 使用平台自适应尺寸，作为主要控制按钮
         self.play_pause_button = toga.Button(
             "▶️",
             on_press=self._on_toggle_playback,
             style=Pack(
-                width=45,
-                height=32,
-                padding=(0, 4),
-                font_size=14
+                width=self.button_sizes["primary_width"],
+                height=self.button_sizes["primary_height"],
+                padding=self.paddings["button"],
+                font_size=self.font_sizes["icon_primary"],
+                background_color="#007bff",
+                color="white"
             )
         )
         
-        # 下一曲按钮 - 紧凑版本
+        # 下一曲按钮 - 使用平台自适应尺寸
         self.next_button = toga.Button(
             "⏭️",
             on_press=self._on_next_song,
             style=Pack(
-                width=35,
-                height=30,
-                padding=(0, 2),
-                font_size=12
+                width=self.button_sizes["secondary_width"],
+                height=self.button_sizes["secondary_height"],
+                padding=self.paddings["button"],
+                font_size=self.font_sizes["icon_secondary"],
+                background_color="#f8f9fa",
+                color="#495057"
             )
         )
         
-        # 停止按钮 - 紧凑版本
+        # 停止按钮 - 使用平台自适应尺寸
         self.stop_button = toga.Button(
             "⏹️",
             on_press=self._on_stop_playback,
             style=Pack(
-                width=35,
-                height=30,
-                padding=(0, 2),
-                font_size=12
+                width=self.button_sizes["secondary_width"],
+                height=self.button_sizes["secondary_height"],
+                padding=self.paddings["button"],
+                font_size=self.font_sizes["icon_secondary"],
+                background_color="#dc3545",
+                color="white"
             )
         )
         
@@ -126,25 +146,25 @@ class PlaybackControlComponent:
         self.controls_box.add(self.stop_button)
     
     def create_compact_volume_and_mode_controls(self):
-        """创建紧凑的音量和播放模式控制 - 一行布局"""
+        """创建紧凑的音量和播放模式控制 - 平台自适应布局"""
         self.volume_mode_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=2,
+            padding=self.paddings["volume_mode"],  # 使用平台自适应的padding
             alignment="center"
         ))
         
-        # 音量控制 - 紧凑版本
+        # 音量控制 - 增大尺寸便于手机操作
         volume_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=(0, 5, 0, 0),
+            padding=(0, 8, 0, 0),
             alignment="center"
         ))
         
         volume_label = toga.Label(
             "🔊",
             style=Pack(
-                font_size=10,
-                padding=(0, 2, 0, 0)
+                font_size=self.font_sizes["text_normal"],
+                padding=(0, 3, 0, 0)
             )
         )
         
@@ -153,7 +173,7 @@ class PlaybackControlComponent:
             value=70,
             on_change=self._on_volume_change,
             style=Pack(
-                width=100,
+                width=120,
                 padding=(0, 0, 0, 0)
             )
         )
@@ -161,22 +181,24 @@ class PlaybackControlComponent:
         volume_box.add(volume_label)
         volume_box.add(self.volume_slider)
         
-        # 播放模式按钮 - 紧凑版本
+        # 播放模式按钮 - 增大尺寸便于手机操作
         mode_box = toga.Box(style=Pack(
             direction=ROW,
-            padding=(0, 0, 0, 5),
+            padding=(0, 0, 0, 8),
             alignment="center"
         ))
         
-        # 播放模式按钮 - 更小尺寸
+        # 播放模式按钮 - 使用平台自适应尺寸
         self.normal_button = toga.Button(
             "🔁",
             on_press=lambda widget: self._set_play_mode("normal"),
             style=Pack(
-                width=28,
-                height=25,
-                padding=(0, 1),
-                font_size=10
+                width=self.button_sizes["small_width"],
+                height=self.button_sizes["small_height"],
+                padding=self.paddings["mode_button"],
+                font_size=self.font_sizes["icon_small"],
+                background_color="#f8f9fa",
+                color="#495057"
             )
         )
         
@@ -184,10 +206,12 @@ class PlaybackControlComponent:
             "🔂",
             on_press=lambda widget: self._set_play_mode("repeat_one"),
             style=Pack(
-                width=28,
-                height=25,
-                padding=(0, 1),
-                font_size=10
+                width=self.button_sizes["small_width"],
+                height=self.button_sizes["small_height"],
+                padding=self.paddings["mode_button"],
+                font_size=self.font_sizes["icon_small"],
+                background_color="#28a745",  # 默认选中状态
+                color="white"
             )
         )
         
@@ -195,10 +219,12 @@ class PlaybackControlComponent:
             "🔁",
             on_press=lambda widget: self._set_play_mode("repeat_all"),
             style=Pack(
-                width=28,
-                height=25,
-                padding=(0, 1),
-                font_size=10
+                width=self.button_sizes["small_width"],
+                height=self.button_sizes["small_height"],
+                padding=self.paddings["mode_button"],
+                font_size=self.font_sizes["icon_small"],
+                background_color="#f8f9fa",
+                color="#495057"
             )
         )
         
@@ -206,10 +232,12 @@ class PlaybackControlComponent:
             "🔀",
             on_press=lambda widget: self._set_play_mode("shuffle"),
             style=Pack(
-                width=28,
-                height=25,
-                padding=(0, 1),
-                font_size=10
+                width=self.button_sizes["small_width"],
+                height=self.button_sizes["small_height"],
+                padding=self.paddings["mode_button"],
+                font_size=self.font_sizes["icon_small"],
+                background_color="#f8f9fa",
+                color="#495057"
             )
         )
         
@@ -330,41 +358,41 @@ class PlaybackControlComponent:
         self.update_mode_buttons()
     
     def create_progress_section(self):
-        """创建播放进度区域 - 紧凑版本"""
+        """创建播放进度区域 - 平台自适应版本"""
         self.progress_box = toga.Box(style=Pack(
             direction=ROW,  # 改为水平布局，更紧凑
-            padding=1,
+            padding=self.paddings["progress"],  # 使用平台自适应的padding
             alignment="center"
         ))
         
-        # 当前时间标签 - 紧凑版本
+        # 当前时间标签 - 使用平台自适应字体大小
         self.current_time_label = toga.Label(
             "00:00",
             style=Pack(
-                font_size=9,
-                padding=(0, 2, 0, 0),
+                font_size=self.font_sizes["text_normal"],
+                padding=(0, 6, 0, 0),  # 增加右边距
                 color="#666666"
             )
         )
         
-        # 进度条（使用滑块模拟） - 紧凑版本
+        # 进度条（使用滑块模拟） - 增大宽度便于手机操作
         self.progress_slider = toga.Slider(
             min=0,
             max=100,
             value=0,
             on_change=self._on_seek,
             style=Pack(
-                width=150,
-                padding=(0, 3)
+                width=200,      # 适合触摸操作的宽度
+                padding=(0, 8)  # 增加左右间距
             )
         )
         
-        # 总时间标签 - 紧凑版本
+        # 总时间标签 - 使用平台自适应字体大小
         self.total_time_label = toga.Label(
             "00:00",
             style=Pack(
-                font_size=9,
-                padding=(0, 0, 0, 2),
+                font_size=self.font_sizes["text_normal"],
+                padding=(0, 0, 0, 6),  # 增加左边距
                 color="#666666"
             )
         )
@@ -460,7 +488,7 @@ class PlaybackControlComponent:
             logger.error(f"设置播放模式失败: {e}")
     
     def update_mode_buttons(self):
-        """更新播放模式按钮状态"""
+        """更新播放模式按钮状态 - 使用新的颜色样式"""
         try:
             current_mode = self.playback_controller.get_play_mode()
             
@@ -474,24 +502,28 @@ class PlaybackControlComponent:
             
             for mode, button in buttons.items():
                 if hasattr(current_mode, 'value') and current_mode.value == mode:
-                    # 选中状态
-                    button.style.background_color = "#007bff"
+                    # 选中状态 - 绿色背景
+                    button.style.background_color = "#28a745"
                     button.style.color = "white"
                 else:
-                    # 未选中状态
+                    # 未选中状态 - 浅灰色背景
                     button.style.background_color = "#f8f9fa"
-                    button.style.color = "black"
+                    button.style.color = "#495057"
                     
         except Exception as e:
             logger.error(f"更新播放模式按钮状态失败: {e}")
     
     def update_play_pause_button(self, is_playing: bool):
-        """更新播放/暂停按钮状态"""
+        """更新播放/暂停按钮状态 - 包含颜色样式更新"""
         try:
             if is_playing:
                 self.play_pause_button.text = "⏸️"
+                self.play_pause_button.style.background_color = "#ffc107"  # 暂停时黄色
             else:
                 self.play_pause_button.text = "▶️"
+                self.play_pause_button.style.background_color = "#007bff"  # 播放时蓝色
+            # 保持白色文字
+            self.play_pause_button.style.color = "white"
         except Exception as e:
             logger.error(f"更新播放/暂停按钮失败: {e}")
     

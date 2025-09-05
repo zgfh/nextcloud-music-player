@@ -130,7 +130,7 @@ class MusicLibrary:
             logger.info(f"Song '{song_name}' not found in library.")
             self.load_music_list()
             song=self.songs.get(song_name)
-        return 
+        return song 
 
     def extract_song_info_from_filename(self, filename: str) -> Dict:
         """Extract song info from filename."""
@@ -178,10 +178,6 @@ class MusicLibrary:
             
             return self.get_song_path(song_name)
         return None
-
-    def get_song_info(self, song_name: str) -> Dict:
-        """Get the metadata for a song."""
-        return self.songs.get(song_name, {})
 
     def list_songs(self) -> List[str]:
         """Get a list of all song names in the library."""
