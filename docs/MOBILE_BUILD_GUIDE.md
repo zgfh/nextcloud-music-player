@@ -237,6 +237,31 @@ export JAVA_OPTS="-Xmx4g"
 # 在脚本执行过程中选择 "y" 进行移动平台测试
 ```
 
+### iOS 每日自动构建部署
+
+`scripts/deploy_iso.sh` 一键完成 iOS 构建+安装到设备：
+
+```bash
+# 手动执行（需 iPhone 在同一 WiFi 下）
+bash scripts/deploy_iso.sh
+```
+
+脚本自动完成：
+1. 检测连接的 iPhone（通过 WiFi/网络，无需 USB）
+2. `xcodebuild` 构建 Debug 版本
+3. `devicectl` 安装到设备
+
+**定时任务**（`cc-connect` 托管，每天 6:30 自动执行）：
+
+```
+cron: 30 6 * * *
+命令: bash /path/to/scripts/deploy_iso.sh 2>&1 | tee -a scripts/logs/deploy_YYYYMMDD.log
+```
+
+- 日志按日期保存在 `scripts/logs/`（`.gitignore` 已忽略）
+- 通过 `/cron` 查看/管理定时任务
+- 个人免费开发者需每 7 天至少构建一次以续期描述文件
+
 ## 📚 参考资源
 
 - [BeeWare iOS Tutorial](https://docs.beeware.org/en/latest/tutorial/tutorial-5/iOS.html)
