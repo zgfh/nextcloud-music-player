@@ -36,7 +36,7 @@ License: BSD 3-Clause License
 Project-URL: Homepage, https://example.com/nextcloud-music-player
 Project-URL: Bug Tracker, https://github.com/example/nextcloud-music-player/issues
 Project-URL: Source Code, https://github.com/example/nextcloud-music-player
-Keywords: music,player,nextcloud,beeware,toga
+Keywords: music,player,nextcloud,flet,flutter
 Classifier: Development Status :: 3 - Alpha
 Classifier: Intended Audience :: End Users/Desktop
 Classifier: License :: OSI Approved :: BSD License
@@ -46,11 +46,12 @@ Classifier: Programming Language :: Python :: 3.8
 Classifier: Programming Language :: Python :: 3.9
 Classifier: Programming Language :: Python :: 3.10
 Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
 Classifier: Topic :: Multimedia :: Sound/Audio :: Players
 Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: toga>=0.4.0
+Requires-Dist: flet>=0.28.0
 Requires-Dist: requests>=2.25.0
 Requires-Dist: httpx>=0.24.0
 Provides-Extra: dev
@@ -60,7 +61,8 @@ Requires-Dist: black; extra == "dev"
 Requires-Dist: flake8; extra == "dev"
 Requires-Dist: isort; extra == "dev"
 Requires-Dist: mypy; extra == "dev"
-Requires-Dist: briefcase; extra == "dev"
+Provides-Extra: desktop
+Requires-Dist: pygame>=2.0.0; extra == "desktop"
 Dynamic: license-file
 
 
@@ -152,6 +154,20 @@ sudo apt-get install -f  # 如果有依赖问题
 2. 使用 Xcode 打开 `.xcodeproj` 文件
 3. 配置开发者证书和描述文件
 4. 连接 iOS 设备并编译安装
+
+自动更新: 
+第一次安装成功后,后续可以配置自动更新
+```
+# 查询设备,找到自己的手机的设备id（最后一个括号内，如: 00008110-000502200123111X）
+xcrun xctrace list devices
+
+# 试试能不能成功
+bash -x scripts/deploy.sh "00008110-000502200123111X"
+
+# 添加自动执行(TODO 因为签名证书不能在cron中操作,目前是写了个脚本一直在终端运行临时解决)
+
+```
+
 
 **Android 安装:**
 1. 在 Android 设备上启用"开发者选项"和"USB调试"

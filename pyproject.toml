@@ -12,7 +12,7 @@ license = {file = "LICENSE"}
 authors = [
     {name = "Your Name", email = "your.email@example.com"},
 ]
-keywords = ["music", "player", "nextcloud", "beeware", "toga"]
+keywords = ["music", "player", "nextcloud", "flet", "flutter"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
@@ -27,7 +27,7 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Players",
 ]
 dependencies = [
-    "toga>=0.4.0",
+    "flet>=0.28.0",
     "requests>=2.25.0",
     "httpx>=0.24.0",
 ]
@@ -40,7 +40,9 @@ dev = [
     "flake8",
     "isort",
     "mypy",
-    "briefcase",
+]
+desktop = [
+    "pygame>=2.0.0",
 ]
 
 # 明确指定包的位置
@@ -58,146 +60,20 @@ Homepage = "https://example.com/nextcloud-music-player"
 [project.scripts]
 nextcloud-music-player = "nextcloud_music_player.__main__:main"
 
-[tool.briefcase]
-project_name = "NextCloud Music Player"
-formal_name = "NextCloud Music Player"
-bundle = "com.example"
-version = "0.1.0"
-url = "https://example.com/nextcloud-music-player"
-author = "Your Name"
-author_email = "your.email@example.com"
-description = "A cross-platform music player with NextCloud integration"
-# 添加许可证信息以符合分发要求
-license = "BSD-3-Clause"
+# === Flet 配置 ===
+[tool.flet]
+app_name = "nextcloud-music-player"
+app_description = "A cross-platform music player with NextCloud integration"
+org_name = "com.daozzg"
+product_name = "NextCloud Music Player"
 
-[tool.briefcase.app.nextcloud-music-player]
-formal_name = "NextCloud Music Player"
-description = "A cross-platform music player with NextCloud integration"
-long_description = """NextCloud Music Player is a cross-platform music player application built with BeeWare that seamlessly integrates with your NextCloud server. 
+[tool.flet.ios]
+team_id = ""
+bundle_id = "com.daozzg.nextcloud-music-player"
 
-Key Features:
-• Stream and download music from your NextCloud server
-• Modern, intuitive user interface with playback controls
-• Support for common audio formats (MP3, WAV, OGG)
-• Playlist management with shuffle and repeat modes
-• Offline playback with smart caching
-• Cross-platform compatibility (Windows, macOS, Linux, iOS, Android)
-• Background audio playback support
-• Volume control and progress tracking
+[tool.flet.ios.info]
+UIBackgroundModes = ["audio"]
+NSAppTransportSecurity = "{NSAllowsArbitraryLoads = true, NSAllowsLocalNetworking = true}"
 
-The application provides a native desktop and mobile experience while keeping your music library synchronized across all your devices through NextCloud integration."""
-icon = "src/nextcloud_music_player/resources/icon"
-sources = [
-    "src/nextcloud_music_player",
-]
-test_sources = [
-    "tests",
-]
-
-[tool.briefcase.app.nextcloud-music-player.macOS]
-requires = [
-    "toga-cocoa~=0.4.0",
-    "pygame>=2.0.0",
-]
-
-[tool.briefcase.app.nextcloud-music-player.linux]
-requires = [
-    "toga-gtk~=0.4.0",
-    "pygame>=2.0.0",
-]
-long_description = """NextCloud Music Player is a cross-platform music player application built with BeeWare that seamlessly integrates with your NextCloud server. 
-
-Key Features:
-• Stream and download music from your NextCloud server
-• Modern, intuitive user interface with playback controls
-• Support for common audio formats (MP3, WAV, OGG)
-• Playlist management with shuffle and repeat modes
-• Offline playback with smart caching
-• Cross-platform compatibility (Windows, macOS, Linux, iOS, Android)
-• Background audio playback support
-• Volume control and progress tracking
-
-The application provides a native desktop and mobile experience while keeping your music library synchronized across all your devices through NextCloud integration."""
-system_requires = [
-    "libgirepository1.0-dev | libgirepository-2.0-dev",
-    "libcairo2-dev", 
-    "libpango1.0-dev",
-    "libwebkit2gtk-4.1-dev | libwebkit2gtk-4.0-dev",
-    "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
-    "pkg-config",
-    "build-essential",
-]
-
-[tool.briefcase.app.nextcloud-music-player.linux.system.debian]
-system_runtime_requires = [
-    "libcairo-gobject2",
-    "libgirepository-1.0-1 | libgirepository-2.0-1", 
-    "libgtk-3-0",
-    "libpango-1.0-0",
-    "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37",
-    "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
-]
-
-# Ubuntu 24.04+ 特殊配置
-[tool.briefcase.app.nextcloud-music-player.linux.system.ubuntu.noble]
-system_requires = [
-    "libgirepository-2.0-dev",
-    "libcairo2-dev", 
-    "libpango1.0-dev",
-    "libwebkit2gtk-4.1-dev",
-    "gir1.2-webkit2-4.1",
-    "pkg-config",
-    "build-essential",
-]
-system_runtime_requires = [
-    "libcairo-gobject2",
-    "libgirepository-2.0-1", 
-    "libgtk-3-0",
-    "libpango-1.0-0",
-    "libwebkit2gtk-4.1-0",
-    "gir1.2-webkit2-4.1",
-]
-
-[tool.briefcase.app.nextcloud-music-player.windows]
-requires = [
-    "toga-winforms~=0.4.0",
-    "pygame>=2.0.0",
-]
-
-[tool.briefcase.app.nextcloud-music-player.iOS]
-requires = [
-    "toga-iOS~=0.4.0",
-    "requests>=2.25.0",
-    "httpx>=0.24.0",
-]
-
-# iOS权限配置
-permission.network_request = "This app needs network access to connect to your NextCloud server and sync music files."
-permission.local_network = "This app needs local network access to connect to your NextCloud server."
-
-# iOS后台播放配置
-supported_device_families = ["1", "2"]  # iPhone 和 iPad
-
-# Info.plist 配置
-info.UIBackgroundModes = ["audio"]
-info.NSAppTransportSecurity = {NSAllowsArbitraryLoads = true, NSAllowsLocalNetworking = true}
-
-[tool.briefcase.app.nextcloud-music-player.android]
-requires = [
-    "toga-android~=0.4.0",
-    "requests>=2.25.0",
-    "httpx>=0.24.0",
-]
-# Android不需要音频依赖，使用系统提供的媒体播放功能
-gradle_dependencies = [
-    "androidx.media:media:1.6.0",
-    "androidx.lifecycle:lifecycle-service:2.6.1",
-]
-permission.INTERNET = "This app needs internet access to connect to your NextCloud server."
-permission.WAKE_LOCK = "This app needs wake lock permission for background music playback."
-permission.FOREGROUND_SERVICE = "This app needs foreground service permission for music playback."
-
-[tool.briefcase.app.nextcloud-music-player.web]
-requires = [
-    "toga-web~=0.4.0",
-]
+[tool.flet.android]
+permissions = ["INTERNET", "WAKE_LOCK", "FOREGROUND_SERVICE"]

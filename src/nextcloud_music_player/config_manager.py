@@ -102,19 +102,21 @@ class ConfigManager:
             
             # 检测iOS环境
             if sys.platform == 'ios' or 'iOS' in str(sys.platform):
-                # 在iOS中，使用Documents目录存储配置（更稳定的访问权限）
+                # 尝试使用框架提供的路径（Toga 或 Flet）
                 try:
-                    import toga
-                    if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
-                        if hasattr(toga.App.app.paths, 'data'):
-                            config_dir = toga.App.app.paths.data / self.app_name
-                            return config_dir
-                        elif hasattr(toga.App.app.paths, 'app'):
-                            # 使用Documents目录而不是Library/Application Support
-                            config_dir = toga.App.app.paths.app / 'Documents' / self.app_name
-                            return config_dir
+                    try:
+                        import toga
+                        if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
+                            if hasattr(toga.App.app.paths, 'data'):
+                                config_dir = toga.App.app.paths.data / self.app_name
+                                return config_dir
+                            elif hasattr(toga.App.app.paths, 'app'):
+                                config_dir = toga.App.app.paths.app / 'Documents' / self.app_name
+                                return config_dir
+                    except ImportError:
+                        pass
                 except Exception as e:
-                    logger.warning(f"无法获取Toga路径: {e}")
+                    logger.warning(f"无法获取框架路径: {e}")
                     
                 # iOS备用方案：使用相对路径
                 try:
@@ -127,17 +129,19 @@ class ConfigManager:
                     # 最终的iOS备用方案
                     return Path('.') / self.app_name
             
-            # 尝试使用Toga的应用路径（适用于桌面平台）
-            import toga
-            if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
-                try:
-                    # 对于桌面平台，使用用户数据目录
-                    if hasattr(toga.App.app.paths, 'data'):
-                        app_data_dir = toga.App.app.paths.data
-                        config_dir = app_data_dir / self.app_name
-                        return config_dir
-                except:
-                    pass
+            # 尝试使用框架的应用路径（适用于桌面平台）
+            try:
+                import toga
+                if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
+                    try:
+                        if hasattr(toga.App.app.paths, 'data'):
+                            app_data_dir = toga.App.app.paths.data
+                            config_dir = app_data_dir / self.app_name
+                            return config_dir
+                    except:
+                        pass
+            except ImportError:
+                pass
                     
         except (ImportError, AttributeError):
             pass
@@ -185,20 +189,21 @@ class ConfigManager:
             # 🎵 iOS环境中使用Documents/music目录（持久化存储）
             if sys.platform == 'ios' or 'iOS' in str(sys.platform):
                 try:
-                    import toga
-                    if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
-                        if hasattr(toga.App.app.paths, 'data'):
-                            # 优先使用data目录下的music子目录（持久化）
-                            music_dir = toga.App.app.paths.data / self.app_name / 'music'
-                            music_dir.mkdir(parents=True, exist_ok=True)
-                            logger.info(f"🎵 iOS音乐存储目录（data持久化）: {music_dir}")
-                            return music_dir
-                        elif hasattr(toga.App.app.paths, 'app'):
-                            # 使用Documents/music目录（持久化）
-                            music_dir = toga.App.app.paths.app / 'Documents' / self.app_name / 'music'
-                            music_dir.mkdir(parents=True, exist_ok=True)
-                            logger.info(f"🎵 iOS音乐存储目录（Documents持久化）: {music_dir}")
-                            return music_dir
+                    try:
+                        import toga
+                        if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
+                            if hasattr(toga.App.app.paths, 'data'):
+                                music_dir = toga.App.app.paths.data / self.app_name / 'music'
+                                music_dir.mkdir(parents=True, exist_ok=True)
+                                logger.info(f"🎵 iOS音乐存储目录（data持久化）: {music_dir}")
+                                return music_dir
+                            elif hasattr(toga.App.app.paths, 'app'):
+                                music_dir = toga.App.app.paths.app / 'Documents' / self.app_name / 'music'
+                                music_dir.mkdir(parents=True, exist_ok=True)
+                                logger.info(f"🎵 iOS音乐存储目录（Documents持久化）: {music_dir}")
+                                return music_dir
+                    except ImportError:
+                        pass
                 except Exception as e:
                     logger.warning(f"无法获取iOS持久化音乐路径: {e}")
                 
@@ -253,7 +258,7 @@ class ConfigManager:
             # iOS环境中使用Documents目录
             if sys.platform == 'ios' or 'iOS' in str(sys.platform):
                 try:
-                    # 备用方案：使用Toga路径
+                    # 备用方案：使用框架路径
                     try:
                         import toga
                         if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
@@ -261,7 +266,7 @@ class ConfigManager:
                                 docs_dir = toga.App.app.paths.data / self.app_name
                                 docs_dir.mkdir(parents=True, exist_ok=True)
                                 return docs_dir
-                    except Exception:
+                    except ImportError:
                         pass
                 except:
                     pass
@@ -585,12 +590,15 @@ class ConfigManager:
             # iOS环境中使用系统临时目录
             if sys.platform == 'ios' or 'iOS' in str(sys.platform):
                 try:
-                    import toga
-                    if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
-                        if hasattr(toga.App.app.paths, 'cache'):
-                            temp_dir = toga.App.app.paths.cache / self.app_name / 'temp'
-                            temp_dir.mkdir(parents=True, exist_ok=True)
-                            return temp_dir
+                    try:
+                        import toga
+                        if hasattr(toga.App, 'app') and toga.App.app and hasattr(toga.App.app, 'paths'):
+                            if hasattr(toga.App.app.paths, 'cache'):
+                                temp_dir = toga.App.app.paths.cache / self.app_name / 'temp'
+                                temp_dir.mkdir(parents=True, exist_ok=True)
+                                return temp_dir
+                    except ImportError:
+                        pass
                 except:
                     pass
                     

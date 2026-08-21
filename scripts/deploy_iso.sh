@@ -28,49 +28,32 @@ DEVICE_NAME=$(echo "$DEVICE_LINE" | awk '{print $1}')
 
 log_message "${GREEN}✅ 找到设备: $DEVICE_NAME ($DEVICE_ID)${NC}"
 
-# ====== 项目配置 ======
-PROJECT_NAME="NextCloud Music Player"
-SCHEME_NAME="NextCloud Music Player"
-PROJECT_DIR="build/nextcloud-music-player/ios/xcode"
-PROJECT_PATH="$PROJECT_DIR/$PROJECT_NAME.xcodeproj"
+# ====== 使用 Flet 构建 iOS IPA ======
+log_message "${YELLOW}🔨 使用 Flet 构建 iOS IPA...${NC}"
 
-if [ ! -d "$PROJECT_PATH" ]; then
-    log_message "${RED}❌ Xcode 项目未找到: $PROJECT_PATH${NC}"
+# 使用 venv 中的 flet
+FLET_CMD="/Users/zzg/code/nextcloud-music-player/.venv/bin/flet"
+
+if [ ! -f "$FLET_CMD" ]; then
+    log_message "${RED}❌ 未找到 flet 命令: $FLET_CMD${NC}"
+    log_message "${YELLOW}请先安装: pip install flet${NC}"
     exit 1
 fi
 
-# ====== 获取构建输出目录 ======
-BUILD_DIR=$(xcodebuild -project "$PROJECT_PATH" \
-    -scheme "$SCHEME_NAME" \
-    -configuration Debug \
-    -destination "id=$DEVICE_ID" \
-    -showBuildSettings 2>/dev/null | grep " CONFIGURATION_BUILD_DIR" | head -1 | sed 's/.*= //')
+$FLET_CMD build ipa --no-rich-output 2>&1 | tail -20
 
-if [ -z "$BUILD_DIR" ]; then
-    log_message "${RED}❌ 无法获取构建目录${NC}"
+# 查找构建产物
+IPA_PATH=$(find build -name "*.ipa" -type f 2>/dev/null | head -1)
+
+if [ -z "$IPA_PATH" ]; then
+    log_message "${RED}❌ 构建失败，未找到 IPA 文件${NC}"
     exit 1
 fi
 
-APP_PATH="$BUILD_DIR/$PROJECT_NAME.app"
-
-# ====== 构建 ======
-log_message "${YELLOW}🔨 构建 iOS 项目 (Debug)...${NC}"
-xcodebuild -project "$PROJECT_PATH" \
-           -scheme "$SCHEME_NAME" \
-           -configuration Debug \
-           -destination "id=$DEVICE_ID" \
-           -allowProvisioningUpdates \
-           build 2>&1 | grep -E "(BUILD SUCCE|BUILD FAIL|error:)" || true
-
-if [ ! -d "$APP_PATH" ]; then
-    log_message "${RED}❌ 构建失败，未找到: $APP_PATH${NC}"
-    exit 1
-fi
-
-log_message "${GREEN}✅ 构建成功: $APP_PATH${NC}"
+log_message "${GREEN}✅ 构建成功: $IPA_PATH${NC}"
 
 # ====== 安装 ======
 log_message "${YELLOW}📲 安装到 $DEVICE_NAME...${NC}"
-xcrun devicectl device install app --device "$DEVICE_ID" "$APP_PATH" -t 600 2>&1
+xcrun devicectl device install app --device "$DEVICE_ID" "$IPA_PATH" -t 600 2>&1
 
 log_message "${GREEN}🎉 完成！应用已安装到 $DEVICE_NAME${NC}"

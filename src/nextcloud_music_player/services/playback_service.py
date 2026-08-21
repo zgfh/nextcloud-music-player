@@ -540,7 +540,7 @@ class PlaybackService:
             
         # 从配置文件加载
         try:
-            from ..views.playback_view import PlayMode
+            from .playback_controller import PlayMode
             mode_string = self.config_manager.get("player.play_mode", "repeat_one")
             mode_map = {
                 "normal": PlayMode.NORMAL,
@@ -674,8 +674,8 @@ class PlaybackService:
         """通过字符串设置播放模式"""
         # 导入播放模式枚举
         try:
-            from ..views.playback_view import PlayMode
-            
+            from .playback_controller import PlayMode
+
             # 模式映射
             mode_map = {
                 "normal": PlayMode.NORMAL,

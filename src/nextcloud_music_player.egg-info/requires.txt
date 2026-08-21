@@ -1,6 +1,9 @@
-toga>=0.4.0
+flet>=0.28.0
 requests>=2.25.0
 httpx>=0.24.0
+
+[desktop]
+pygame>=2.0.0
 
 [dev]
 pytest
@@ -9,4 +12,3 @@ black
 flake8
 isort
 mypy
-briefcase

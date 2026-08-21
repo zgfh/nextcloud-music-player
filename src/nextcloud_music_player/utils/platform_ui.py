@@ -1,109 +1,84 @@
 """
-平台相关的UI适配工具
-为不同平台提供合适的UI间距和样式
+平台相关的UI适配工具 (Flet 版本)
+为不同平台提供合适的UI尺寸和样式
 """
 
-import platform
+import sys
 
-def get_safe_area_bottom_padding():
-    """
-    获取底部安全区域的padding值
-    
-    Returns:
-        int: 底部安全区域的padding值（像素）
-    """
-    system = platform.system().lower()
-    
-    if system == "ios":
-        # iOS设备需要更多底部间距，避免与底部手势冲突
-        return 30
-    elif system == "android":
-        # Android设备也需要一些底部间距
-        return 20
-    else:
-        # 桌面平台不需要特殊的底部间距
-        return 10
+from .theme import Space
 
-def get_button_touch_size():
-    """
-    获取适合触摸操作的按钮尺寸
-    
-    Returns:
-        dict: 包含width和height的字典
-    """
-    system = platform.system().lower()
-    
-    if system in ["ios", "android"]:
-        # 移动设备需要更大的按钮尺寸
-        return {
-            "primary_width": 130,   # 主要按钮（播放/暂停）
-            "primary_height": 60,
-            "secondary_width": 110, # 次要按钮（上一曲/下一曲/停止）
-            "secondary_height": 55,
-            "small_width": 50,      # 小按钮（播放模式）
-            "small_height": 42
-        }
+
+def _is_mobile():
+    """检测是否运行在移动平台"""
+    return sys.platform == 'ios' or 'iOS' in str(sys.platform) or sys.platform == 'android'
+
+
+def get_button_height(primary=True, secondary=False):
+    """获取按钮高度"""
+    if _is_mobile():
+        if primary:
+            return 60
+        elif secondary:
+            return 55
+        return 42
     else:
-        # 桌面设备使用较小的按钮尺寸
-        return {
-            "primary_width": 100,
-            "primary_height": 45,
-            "secondary_width": 80,
-            "secondary_height": 40,
-            "small_width": 40,
-            "small_height": 32
-        }
+        if primary:
+            return 45
+        elif secondary:
+            return 40
+        return 32
+
+
+def get_button_icon_size(primary=True, secondary=False, small=False):
+    """获取按钮图标大小"""
+    if _is_mobile():
+        if primary:
+            return 26
+        elif secondary:
+            return 22
+        return 16
+    else:
+        if primary:
+            return 20
+        elif secondary:
+            return 16
+        return 12
+
+
+def get_nav_bar_height():
+    """获取导航栏高度"""
+    return 70 if _is_mobile() else 56
+
 
 def get_control_padding():
-    """
-    获取控制区域的padding值
-    
-    Returns:
-        dict: 包含各种padding值的字典
-    """
-    system = platform.system().lower()
-    
-    if system in ["ios", "android"]:
-        # 移动设备需要更多间距
+    """获取控制区域的padding值 (Flet 格式)"""
+    if _is_mobile():
         return {
-            "container": (8, 8, 25, 8),    # 主容器padding (top, right, bottom, left)
-            "controls": (8, 8, 15, 8),     # 控制按钮padding
-            "volume_mode": (8, 4, 12, 4),  # 音量模式控制padding
-            "progress": (6, 3, 8, 3),      # 进度条padding
-            "button": (0, 6),              # 按钮间距
-            "mode_button": (0, 3)          # 模式按钮间距
+            "container": ft_padding(all=8),
+            "controls": ft_padding(all=12),
+            "volume_mode": ft_padding(vertical=4, horizontal=8),
+            "progress": ft_padding(vertical=3, horizontal=6),
         }
     else:
-        # 桌面设备使用较小间距
         return {
-            "container": (8, 8, 8, 8),
-            "controls": (8, 8, 8, 8),
-            "volume_mode": (4, 4, 4, 4),
-            "progress": (3, 3, 3, 3),
-            "button": (0, 4),
-            "mode_button": (0, 2)
+            "container": ft_padding(all=8),
+            "controls": ft_padding(all=8),
+            "volume_mode": ft_padding(all=4),
+            "progress": ft_padding(all=3),
         }
 
+
 def get_font_sizes():
-    """
-    获取适合当前平台的字体大小
-    
-    Returns:
-        dict: 包含各种字体大小的字典
-    """
-    system = platform.system().lower()
-    
-    if system in ["ios", "android"]:
-        # 移动设备使用较大字体
+    """获取适合当前平台的字体大小"""
+    if _is_mobile():
         return {
-            "icon_primary": 26,     # 主要图标（播放/暂停）
-            "icon_secondary": 22,   # 次要图标（上一曲/下一曲等）
-            "icon_small": 16,       # 小图标（播放模式）
-            "text_normal": 12,      # 普通文本
-            "text_small": 11        # 小文本
+            "icon_primary": 26,
+            "icon_secondary": 22,
+            "icon_small": 16,
+            "text_normal": 12,
+            "text_small": 11
         }
     else:
-        # 桌面设备使用标准字体大小
         return {
             "icon_primary": 20,
             "icon_secondary": 16,
@@ -111,3 +86,31 @@ def get_font_sizes():
             "text_normal": 11,
             "text_small": 10
         }
+
+
+def ft_padding(all=None, vertical=None, horizontal=None, top=None, bottom=None, left=None, right=None):
+    """生成 Flet padding 值
+
+    返回一个整数或 ft.Padding 对象的参数字典。
+    实际使用时在调用处用 ft.Padding(**result) 构造，或直接传数字。
+    简化版：直接返回数值用于 padding=all 的情况。
+    """
+    if all is not None:
+        return all
+    # 返回一个可被 ft.Padding() 使用的字典
+    result = {}
+    if top is not None:
+        result["top"] = top
+    if bottom is not None:
+        result["bottom"] = bottom
+    if left is not None:
+        result["left"] = left
+    if right is not None:
+        result["right"] = right
+    if vertical is not None:
+        result["top"] = vertical
+        result["bottom"] = vertical
+    if horizontal is not None:
+        result["left"] = horizontal
+        result["right"] = horizontal
+    return result
