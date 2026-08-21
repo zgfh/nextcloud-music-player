@@ -67,8 +67,11 @@ app_description = "A cross-platform music player with NextCloud integration"
 org_name = "com.daozzg"
 product_name = "NextCloud Music Player"
 
+[tool.flet.app]
+path = "src"
+
 [tool.flet.ios]
-team_id = ""
+team_id = "6CS69Y977H"
 bundle_id = "com.daozzg.nextcloud-music-player"
 
 [tool.flet.ios.info]

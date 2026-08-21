@@ -28,11 +28,12 @@ DEVICE_NAME=$(echo "$DEVICE_LINE" | awk '{print $1}')
 
 log_message "${GREEN}✅ 找到设备: $DEVICE_NAME ($DEVICE_ID)${NC}"
 
-# ====== 使用 Flet 构建 iOS IPA ======
-log_message "${YELLOW}🔨 使用 Flet 构建 iOS IPA...${NC}"
+# ====== 1. Flet 打包 Python + 生成 Flutter 工程 ======
+# 注意: flet 0.86 的 `build ipa` 在没有 provisioning profile 时会走 --no-codesign，
+# 无法产出可用 IPA，因此这里只用它完成打包/生成工程，签名在下一步用 flutter 完成。
+log_message "${YELLOW}🔨 打包 Python 应用并生成 Flutter 工程...${NC}"
 
-# 使用 venv 中的 flet
-FLET_CMD="/Users/zzg/code/nextcloud-music-player/.venv/bin/flet"
+FLET_CMD="/Users/zzg/code/iso-demo/.venv/bin/flet"
 
 if [ ! -f "$FLET_CMD" ]; then
     log_message "${RED}❌ 未找到 flet 命令: $FLET_CMD${NC}"
@@ -40,10 +41,40 @@ if [ ! -f "$FLET_CMD" ]; then
     exit 1
 fi
 
-$FLET_CMD build ipa --no-rich-output 2>&1 | tail -20
+$FLET_CMD build ipa --yes --no-rich-output 2>&1 | tail -10 || true
 
-# 查找构建产物
-IPA_PATH=$(find build -name "*.ipa" -type f 2>/dev/null | head -1)
+# ====== 2. 写入自动签名 exportOptions ======
+log_message "${YELLOW}🔏 配置自动签名 (development / team 6CS69Y977H)...${NC}"
+
+cat > build/flutter/ios/exportOptions.plist <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>development</string>
+    <key>teamID</key>
+    <string>6CS69Y977H</string>
+    <key>signingStyle</key>
+    <string>automatic</string>
+    <key>compileBitcode</key>
+    <false/>
+    <key>stripSwiftSymbols</key>
+    <true/>
+    <key>uploadSymbols</key>
+    <false/>
+</dict>
+</plist>
+PLIST
+
+# ====== 3. flutter 构建签名 IPA ======
+log_message "${YELLOW}📦 构建签名 IPA...${NC}"
+
+export PATH="$HOME/flutter/3.44.8/bin:/usr/local/bin:$PATH"
+(cd build/flutter && flutter build ipa --release --export-options-plist ios/exportOptions.plist 2>&1 | tail -15)
+
+# ====== 4. 查找 IPA 并安装 ======
+IPA_PATH=$(find build/flutter/build/ios -name "*.ipa" -type f 2>/dev/null | head -1)
 
 if [ -z "$IPA_PATH" ]; then
     log_message "${RED}❌ 构建失败，未找到 IPA 文件${NC}"
@@ -52,7 +83,6 @@ fi
 
 log_message "${GREEN}✅ 构建成功: $IPA_PATH${NC}"
 
-# ====== 安装 ======
 log_message "${YELLOW}📲 安装到 $DEVICE_NAME...${NC}"
 xcrun devicectl device install app --device "$DEVICE_ID" "$IPA_PATH" -t 600 2>&1
 
