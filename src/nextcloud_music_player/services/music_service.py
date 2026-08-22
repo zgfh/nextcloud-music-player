@@ -232,8 +232,15 @@ class MusicService:
                 raise Exception("NextCloud客户端未连接")
             
             success = await self.nextcloud_client.download_file(file_path, filename,local_path)
-            
+
             if success:
+                # 低采样率 MP3（32kHz 等）在部分播放链路解码劣化，转码为 44.1kHz
+                from ..utils.audio_normalize import normalize_audio_async
+                try:
+                    await normalize_audio_async(local_path)
+                except Exception as norm_error:
+                    logger.warning(f"音频标准化跳过: {norm_error}")
+
                 # 更新音乐库中的下载状态
                 self.music_library.mark_song_downloaded(filename, str(local_path))
                 logger.info(f"下载成功并更新状态: {filename}")

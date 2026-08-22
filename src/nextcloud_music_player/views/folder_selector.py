@@ -7,6 +7,8 @@ import asyncio
 import logging
 from pathlib import Path
 
+from ..utils.theme import Color, Radius
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,7 @@ class FolderSelector:
             self.current_path or "/",
             size=13,
             weight=ft.FontWeight.BOLD,
-            color=ft.Colors.BLUE_700,
+            color=Color.PRIMARY,
             max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS,
         )
@@ -39,7 +41,7 @@ class FolderSelector:
             padding=8,
         )
 
-        self.loading_text = ft.Text("加载中...", size=12, color=ft.Colors.GREY_600, visible=False)
+        self.loading_text = ft.Text("加载中...", size=12, color=Color.TEXT_MUTED, visible=False)
 
         self.dialog = ft.AlertDialog(
             modal=True,
@@ -58,25 +60,30 @@ class FolderSelector:
                 width=400,
             ),
             actions=[
-                ft.TextButton("取消", on_click=self._cancel),
-                ft.ElevatedButton(
+                ft.TextButton("取消", on_click=self._cancel,
+                              style=ft.ButtonStyle(color=Color.TEXT_SECONDARY)),
+                ft.FilledButton(
                     "选择此文件夹",
                     icon=ft.Icons.CHECK,
                     on_click=self._select_current,
-                    style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE_600, color=ft.Colors.WHITE),
+                    style=ft.ButtonStyle(
+                        bgcolor=Color.PRIMARY,
+                        color=Color.PRIMARY_TEXT,
+                        icon_color=Color.PRIMARY_TEXT,
+                        shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
+                    ),
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         )
 
-        self.page.overlay.append(self.dialog)
-        self.dialog.open = True
-        self.page.update()
+        # Flet 0.86：page.open()/page.close() 已移除，改用 show_dialog()/pop_dialog()
+        self.page.show_dialog(self.dialog)
 
         asyncio.create_task(self._load_folders())
 
     async def _load_folders(self):
-        """加载当前路径的文件夹列表"""
+        """加载当前路径的文件夹列表（起始目录不存在时自动回退到根目录）"""
         self._loading = True
         self.loading_text.visible = True
         self.page.update()
@@ -88,7 +95,7 @@ class FolderSelector:
             if not folders:
                 self.folder_list.controls.append(
                     ft.Container(
-                        content=ft.Text("没有子文件夹", size=12, color=ft.Colors.GREY_500),
+                        content=ft.Text("没有子文件夹", size=12, color=Color.TEXT_MUTED),
                         padding=16,
                         alignment=ft.Alignment(0, 0),
                     )
@@ -100,16 +107,22 @@ class FolderSelector:
 
                     self.folder_list.controls.append(
                         ft.ListTile(
-                            leading=ft.Icon(icon, color=ft.Colors.AMBER_700),
-                            title=ft.Text(folder_name, size=13),
+                            leading=ft.Icon(icon, color=Color.ACCENT),
+                            title=ft.Text(folder_name, size=13, color=Color.TEXT_PRIMARY),
                             on_click=lambda e, name=folder_name: self._enter_folder(name),
                         )
                     )
         except Exception as e:
             logger.error(f"加载文件夹失败: {e}")
+            # 起始/当前目录不存在（404 等）时回退到根目录重试，仅在根目录仍失败时才报错
+            if self.current_path not in ("", "/"):
+                logger.info(f"目录不可访问，回退到根目录: {self.current_path}")
+                self.current_path = "/"
+                self.path_display.value = "/"
+                return await self._load_folders()
             self.folder_list.controls.clear()
             self.folder_list.controls.append(
-                ft.Text(f"加载失败: {e}", size=12, color=ft.Colors.RED_400)
+                ft.Text(f"加载失败: {e}", size=12, color=Color.DANGER_TEXT)
             )
         finally:
             self._loading = False
@@ -145,12 +158,10 @@ class FolderSelector:
 
     def _select_current(self, e):
         """选择当前文件夹"""
-        self.dialog.open = False
-        self.page.update()
+        self.page.pop_dialog()
         if self.on_path_selected:
             self.on_path_selected(self.current_path)
 
     def _cancel(self, e):
         """取消选择"""
-        self.dialog.open = False
-        self.page.update()
+        self.page.pop_dialog()

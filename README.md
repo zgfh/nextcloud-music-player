@@ -253,6 +253,56 @@ nextcloud-music-player/
    flake8 src/ tests/
    ```
 
+### 🐞 调试
+
+#### 方式一：热重载开发（日常迭代，秒级生效）
+
+Python 跑在电脑上，手机只做 UI 渲染，改代码保存即热更新，无需重新打包签名：
+
+```bash
+flet run --ios -r -p 8551  # iOS 真机（-r 递归监听 src/；-p 固定端口，地址保持不变）
+flet run --android -r      # Android 真机
+flet run -w                # 浏览器（最轻量）
+flet run                   # 桌面窗口
+```
+
+以 iOS 为例：手机从 App Store 安装免费的 [Flet](https://apps.apple.com/app/flet/id1624979699) app，与电脑同一 Wi-Fi，在 Flet app 中输入终端显示的地址（如 `http://192.168.x.x:8551/src/main.py`）即可连接，也可扫终端里的二维码。
+
+> 排查提示：若改了代码手机上没变化，先杀掉 Flet app 重连；仍不行则检查电脑上是否有泄漏的旧进程占用端口（`lsof -i :8551`），清理后重启 `flet run`。
+
+**限制**：Python 在电脑端执行——联网走电脑的网络（电脑必须能访问 NextCloud 服务器）；iOS 平台专属能力（后台音频、`rubicon-objc`）不生效。界面偶发的键盘残留灰块是伴生 app webview 的渲染问题，滑动屏幕即可恢复，与本项目代码无关。
+
+#### 方式二：真机整机调试 `flet debug`（验证平台能力 / 看前端报错）
+
+构建完整 app（Python 打包进手机）并直接运行，Dart/Flutter 前端的报错和日志实时输出到终端：
+
+```bash
+flet devices                          # 查看设备 ID
+flet debug ios --device-id <ID> -v    # 首次加 -v 排查问题
+```
+
+**要求与注意**：手机需用 **USB 线**连接（`flutter run` 不识别纯 Wi-Fi 连接的设备）；首次构建较慢，之后有增量缓存；会用 debug 签名覆盖手机上同 bundle id 的正式版。
+
+#### 方式三：真机截图与系统日志（USB）
+
+基于 [libimobiledevice](https://libimobiledevice.org/)（`brew install libimobiledevice`），排查"手机上到底显示成什么样"：
+
+```bash
+idevicescreenshot /tmp/phone.png   # 抓取当前屏幕
+idevicesyslog                      # 实时系统日志（含崩溃信息）
+```
+
+#### 辅助技巧
+
+- **手机布局复现**：用无头 Chrome 以手机尺寸渲染热重载会话并截图，无需手机即可复现布局问题：
+  ```bash
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+    --headless=new --hide-scrollbars --window-size=390,844 \
+    --virtual-time-budget=15000 --screenshot=/tmp/shot.png \
+    "http://<电脑IP>:<端口>/src/main.py"
+  ```
+- **应用日志**：`~/Library/Application Support/nextcloud_music_player/logs/nextcloud_music_player.log`（macOS；热重载模式下所有会话共用此文件）
+
 ## 🧪 测试
 
 ```bash

@@ -7,6 +7,7 @@ from requests.auth import HTTPBasicAuth
 import asyncio
 import concurrent.futures
 import logging
+import time
 from pathlib import Path
 import tempfile
 import os
@@ -51,24 +52,27 @@ class NextCloudClient:
         
         def _sync_test_connection():
             """同步连接测试函数"""
+            t_start = time.monotonic()
             try:
                 # 1. 测试基本网络连接
                 logger.info("📡 Step 1: Testing basic network connectivity...")
+                t0 = time.monotonic()
                 try:
-                    response = requests.head(self.server_url, timeout=10)
-                    logger.info(f"✅ Server reachable: HTTP {response.status_code}")
+                    response = requests.head(self.server_url, timeout=(5, 10))
+                    logger.info(f"✅ Server reachable: HTTP {response.status_code} (耗时 {time.monotonic() - t0:.1f}s)")
                 except requests.exceptions.ConnectTimeout:
-                    logger.error("❌ Connection timeout")
+                    logger.error(f"❌ Connection timeout (耗时 {time.monotonic() - t0:.1f}s)")
                     return False
                 except requests.exceptions.ConnectionError as e:
-                    logger.error(f"❌ Network connection failed: {e}")
+                    logger.error(f"❌ Network connection failed (耗时 {time.monotonic() - t0:.1f}s): {e}")
                     return False
                 except Exception as e:
-                    logger.error(f"❌ Network error: {e}")
+                    logger.error(f"❌ Network error (耗时 {time.monotonic() - t0:.1f}s): {e}")
                     return False
-                
+
                 # 2. 测试WebDAV认证
                 logger.info("🔐 Step 2: Testing WebDAV authentication...")
+                t1 = time.monotonic()
                 try:
                     auth = HTTPBasicAuth(self.username, self.password)
                     response = requests.request(
@@ -76,35 +80,37 @@ class NextCloudClient:
                         self.webdav_url,
                         auth=auth,
                         headers={"Depth": "0"},
-                        timeout=10
+                        timeout=(5, 10)
                     )
-                    
+
                     if response.status_code in [200, 207]:
-                        logger.info(f"✅ WebDAV authentication successful: HTTP {response.status_code}")
+                        logger.info(f"✅ WebDAV authentication successful: HTTP {response.status_code} (耗时 {time.monotonic() - t1:.1f}s)")
                         return True
                     elif response.status_code == 401:
-                        logger.error("❌ Authentication failed: Invalid credentials")
+                        logger.error(f"❌ Authentication failed: Invalid credentials (耗时 {time.monotonic() - t1:.1f}s)")
                         return False
                     elif response.status_code == 404:
-                        logger.error("❌ WebDAV endpoint not found")
+                        logger.error(f"❌ WebDAV endpoint not found (耗时 {time.monotonic() - t1:.1f}s)")
                         return False
                     else:
-                        logger.error(f"❌ WebDAV failed: HTTP {response.status_code}")
+                        logger.error(f"❌ WebDAV failed: HTTP {response.status_code} (耗时 {time.monotonic() - t1:.1f}s)")
                         return False
-                        
+
                 except requests.exceptions.ConnectTimeout:
-                    logger.error("❌ WebDAV connection timeout")
+                    logger.error(f"❌ WebDAV connection timeout (耗时 {time.monotonic() - t1:.1f}s)")
                     return False
                 except requests.exceptions.ConnectionError as e:
-                    logger.error(f"❌ WebDAV connection error: {e}")
+                    logger.error(f"❌ WebDAV connection error (耗时 {time.monotonic() - t1:.1f}s): {e}")
                     return False
                 except Exception as e:
-                    logger.error(f"❌ WebDAV error: {e}")
+                    logger.error(f"❌ WebDAV error (耗时 {time.monotonic() - t1:.1f}s): {e}")
                     return False
-                    
+
             except Exception as e:
-                logger.error(f"❌ Connection test failed: {e}")
+                logger.error(f"❌ Connection test failed (总耗时 {time.monotonic() - t_start:.1f}s): {e}")
                 return False
+            finally:
+                logger.info(f"🔍 连接测试结束，总耗时 {time.monotonic() - t_start:.1f}s")
         
         # 在线程池中运行同步函数
         loop = asyncio.get_event_loop()

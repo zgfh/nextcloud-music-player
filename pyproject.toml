@@ -27,8 +27,13 @@ classifiers = [
 ]
 dependencies = [
     "flet>=0.86.0",
+    "flet-audio>=0.86.0",
     "requests>=2.25.0",
     "httpx>=0.24.0",
+    # 注意：flet build ios 在 macOS (darwin) 上执行打包，
+    # `sys_platform == 'ios'` 标记在打包机上永远为假，包不会进入 iOS bundle，
+    # 故不能使用该标记（曾导致 iOS 上无声回退到 FallbackAudioPlayer）。
+    "rubicon-objc; sys_platform == 'darwin' or sys_platform == 'ios'",
 ]
 
 [project.optional-dependencies]

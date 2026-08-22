@@ -15,7 +15,9 @@ from ..services.playback_controller import PlaybackController, PlayMode
 from .components.playlist_component import PlaylistViewComponent
 from .components.playback_control_component import PlaybackControlComponent
 from .components.lyrics_component import LyricsDisplayComponent
-from ..utils.theme import Color, Space, FontSize, get_message_style
+from ..utils.theme import (
+    Color, Space, FontSize, Radius, glow, glow_soft, tint, get_message_style,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,7 @@ class PlaybackView:
             music_service=music_service,
             play_music_callback=None,
             add_background_task_callback=lambda task: asyncio.create_task(task) if asyncio.iscoroutine(task) else asyncio.create_task(task()),
+            page=page,
         )
 
         # 播放列表管理器
@@ -102,32 +105,87 @@ class PlaybackView:
         self._last_position = 0
         self._switching_song = False
         self._built = False
+        self._view_active = False
+        self._ui_task = None
+
+    def rebuild(self):
+        """重建视图（Flet 0.86 控件脱离页面后被冻结且不可复用，切回时必须重建）"""
+        self._cancel_ui_timer()
+        self._built = False
+        for component in (self.playback_control_component, self.playlist_component,
+                          self.lyrics_component):
+            if hasattr(component, '_built'):
+                component._built = False
+        # 旧的歌词行控件也已冻结，清空避免后台继续更新它们
+        if hasattr(self.lyrics_component, '_lyric_items'):
+            self.lyrics_component._lyric_items = []
+        return self.build()
+
+    def on_view_deactivated(self):
+        """视图切出：停止 UI 定时刷新，避免更新已冻结控件"""
+        self._view_active = False
+        self._cancel_ui_timer()
+
+    def _cancel_ui_timer(self):
+        if self._ui_task and not self._ui_task.done():
+            self._ui_task.cancel()
+        self._ui_task = None
 
     def build(self):
         """构建并返回视图"""
         if self._built and hasattr(self, '_container'):
             return self._container
 
-        # 当前播放信息
+        # === 正在播放卡：渐变 + 霓虹描边 ===
+        self.album_art = ft.Container(
+            content=ft.Icon(ft.Icons.GRAPHIC_EQ, color=Color.PRIMARY, size=28),
+            width=52, height=52,
+            border_radius=Radius.LG,
+            gradient=ft.LinearGradient(
+                begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
+                colors=["#0E2434", "#1A1030"],
+            ),
+            border=ft.Border.all(1, tint(Color.PRIMARY, "40")),
+            shadow=glow(Color.PRIMARY, radius=14, alpha="26"),
+        )
         self.song_title_label = ft.Text(
             "未选择歌曲",
             size=FontSize.SUBTITLE + 2,
             weight=ft.FontWeight.BOLD,
+            color=Color.TEXT_PRIMARY,
             expand=True,
             max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS,
         )
         self.status_label = ft.Text(
             "停止",
-            size=FontSize.STATUS,
-            color=Color.TEXT_MUTED,
+            size=FontSize.MICRO,
+            color=Color.STATUS_STOPPED,
+            weight=ft.FontWeight.BOLD,
+            style=ft.TextStyle(letter_spacing=1),
         )
-
+        self.status_chip = ft.Container(
+            content=self.status_label,
+            bgcolor=tint(Color.STATUS_STOPPED, "1F"),
+            border=ft.Border.all(1, tint(Color.STATUS_STOPPED, "40")),
+            padding=ft.Padding(left=10, right=10, top=4, bottom=4),
+            border_radius=Radius.CIRCLE,
+        )
         now_playing = ft.Container(
-            content=ft.Row([self.song_title_label, self.status_label], spacing=Space.SM),
-            bgcolor=Color.BG_SURFACE_ALT,
-            padding=Space.SM,
-            border_radius=8,
+            content=ft.Row([
+                self.album_art,
+                ft.Column([
+                    self.song_title_label,
+                    ft.Text("NOW PLAYING", size=FontSize.MICRO, color=Color.TEXT_MUTED,
+                            style=ft.TextStyle(letter_spacing=3)),
+                ], spacing=2, expand=True),
+                self.status_chip,
+            ], spacing=Space.MD),
+            bgcolor=Color.BG_SURFACE,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+            padding=Space.MD,
+            shadow=glow_soft(Color.ACCENT),
         )
 
         # Tab 切换 - Flet 0.86 Tabs = TabBar + TabBarView
@@ -145,6 +203,11 @@ class PlaybackView:
                         ft.Tab(label="播放列表"),
                         ft.Tab(label="歌词"),
                     ],
+                    indicator_color=Color.PRIMARY,
+                    label_color=Color.TEXT_PRIMARY,
+                    unselected_label_color=Color.TEXT_MUTED,
+                    divider_color=Color.BORDER,
+                    indicator_size=ft.TabBarIndicatorSize.TAB,
                 ),
                 ft.TabBarView(
                     expand=True,
@@ -162,27 +225,43 @@ class PlaybackView:
         # 播放控制
         controls = self.playback_control_component.build()
 
-        # 组装
-        self._container = ft.Column([
-            now_playing,
-            self.tabs,
-            self.message_container,
-            ft.SafeArea(content=controls),
-        ], spacing=Space.XS, expand=True)
+        # 组装（顶部/底部安全区由 ViewManager 的全局 SafeArea 统一处理）
+        self._container = ft.Container(
+            content=ft.Column([
+                now_playing,
+                self.tabs,
+                self.message_container,
+                controls,
+            ], spacing=Space.SM, expand=True),
+            padding=Space.LG,
+            expand=True,
+            bgcolor=Color.BG_APP,
+        )
 
         self._built = True
+        self._view_active = True
 
         # 初始化模式按钮
         self.playback_control_component.update_mode_buttons()
 
-        # 启动 UI 定时器（在 build 完成后启动）
-        asyncio.create_task(self._schedule_ui_update())
+        # 启动 UI 定时器（在 build 完成后启动；旧的先取消）
+        self._cancel_ui_timer()
+        self._ui_task = asyncio.create_task(self._schedule_ui_update())
 
         return self._container
 
     def _on_tab_change(self, e):
         """Tab 切换"""
         pass
+
+    def _set_status(self, text: str, color: str):
+        """更新播放状态胶囊（文字 + 霓虹 tint）"""
+        self.status_label.value = text
+        self.status_label.color = color
+        self.status_chip.bgcolor = tint(color, "1F")
+        self.status_chip.border = ft.Border.all(1, tint(color, "40"))
+        self.album_art.border = ft.Border.all(1, tint(color, "59"))
+        self.album_art.shadow = glow(color, radius=14, alpha="33") if text != "停止" else None
 
     async def on_playlist_song_selected(self, song_entry: Dict[str, Any], index: int):
         """播放列表歌曲选择回调"""
@@ -197,7 +276,8 @@ class PlaybackView:
 
             auto_play = self.app_context['config_manager'].get("player.auto_play_on_select", True)
             if auto_play:
-                await self.play_selected_song(song_info)
+                # 用刷新后的歌曲信息（下载状态/本地路径可能是加入列表后更新的）
+                await self.play_selected_song(self.current_song_info or song_info)
         except Exception as e:
             logger.error(f"处理播放列表歌曲选择失败: {e}")
 
@@ -222,11 +302,9 @@ class PlaybackView:
         if self.playback_control_component:
             self.playback_control_component.update_play_pause_button(is_playing)
         if is_playing:
-            self.status_label.value = "播放中"
-            self.status_label.color = Color.STATUS_PLAYING
+            self._set_status("播放中", Color.STATUS_PLAYING)
         else:
-            self.status_label.value = "暂停"
-            self.status_label.color = Color.STATUS_PAUSED
+            self._set_status("暂停", Color.STATUS_PAUSED)
         self.page.update()
 
     async def play_selected_song(self, song_info: Dict[str, Any]):
@@ -272,17 +350,18 @@ class PlaybackView:
     async def _stop_music(self):
         """停止播放"""
         await self.playback_service.stop_music()
-        self.status_label.value = "停止"
-        self.status_label.color = Color.STATUS_STOPPED
+        self._set_status("停止", Color.STATUS_STOPPED)
         self.page.update()
 
     async def _schedule_ui_update(self):
-        """定时更新 UI"""
+        """定时更新 UI（仅在视图激活时刷新，避免更新已冻结控件）"""
         from ..platform_audio import is_ios
         update_interval = 2.0 if is_ios() else 0.5
 
         while True:
             await asyncio.sleep(update_interval)
+            if not self._view_active or not self._built:
+                continue
             try:
                 self._update_progress_only()
             except Exception as e:
@@ -319,16 +398,13 @@ class PlaybackView:
             is_paused = getattr(self.playback_service, 'current_song_state', {}).get('is_paused', False)
 
             if is_playing:
-                self.status_label.value = "播放中"
-                self.status_label.color = Color.STATUS_PLAYING
+                self._set_status("播放中", Color.STATUS_PLAYING)
                 self.playback_control_component.update_play_pause_button(True)
             elif is_paused:
-                self.status_label.value = "暂停"
-                self.status_label.color = Color.STATUS_PAUSED
+                self._set_status("暂停", Color.STATUS_PAUSED)
                 self.playback_control_component.update_play_pause_button(False)
             else:
-                self.status_label.value = "停止"
-                self.status_label.color = Color.STATUS_STOPPED
+                self._set_status("停止", Color.STATUS_STOPPED)
                 self.playback_control_component.update_play_pause_button(False)
         except Exception as e:
             logger.error(f"更新播放进度失败: {e}")
@@ -414,8 +490,9 @@ class PlaybackView:
             ft.Text(message, color=text_color, size=FontSize.BODY),
         ], spacing=Space.XS)
         self.message_container.bgcolor = bg_color
+        self.message_container.border = ft.Border.all(1, bg_color)
         self.message_container.padding = Space.SM
-        self.message_container.border_radius = 8
+        self.message_container.border_radius = Radius.CIRCLE
         self.message_container.visible = True
         self.page.update()
 

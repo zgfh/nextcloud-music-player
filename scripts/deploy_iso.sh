@@ -20,6 +20,7 @@ usage() {
     echo "  (无参数)     自动判断：源码有更新则完整重建，否则仅刷新签名"
     echo "  --rebuild    强制完整重建（flet 打包 + flutter 签名）"
     echo "  --refresh    仅刷新签名（跳过 flet 打包，代码未变时用，速度快）"
+    echo "  --fast       快速模式：debug 增量构建代替 release archive，迭代测试快数倍"
     echo "  --help       显示帮助"
     echo ""
     echo "说明: 免费开发者账号签名有效期 7 天，请每 7 天内重跑一次以续签。"
@@ -28,10 +29,12 @@ usage() {
 # ====== 参数解析 ======
 FORCE_REBUILD=0
 FORCE_REFRESH=0
+FAST_MODE=0
 for arg in "$@"; do
     case "$arg" in
         --rebuild|-r) FORCE_REBUILD=1 ;;
         --refresh|-s) FORCE_REFRESH=1 ;;
+        --fast|-f) FAST_MODE=1 ;;
         --help|-h) usage; exit 0 ;;
         *) log_message "${RED}❌ 未知参数: $arg${NC}"; usage; exit 1 ;;
     esac
@@ -112,6 +115,14 @@ fi
 # ====== 2. 写入自动签名 exportOptions ======
 log_message "${YELLOW}🔏 配置自动签名 (development / team 6CS69Y977H)...${NC}"
 
+# flet build 每次重新生成 Xcode 工程时会把 Runner 签名重置为 Manual（且不带 profile），
+# 导致 "requires a provisioning profile" 构建失败；这里强制改回 Automatic
+PBXPROJ="build/flutter/ios/Runner.xcodeproj/project.pbxproj"
+if [ -f "$PBXPROJ" ] && grep -q "CODE_SIGN_STYLE = Manual;" "$PBXPROJ"; then
+    sed -i '' 's/CODE_SIGN_STYLE = Manual;/CODE_SIGN_STYLE = Automatic;/' "$PBXPROJ"
+    log_message "${GREEN}✅ 已将 Runner 签名修正为 Automatic${NC}"
+fi
+
 cat > build/flutter/ios/exportOptions.plist <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -137,10 +148,16 @@ PLIST
 # 构建前清理旧 IPA，避免 find 命中过期产物
 find build/flutter/build/ios -name "*.ipa" -type f -delete 2>/dev/null || true
 
-log_message "${YELLOW}📦 构建并签名 IPA...${NC}"
+FLUTTER_BUILD_MODE="release"
+if [ "$FAST_MODE" = "1" ]; then
+    FLUTTER_BUILD_MODE="debug"
+    log_message "${YELLOW}⚡ 快速模式：使用 debug 增量构建${NC}"
+fi
+
+log_message "${YELLOW}📦 构建并签名 IPA ($FLUTTER_BUILD_MODE)...${NC}"
 
 export PATH="$HOME/flutter/3.44.8/bin:/usr/local/bin:$PATH"
-(cd build/flutter && flutter build ipa --release --export-options-plist ios/exportOptions.plist 2>&1 | tail -15)
+(cd build/flutter && flutter build ipa --$FLUTTER_BUILD_MODE --export-options-plist ios/exportOptions.plist 2>&1 | tail -15)
 
 # ====== 4. 查找 IPA ======
 IPA_PATH=$(find build/flutter/build/ios -name "*.ipa" -type f 2>/dev/null | head -1)

@@ -5,6 +5,8 @@
 import flet as ft
 import logging
 
+from ..utils.theme import Color
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,12 +56,17 @@ class ViewManager:
         self.playback_view = PlaybackView(page, app_context, self)
 
         # 内容区域
-        self.content_area = ft.Container(expand=True)
+        self.content_area = ft.Container(
+            expand=True,
+            bgcolor=Color.BG_APP,
+        )
 
-        # 底部导航栏
+        # 底部导航栏 - 深空霓虹风（悬浮胶囊 + 顶部霓虹分隔线）
         self.nav_bar = ft.NavigationBar(
             selected_index=0,
             on_change=self._on_nav_change,
+            bgcolor=Color.BG_SURFACE,
+            indicator_color="#0F2A3A",
             destinations=[
                 ft.NavigationBarDestination(
                     icon=ft.Icons.LINK_OUTLINED,
@@ -79,12 +86,18 @@ class ViewManager:
             ],
         )
 
-        # 组装页面
+        # 组装页面 - SafeArea 处理 iOS 刘海/灵动岛（顶部）与 Home 指示条（底部）遮挡
         page.add(
-            ft.Column([
-                self.content_area,
-                self.nav_bar,
-            ], expand=True, spacing=0)
+            ft.SafeArea(
+                content=ft.Column([
+                    self.content_area,
+                    ft.Container(
+                        content=self.nav_bar,
+                        border=ft.Border.only(top=ft.BorderSide(1, Color.BORDER)),
+                    ),
+                ], expand=True, spacing=0),
+                expand=True,
+            )
         )
 
     def _on_nav_change(self, e):
@@ -113,7 +126,18 @@ class ViewManager:
 
         view, nav_index = view_map.get(view_name, (self.playback_view, 2))
 
-        self.content_area.content = view.build()
+        # 通知旧视图切出（停止定时刷新等）
+        if self.current_view is not view and hasattr(self.current_view, 'on_view_deactivated'):
+            try:
+                self.current_view.on_view_deactivated()
+            except Exception as e:
+                logger.error(f"视图切出回调失败: {e}")
+
+        # Flet 0.86：控件脱离页面后会被冻结且不可复用，切回时必须重建
+        if hasattr(view, 'rebuild'):
+            self.content_area.content = view.rebuild()
+        else:
+            self.content_area.content = view.build()
         self.nav_bar.selected_index = nav_index
         self.current_view = view
 

@@ -3,6 +3,7 @@
 """
 
 import sys
+import asyncio
 import logging
 import os
 from typing import Optional, Protocol
@@ -354,8 +355,198 @@ class PygameAudioPlayer:
             logger.error(f"pygame跳转位置失败: {e}")
             return False
 
+class FletAudioPlayer:
+    """基于 Flet flet_audio 扩展的音频播放器（Flet 运行时，含 iOS/Android）
+
+    通过 Flutter 的 audioplayers 插件播放，底层是各平台原生播放器，
+    不依赖 pygame/rubicon，是移动端的首选实现。
+    """
+
+    def __init__(self, page):
+        import flet as ft
+        import flet_audio as fta
+        from flet_audio import AudioState
+
+        self._ft = ft
+        self._fta = fta
+        self._AudioState = AudioState
+        self._page = page
+        self._audio = None
+        self._current_file = None
+        self._volume = 0.7
+        self._state = AudioState.STOPPED
+        self._duration = 0.0
+        self._position_ms = 0
+        self._position_ts = 0.0
+
+    def _run(self, coro):
+        """在事件循环中调度协程（协议方法本身是同步的）"""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(coro)
+        except RuntimeError:
+            asyncio.run(coro)
+
+    def _to_src(self, file_path: str) -> str:
+        """转换为音频源地址。
+
+        浏览器会话无法读取服务器本地磁盘路径，run_web.py 已把音乐目录
+        挂载为 /local-music/ 静态资源，Web 会话改用该 URL 播放。
+        """
+        try:
+            if getattr(self._page, "web", False):
+                from urllib.parse import quote
+                return f"/local-music/{quote(os.path.basename(file_path))}"
+        except Exception:
+            pass
+        return file_path
+
+    def _ensure_audio(self, src: str):
+        """Audio Service 必须带 src 创建（Dart 端 update() 无 src 会抛错）"""
+        if self._audio is None:
+            self._audio = self._fta.Audio(
+                src=src,
+                volume=self._volume,
+                release_mode=self._fta.ReleaseMode.STOP,
+                on_duration_change=self._on_duration_change,
+                on_state_change=self._on_state_change,
+                on_position_change=self._on_position_change,
+            )
+            self._page.services.append(self._audio)
+            self._page.update()
+
+    def _on_duration_change(self, e):
+        try:
+            self._duration = e.duration.in_seconds
+        except Exception:
+            pass
+
+    def _on_state_change(self, e):
+        try:
+            self._state = e.state
+        except Exception:
+            pass
+
+    def _on_position_change(self, e):
+        import time
+        try:
+            self._position_ms = int(e.position)
+            self._position_ts = time.time()
+        except Exception:
+            pass
+
+    def load(self, file_path: str) -> bool:
+        try:
+            file_path_str = os.fspath(file_path) if hasattr(file_path, '__fspath__') else str(file_path)
+            if not os.path.exists(file_path_str):
+                logger.error(f"音频文件不存在: {file_path_str}")
+                return False
+
+            src = self._to_src(file_path_str)
+            self._ensure_audio(src)
+            if self._audio.src != src:
+                self._audio.src = src
+            self._current_file = file_path_str
+            self._state = self._AudioState.STOPPED
+            self._duration = 0.0
+            self._position_ms = 0
+            logger.info(f"Flet音频加载成功: {file_path_str} (src={src})")
+            return True
+        except Exception as e:
+            logger.error(f"Flet加载音频失败: {e}")
+            return False
+
+    def play(self) -> bool:
+        try:
+            if not self._audio:
+                return False
+            self._run(self._audio.play())
+            logger.info("Flet开始播放音频")
+            return True
+        except Exception as e:
+            logger.error(f"Flet播放失败: {e}")
+            return False
+
+    def pause(self) -> bool:
+        try:
+            if not self._audio:
+                return False
+            self._run(self._audio.pause())
+            logger.info("Flet暂停播放")
+            return True
+        except Exception as e:
+            logger.error(f"Flet暂停失败: {e}")
+            return False
+
+    def stop(self) -> bool:
+        try:
+            if not self._audio:
+                return False
+            self._run(self._audio.pause())
+            self._run(self._audio.seek(self._ft.Duration(seconds=0)))
+            self._state = self._AudioState.STOPPED
+            self._position_ms = 0
+            return True
+        except Exception as e:
+            logger.error(f"Flet停止失败: {e}")
+            return False
+
+    def is_playing(self) -> bool:
+        try:
+            return self._state == self._AudioState.PLAYING
+        except Exception:
+            return False
+
+    def set_volume(self, volume: float) -> bool:
+        try:
+            self._volume = max(0.0, min(1.0, volume))
+            if self._audio:
+                self._audio.volume = self._volume
+            return True
+        except Exception as e:
+            logger.error(f"Flet设置音量失败: {e}")
+            return False
+
+    def get_duration(self) -> float:
+        try:
+            if self._duration > 0:
+                return self._duration
+            if self._audio:
+                # 事件尚未到达时主动查询一次（结果经事件回调缓存）
+                self._run(self._audio.get_duration())
+            return self._duration
+        except Exception:
+            return 0.0
+
+    def get_position(self) -> float:
+        import time
+        try:
+            position = self._position_ms / 1000.0
+            if self.is_playing():
+                # 位置事件约每秒一次，播放中按时间差外推，保证进度条平滑
+                position += max(0.0, time.time() - self._position_ts)
+                if self._duration > 0:
+                    position = min(position, self._duration)
+            return position
+        except Exception:
+            return 0.0
+
+    def seek(self, position: float) -> bool:
+        import time
+        try:
+            if not self._audio:
+                return False
+            self._run(self._audio.seek(self._ft.Duration(seconds=position)))
+            self._position_ms = int(position * 1000)
+            self._position_ts = time.time()
+            return True
+        except Exception as e:
+            logger.error(f"Flet跳转失败: {e}")
+            return False
+
+
 class iOSAudioPlayer:
-    """基于iOS AVFoundation的音频播放器"""
+    """基于iOS AVFoundation的音频播放器（rubicon-objc）"""
     
     def __init__(self):
         self._player = None
@@ -481,10 +672,14 @@ class iOSAudioPlayer:
                 self._audio_manager.activate_session()
             
             if self._player:
-                result = self._player.play()
-                if result:
+                # AVAudioPlayer.play() 在 Objective-C 中返回 void，
+                # 不能用返回值判断成败，这里以 isPlaying 属性为准
+                self._player.play()
+                if self._player.isPlaying:
                     logger.info("iOS开始播放音频")
-                return result
+                    return True
+                logger.warning("iOS调用play()后isPlaying仍为False")
+                return False
             return False
         except Exception as e:
             logger.error(f"iOS播放音频失败: {e}")
@@ -523,7 +718,8 @@ class iOSAudioPlayer:
         """检查是否正在播放"""
         try:
             if self._player:
-                return self._player.isPlaying()
+                # isPlaying 是属性，不是方法
+                return bool(self._player.isPlaying)
             return False
         except:
             return False
@@ -533,7 +729,7 @@ class iOSAudioPlayer:
         try:
             self._volume = max(0.0, min(1.0, volume))
             if self._player:
-                self._player.setVolume(self._volume)
+                self._player.setVolume_(self._volume)
             return True
         except Exception as e:
             logger.error(f"iOS设置音量失败: {e}")
@@ -710,13 +906,27 @@ class FallbackAudioPlayer:
         """跳转到指定位置（秒）"""
         return False
 
-def create_audio_player() -> AudioPlayerProtocol:
-    """创建适合当前平台的音频播放器"""
-    
+def create_audio_player(page=None) -> AudioPlayerProtocol:
+    """创建适合当前运行环境的音频播放器
+
+    Args:
+        page: Flet Page 实例。提供时优先使用 Flet 原生 Audio 播放器，
+              这是 iOS/Android 上唯一可靠的方案（pygame 和 rubicon
+              都不在 Flet 移动端的打包范围内）。
+    """
+
+    if page is not None:
+        try:
+            player = FletAudioPlayer(page)
+            logger.info("检测到Flet运行时，创建Flet Audio音频播放器")
+            return player
+        except Exception as e:
+            logger.warning(f"Flet Audio播放器创建失败: {e}，尝试其他播放器")
+
     if is_ios():
         logger.info("检测到iOS平台，创建iOS音频播放器")
         player = iOSAudioPlayer()
-        
+
         # 验证iOS播放器是否正常工作
         if hasattr(player, 'AVAudioPlayer'):
             return player

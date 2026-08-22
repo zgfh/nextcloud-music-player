@@ -8,7 +8,7 @@ import asyncio
 from typing import Optional, List
 
 from ...services.lyrics_service import LyricsService
-from ...utils.theme import Color, Space, FontSize
+from ...utils.theme import Color, Space, FontSize, Radius
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +34,17 @@ class LyricsDisplayComponent:
             return self._container
 
         # 标题栏
-        self.title_label = ft.Text("歌词", size=FontSize.SUBTITLE, weight=ft.FontWeight.W_500, expand=True)
+        self.title_label = ft.Text(
+            "歌词", size=FontSize.SUBTITLE, weight=ft.FontWeight.W_500,
+            color=Color.TEXT_SECONDARY, expand=True,
+            style=ft.TextStyle(letter_spacing=2),
+        )
         self.download_button = ft.IconButton(
-            ft.Icons.DOWNLOAD,
+            ft.Icons.CLOUD_DOWNLOAD_OUTLINED,
             tooltip="下载歌词",
             on_click=self._download_lyrics,
             icon_size=18,
+            icon_color=Color.PRIMARY,
             visible=False,
         )
 
@@ -52,9 +57,9 @@ class LyricsDisplayComponent:
 
         # 无歌词提示
         self.no_lyrics_text = ft.Text(
-            "暂无歌词",
+            "♪ 暂无歌词",
             size=FontSize.BODY + 2,
-            color=ft.Colors.GREY_400,
+            color=Color.TEXT_DISABLED,
             text_align=ft.TextAlign.CENTER,
         )
 
@@ -64,7 +69,8 @@ class LyricsDisplayComponent:
                 content=self.lyrics_list,
                 expand=True,
                 bgcolor=Color.LYRICS_BG,
-                border_radius=8,
+                border=ft.Border.all(1, Color.BORDER),
+                border_radius=Radius.LG,
             ),
         ], spacing=Space.XS, expand=True)
 
@@ -127,12 +133,14 @@ class LyricsDisplayComponent:
                     ft.Text(
                         " · ".join(meta_parts),
                         size=FontSize.CAPTION,
-                        color=ft.Colors.GREY_500,
+                        color=Color.TEXT_MUTED,
                         text_align=ft.TextAlign.CENTER,
                         weight=ft.FontWeight.W_500,
                     )
                 )
-                self.lyrics_list.controls.append(ft.Divider(height=1, color=ft.Colors.GREY_300))
+                self.lyrics_list.controls.append(
+                    ft.Divider(height=1, color=Color.BORDER)
+                )
 
         # 显示歌词行
         for i, line in enumerate(lines):
@@ -147,7 +155,7 @@ class LyricsDisplayComponent:
                     selectable=True,
                 ),
                 padding=ft.Padding(left=8, right=8, top=4, bottom=4),
-                border_radius=6,
+                border_radius=Radius.SM,
                 key=f"lyric_{i}",
             )
             self._lyric_items.append((item, i, line.time_seconds))

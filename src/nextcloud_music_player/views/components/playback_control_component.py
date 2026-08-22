@@ -7,7 +7,9 @@ import asyncio
 import logging
 from typing import Optional, Callable
 
-from ...utils.theme import Color, Space, FontSize
+from ...utils.theme import (
+    Color, Space, FontSize, Radius, Gradient, glow, tint,
+)
 from ...utils.platform_ui import get_button_height, get_button_icon_size
 
 logger = logging.getLogger(__name__)
@@ -35,52 +37,52 @@ class PlaybackControlComponent:
 
         icon_primary = get_button_icon_size(primary=True)
         icon_secondary = get_button_icon_size(secondary=True)
+        play_button_size = 56 if icon_primary >= 24 else 48
 
-        # 进度条
-        self.current_time_label = ft.Text("00:00", size=FontSize.CAPTION, color=Color.TEXT_MUTED, width=45)
+        # === 进度条（霓虹滑轨） ===
+        self.current_time_label = ft.Text(
+            "00:00", size=FontSize.CAPTION, color=Color.PRIMARY,
+            width=45, weight=ft.FontWeight.BOLD,
+        )
         self.progress_slider = ft.Slider(
             min=0, max=100, value=0,
             expand=True,
             on_change=self._on_seek,
             active_color=Color.PRIMARY,
+            inactive_color=Color.BG_ELEVATED,
+            thumb_color=Color.PRIMARY,
         )
-        self.total_time_label = ft.Text("00:00", size=FontSize.CAPTION, color=Color.TEXT_MUTED, width=45)
+        self.total_time_label = ft.Text(
+            "00:00", size=FontSize.CAPTION, color=Color.TEXT_MUTED,
+            width=45,
+        )
 
-        # 音量
+        # === 音量 ===
         self.volume_slider = ft.Slider(
             min=0, max=100, value=self.playback_service.get_volume() if self.playback_service else 70,
             expand=True,
             on_change=self._on_volume_change,
-            active_color=Color.PRIMARY,
+            active_color=Color.ACCENT,
+            inactive_color=Color.BG_ELEVATED,
+            thumb_color=Color.ACCENT,
         )
 
-        # 播放模式按钮
-        self.normal_button = ft.IconButton(
-            ft.Icons.REPEAT,
-            tooltip="顺序播放",
-            icon_size=get_button_icon_size(small=True),
-            on_click=lambda e: self._set_play_mode("normal"),
-        )
-        self.repeat_one_button = ft.IconButton(
-            ft.Icons.REPEAT_ONE,
-            tooltip="单曲循环",
-            icon_size=get_button_icon_size(small=True),
-            on_click=lambda e: self._set_play_mode("repeat_one"),
-        )
-        self.repeat_all_button = ft.IconButton(
-            ft.Icons.REPEAT,
-            tooltip="全部循环",
-            icon_size=get_button_icon_size(small=True),
-            on_click=lambda e: self._set_play_mode("repeat_all"),
-        )
-        self.shuffle_button = ft.IconButton(
-            ft.Icons.SHUFFLE,
-            tooltip="随机播放",
-            icon_size=get_button_icon_size(small=True),
-            on_click=lambda e: self._set_play_mode("shuffle"),
-        )
+        # === 播放模式按钮（霓虹激活态） ===
+        def mode_button(icon, tooltip, mode):
+            return ft.IconButton(
+                icon,
+                tooltip=tooltip,
+                icon_size=get_button_icon_size(small=True),
+                style=ft.ButtonStyle(shape=ft.CircleBorder()),
+                on_click=lambda e: self._set_play_mode(mode),
+            )
 
-        # 播放控制按钮
+        self.normal_button = mode_button(ft.Icons.REPEAT, "顺序播放", "normal")
+        self.repeat_one_button = mode_button(ft.Icons.REPEAT_ONE, "单曲循环", "repeat_one")
+        self.repeat_all_button = mode_button(ft.Icons.REPEAT, "全部循环", "repeat_all")
+        self.shuffle_button = mode_button(ft.Icons.SHUFFLE, "随机播放", "shuffle")
+
+        # === 播放控制按钮 ===
         h_primary = get_button_height(primary=True)
         h_secondary = get_button_height(secondary=True)
 
@@ -88,48 +90,67 @@ class PlaybackControlComponent:
             ft.Icons.SKIP_PREVIOUS,
             tooltip="上一曲",
             icon_size=icon_secondary,
-            icon_color=ft.Colors.GREY_700,
+            icon_color=Color.TEXT_SECONDARY,
+            style=ft.ButtonStyle(shape=ft.CircleBorder()),
             on_click=self._on_previous_song,
         )
-        self.play_pause_button = ft.FilledButton(
-            icon=ft.Icons.PLAY_ARROW,
-            content="",
+
+        # 主播放键：圆形渐变 + 霓虹光晕
+        self.play_icon = ft.Icon(ft.Icons.PLAY_ARROW, color=Color.PRIMARY_TEXT, size=play_button_size - 22)
+        self.play_pause_button = ft.Container(
+            content=self.play_icon,
+            width=play_button_size, height=play_button_size,
+            border_radius=play_button_size / 2,
+            gradient=Gradient.primary(),
+            shadow=glow(Color.GLOW_CYAN, radius=18, alpha="59"),
             on_click=self._on_toggle_playback,
-            style=ft.ButtonStyle(
-                bgcolor=Color.PRIMARY,
-                color=Color.PRIMARY_TEXT,
-                shape=ft.RoundedRectangleBorder(radius=28),
-                padding=8,
-            ),
         )
+
         self.next_button = ft.IconButton(
             ft.Icons.SKIP_NEXT,
             tooltip="下一曲",
             icon_size=icon_secondary,
-            icon_color=ft.Colors.GREY_700,
+            icon_color=Color.TEXT_SECONDARY,
+            style=ft.ButtonStyle(shape=ft.CircleBorder()),
             on_click=self._on_next_song,
         )
         self.stop_button = ft.IconButton(
-            ft.Icons.STOP,
+            ft.Icons.STOP_CIRCLE_OUTLINED,
             tooltip="停止",
             icon_size=icon_secondary,
             icon_color=Color.DANGER,
+            style=ft.ButtonStyle(shape=ft.CircleBorder()),
             on_click=self._on_stop_playback,
         )
 
-        # 组装
-        self._container = ft.Column([
-            # 进度条
-            ft.Row([self.current_time_label, self.progress_slider, self.total_time_label], spacing=Space.XS),
-            # 音量 + 模式
-            ft.Row([
-                ft.Row([ft.Icon(ft.Icons.VOLUME_UP, color=Color.TEXT_MUTED, size=18), self.volume_slider], spacing=4, expand=True),
-                ft.Row([self.normal_button, self.repeat_one_button, self.repeat_all_button, self.shuffle_button], spacing=2),
+        # === 组装（控制台卡片） ===
+        self._container = ft.Container(
+            content=ft.Column([
+                # 进度条
+                ft.Row([self.current_time_label, self.progress_slider, self.total_time_label],
+                       spacing=Space.XS),
+                # 音量 + 模式
+                ft.Row([
+                    ft.Row([
+                        ft.Icon(ft.Icons.VOLUME_UP, color=Color.TEXT_MUTED, size=18),
+                        self.volume_slider,
+                    ], spacing=4, expand=True),
+                    ft.Row([
+                        self.normal_button, self.repeat_one_button,
+                        self.repeat_all_button, self.shuffle_button,
+                    ], spacing=2),
+                ], spacing=Space.SM),
+                # 播放控制按钮
+                ft.Row(
+                    [self.prev_button, self.play_pause_button, self.next_button, self.stop_button],
+                    alignment=ft.MainAxisAlignment.CENTER, spacing=Space.MD,
+                ),
             ], spacing=Space.SM),
-            # 播放控制按钮
-            ft.Row([self.prev_button, self.play_pause_button, self.next_button, self.stop_button],
-                   alignment=ft.MainAxisAlignment.CENTER, spacing=Space.MD),
-        ], spacing=Space.SM)
+            bgcolor=Color.BG_SURFACE,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+            padding=Space.MD,
+        )
 
         self._built = True
         self.update_mode_buttons()
@@ -260,29 +281,24 @@ class PlaybackControlComponent:
         return 0
 
     def update_play_pause_button(self, is_playing: bool):
-        """更新播放/暂停按钮状态"""
+        """更新播放/暂停按钮状态（渐变 + 光晕随状态切换）"""
         if not self._built or not hasattr(self, 'play_pause_button'):
             return
         if is_playing:
-            self.play_pause_button.icon = ft.Icons.PAUSE
-            self.play_pause_button.style = ft.ButtonStyle(
-                bgcolor=Color.WARNING,
-                color=Color.PRIMARY_TEXT,
-                shape=ft.RoundedRectangleBorder(radius=28),
-                padding=8,
+            self.play_icon.name = ft.Icons.PAUSE
+            self.play_pause_button.gradient = ft.LinearGradient(
+                begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
+                colors=Gradient.WARNING,
             )
+            self.play_pause_button.shadow = glow(Color.WARNING, radius=18, alpha="59")
         else:
-            self.play_pause_button.icon = ft.Icons.PLAY_ARROW
-            self.play_pause_button.style = ft.ButtonStyle(
-                bgcolor=Color.PRIMARY,
-                color=Color.PRIMARY_TEXT,
-                shape=ft.RoundedRectangleBorder(radius=28),
-                padding=8,
-            )
+            self.play_icon.name = ft.Icons.PLAY_ARROW
+            self.play_pause_button.gradient = Gradient.primary()
+            self.play_pause_button.shadow = glow(Color.GLOW_CYAN, radius=18, alpha="59")
         self.page.update()
 
     def update_mode_buttons(self):
-        """更新播放模式按钮状态"""
+        """更新播放模式按钮状态（霓虹激活态）"""
         if not self._built or not hasattr(self, 'normal_button'):
             return
         from ...services.playback_controller import PlayMode
@@ -295,9 +311,17 @@ class PlaybackControlComponent:
         }
         for m, btn in buttons.items():
             if m == mode:
-                btn.style = ft.ButtonStyle(bgcolor=Color.SUCCESS, color=Color.MODE_ACTIVE_TEXT)
+                btn.style = ft.ButtonStyle(
+                    bgcolor=tint(Color.PRIMARY, "26"),
+                    color=Color.PRIMARY,
+                    shape=ft.CircleBorder(),
+                )
             else:
-                btn.style = ft.ButtonStyle(bgcolor=None, color=ft.Colors.GREY_500)
+                btn.style = ft.ButtonStyle(
+                    bgcolor=None,
+                    color=Color.TEXT_MUTED,
+                    shape=ft.CircleBorder(),
+                )
         self.page.update()
 
     def enable_controls(self, enabled: bool):

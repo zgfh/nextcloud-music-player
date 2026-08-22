@@ -22,23 +22,24 @@ logger = logging.getLogger(__name__)
 class PlaybackService:
     """播放服务 - 处理音乐播放控制、播放列表管理等业务逻辑"""
     
-    def __init__(self, config_manager, music_service, play_music_callback=None, add_background_task_callback=None):
+    def __init__(self, config_manager, music_service, play_music_callback=None, add_background_task_callback=None, page=None):
         """
         初始化播放服务
-        
+
         Args:
             config_manager: 配置管理器实例
             music_service: 音乐服务实例（用于获取歌曲信息、下载等操作）
             play_music_callback: 播放音乐的回调函数（可选，为兼容性保留）
             add_background_task_callback: 添加后台任务的回调函数
+            page: Flet Page 实例（提供时使用 Flet 原生 Audio 播放，移动端必需）
         """
         self.config_manager = config_manager
         self.music_service = music_service
         self._play_music_callback = play_music_callback
         self._add_background_task_callback = add_background_task_callback
-        
+
         # 创建平台特定的音频播放器
-        self.audio_player = create_audio_player()
+        self.audio_player = create_audio_player(page=page)
         logger.info(f"使用音频播放器: {type(self.audio_player).__name__}")
         
         # 向后兼容：初始化pygame音频系统（如果需要）
@@ -68,8 +69,10 @@ class PlaybackService:
         self._get_duration_callback = None
         self._set_play_mode_callback = None
         
-        # 内部播放模式存储
         self._current_play_mode = None
+
+        # Flet Page（用于创建 Flet Audio 播放器）
+        self._page = page
         
     def _init_audio_system(self):
         """初始化音频系统"""
@@ -261,7 +264,7 @@ class PlaybackService:
                 logger.warning("尝试重新初始化音频播放器")
                 try:
                     from ..platform_audio import create_audio_player
-                    self.audio_player = create_audio_player()
+                    self.audio_player = create_audio_player(page=self._page)
                     
                     if self.audio_player and self.audio_player.load(self.current_song):
                         if self.audio_player.play():
