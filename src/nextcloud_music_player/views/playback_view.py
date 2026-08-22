@@ -167,7 +167,7 @@ class PlaybackView:
             now_playing,
             self.tabs,
             self.message_container,
-            ft.SafeArea(content=controls, bottom=True),
+            ft.SafeArea(content=controls),
         ], spacing=Space.XS, expand=True)
 
         self._built = True

@@ -1,3 +1,5 @@
+> ⚠️ **本文档基于旧 Toga (BeeWare) 框架，已过时**（项目已于 2026-08 迁移至 Flet 0.86）。文中 Briefcase/Toga 命令不适用于当前框架，请参考 [MOBILE_BUILD_GUIDE.md](MOBILE_BUILD_GUIDE.md)。
+
 # GObject Introspection 依赖问题解决方案
 
 ## 问题描述

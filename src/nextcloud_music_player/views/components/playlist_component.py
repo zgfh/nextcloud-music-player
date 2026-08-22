@@ -77,7 +77,7 @@ class PlaylistViewComponent:
             status_icon = ft.Icon(ft.Icons.MUSIC_NOTE, color=ft.Colors.GREY_400, size=20)
 
         download_icon = ft.Icon(
-            ft.Icons.DOWNLOADED if is_downloaded else ft.Icons.DOWNLOAD_OUTLINE,
+            ft.Icons.DOWNLOAD_DONE if is_downloaded else ft.Icons.DOWNLOAD,
             color=ft.Colors.GREEN_600 if is_downloaded else ft.Colors.GREY_400,
             size=16,
         )

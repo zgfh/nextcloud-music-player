@@ -6,7 +6,7 @@
 <div align="center">
 
 ![License](https://img.shields.io/badge/license-BSD%203--Clause-blue.svg)
-![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20iOS%20%7C%20Android-lightgrey.svg)
 ![Framework](https://img.shields.io/badge/framework-Flet%200.86-blue.svg)
 ![Status](https://img.shields.io/badge/status-Alpha-orange.svg)
@@ -97,8 +97,7 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 
 3. **安装依赖**
    ```bash
-   pip install -e .
-   pip install flet  # 安装 Flet CLI
+   pip install -e ".[desktop]"  # 桌面播放需要 pygame
    ```
 
 4. **运行应用**
@@ -115,19 +114,22 @@ python -m nextcloud_music_player
 
 ### iOS 平台
 
+推荐使用一键部署脚本（自动检测设备、增量构建、自动签名并安装，免费开发者账号签名 7 天有效，到期重跑续签）：
 ```bash
-# 需要 macOS + Xcode
-# 构建 iOS 应用
-flet build ipa
+bash scripts/deploy_iso.sh           # 自动：源码有更新则重建，否则仅续签
+bash scripts/deploy_iso.sh --rebuild # 强制完整重建
+bash scripts/deploy_iso.sh --refresh # 仅刷新签名（代码未变时，速度快）
+```
+
+手动构建（需 macOS + Xcode + CocoaPods，详见 [docs/MOBILE_BUILD_GUIDE.md](docs/MOBILE_BUILD_GUIDE.md)）：
+```bash
+flet build ipa --yes   # 打包 Python 并生成 Flutter 工程（产物未签名，无法直接装真机）
+# 写入 build/flutter/ios/exportOptions.plist（development + 自动签名 + teamID）后：
+cd build/flutter && flutter build ipa --release --export-options-plist ios/exportOptions.plist
 
 # 安装到设备
 xcrun devicectl list devices  # 找到设备 ID
-xcrun devicectl device install app --device <DEVICE_ID> build/ios/NextCloudMusicPlayer.ipa
-```
-
-或使用部署脚本：
-```bash
-bash scripts/deploy_iso.sh
+xcrun devicectl device install app --device <DEVICE_ID> build/flutter/build/ios/ipa/nextcloud_music_player.ipa
 ```
 
 ### Android 平台
@@ -138,10 +140,10 @@ flet build apk
 
 ### 系统要求
 
-- **Python**: 3.8 或更高版本
-- **Flet**: 0.86.5+
+- **Python**: 3.10 或更高版本（Flet 0.86 要求）
+- **Flet**: 0.86.0+
 - **操作系统**: macOS 10.14+、Ubuntu 18.04+、Windows 10+
-- **iOS 构建**: macOS + Xcode 14+
+- **iOS 构建**: macOS + Xcode 14+ + CocoaPods + Flutter SDK（flet 0.86.5 对应 Flutter 3.44.x）
 - **NextCloud**: 兼容 NextCloud 20+ 版本
 
 ## 📱 使用指南
@@ -278,8 +280,7 @@ flet build windows  # Windows
 ### iOS
 
 ```bash
-flet build ipa
-bash scripts/deploy_iso.sh  # 自动构建并安装到连接的设备
+bash scripts/deploy_iso.sh  # 自动构建、签名并安装到连接的设备（推荐）
 ```
 
 ### Android

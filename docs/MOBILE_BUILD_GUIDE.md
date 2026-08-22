@@ -1,277 +1,92 @@
-# 📱 移动平台构建指南
+# 📱 移动平台构建指南（Flet）
 
-本文档详细介绍如何为 NextCloud Music Player 构建移动平台应用。
+本文档介绍如何为 NextCloud Music Player 构建移动平台应用。
+当前项目基于 [Flet](https://flet.dev/) 0.86（Flutter 引擎），构建体系为 `flet build`。
+（旧 Toga/BeeWare + Briefcase 流程已于 2026-08 废弃，见文末历史文档说明。）
 
 ## 🍎 iOS 平台
 
 ### 环境要求
 
-- **操作系统**: macOS 10.15 或更高版本
-- **Xcode**: 14.0 或更高版本
-- **Python**: 3.8 或更高版本
-- **设备**: iOS 12.0 或更高版本
+- **操作系统**: macOS（Xcode 依赖）
+- **Xcode**: 14.0+
+- **CocoaPods**: 必须（缺失会导致 `flutter build ipa` 失败）`brew install cocoapods`
+- **Flutter SDK**: 与 flet 版本对应（flet 0.86.5 → Flutter 3.44.x）
+- **Python**: 3.10+
+- **Apple 开发者账号**: 免费个人账号即可（签名 7 天有效，需定期续签）
 
-### 构建步骤
+### 一键部署（推荐）
 
-1. **安装依赖**
-   ```bash
-   # 安装系统依赖
-   brew install libffi
-   
-   # 安装 Python 依赖
-   pip install briefcase
-   pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
-   ```
+```bash
+bash scripts/deploy_iso.sh           # 自动：源码有更新则完整重建，否则仅刷新签名
+bash scripts/deploy_iso.sh --rebuild # 强制完整重建（flet 打包 + flutter 签名）
+bash scripts/deploy_iso.sh --refresh # 仅刷新签名（代码未变时用，速度快）
+```
 
-2. **创建 iOS 项目**
-   ```bash
-   python -m briefcase create iOS
-   ```
+脚本自动完成：检测连接的 iPhone → 判断是否需要重新打包 → 写入自动签名配置 →
+`flutter build ipa` 签名 → 检查签名有效期 → `devicectl` 安装到设备。
 
-3. **构建应用**
-   ```bash
-   python -m briefcase build iOS
-   ```
+### 手动构建
 
-4. **在 Xcode 中打开**
-   ```bash
-   python -m briefcase open iOS
-   ```
+```bash
+# 1. flet 打包 Python 并生成 Flutter 工程
+#    （注意：src 布局需要 pyproject.toml 中 [tool.flet.app] path = "src"，
+#     且 src/main.py 作为 app 入口）
+flet build ipa --yes
 
-5. **配置签名和部署**
-   - 在 Xcode 中配置开发者账户
-   - 设置签名证书和描述文件
-   - 选择目标设备
-   - 点击运行按钮部署到设备
+# 2. 写入签名配置 build/flutter/ios/exportOptions.plist
+cat > build/flutter/ios/exportOptions.plist <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key><string>development</string>
+    <key>teamID</key><string><你的TeamID></string>
+    <key>signingStyle</key><string>automatic</string>
+    <key>compileBitcode</key><false/>
+    <key>stripSwiftSymbols</key><true/>
+    <key>uploadSymbols</key><false/>
+</dict>
+</plist>
+PLIST
 
-### 发布到 App Store
+# 3. 用 Flutter 构建签名 IPA（TeamID 在 pyproject.toml [tool.flet.ios] 中配置）
+cd build/flutter
+flutter build ipa --release --export-options-plist ios/exportOptions.plist
 
-1. **配置发布签名**
-   - 创建 App Store Connect 记录
-   - 配置发布证书和描述文件
+# 4. 安装到真机
+xcrun devicectl list devices  # 找到设备 ID
+xcrun devicectl device install app --device <DEVICE_ID> \
+    build/flutter/build/ios/ipa/nextcloud_music_player.ipa
+```
 
-2. **打包上传**
-   ```bash
-   python -m briefcase package iOS
-   ```
+### ⚠️ 常见坑
 
-3. **上传到 App Store Connect**
-   - 使用 Xcode 或 Application Loader 上传
+- **`flet build ipa` 直接产物无法装真机**：没有 provisioning profile 时 flet 会走
+  `--no-codesign`，产物未签名。必须执行上面第 2、3 步完成 development 签名。
+- **免费账号签名 7 天过期**：到期后 App 无法启动，重跑 `deploy_iso.sh` 续签即可。
+- **设备不可用（unavailable）**：手机锁屏/待机时 devicectl 无法安装，解锁后运行
+  `bash scripts/deploy_iso.sh --refresh`。
 
 ## 🤖 Android 平台
 
-### 环境要求
-
-- **JDK**: 11 或更高版本
-- **Android SDK**: API Level 21 (Android 5.0) 或更高
-- **Python**: 3.8 或更高版本
-- **内存**: 至少 4GB 可用内存
-
-### 环境配置
-
-1. **安装 JDK**
-   ```bash
-   # macOS
-   brew install openjdk@11
-   
-   # Ubuntu/Debian
-   sudo apt install openjdk-11-jdk
-   
-   # Windows
-   # 下载并安装 Oracle JDK 或 OpenJDK
-   ```
-
-2. **安装 Android SDK**
-   ```bash
-   # 下载 Android Studio 或 Command Line Tools
-   # 设置环境变量
-   export ANDROID_HOME=/path/to/android/sdk
-   export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
-   export PATH=$PATH:$ANDROID_HOME/platform-tools
-   ```
-
-3. **安装必要的 SDK 组件**
-   ```bash
-   sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
-   sdkmanager "ndk;25.1.8937393" "cmake;3.22.1"
-   ```
-
-### 构建步骤
-
-1. **创建 Android 项目**
-   ```bash
-   python -m briefcase create android
-   ```
-
-2. **构建应用**
-   ```bash
-   python -m briefcase build android
-   ```
-
-3. **打包 APK**
-   ```bash
-   python -m briefcase package android
-   ```
-
-4. **安装到设备**
-   ```bash
-   # 连接 Android 设备，启用 USB 调试
-   adb install dist/*.apk
-   ```
-
-### 发布到 Google Play
-
-1. **生成签名密钥**
-   ```bash
-   keytool -genkey -v -keystore release-key.keystore -alias alias_name -keyalg RSA -keysize 2048 -validity 10000
-   ```
-
-2. **配置签名**
-   ```bash
-   # 编辑 android/gradle.properties
-   MYAPP_RELEASE_STORE_FILE=../release-key.keystore
-   MYAPP_RELEASE_KEY_ALIAS=alias_name
-   MYAPP_RELEASE_STORE_PASSWORD=your_password
-   MYAPP_RELEASE_KEY_PASSWORD=your_password
-   ```
-
-3. **构建发布版本**
-   ```bash
-   python -m briefcase package android --release
-   ```
-
-## 🔧 常见问题和解决方案
-
-### iOS 常见问题
-
-**问题**: "No signing certificate found"
-**解决**: 
-- 在 Xcode 中添加 Apple ID
-- 下载开发者证书
-- 在项目设置中选择正确的团队和证书
-
-**问题**: "This app cannot be installed because its integrity could not be verified"
-**解决**:
-- 在设备的"设置 > 通用 > VPN与设备管理"中信任开发者
-
-**问题**: 构建失败，找不到依赖
-**解决**:
 ```bash
-# 重新安装 iOS 特定依赖
-pip uninstall toga-iOS
-pip install toga-iOS
+flet build apk          # debug
+flet build apk --release
 ```
 
-### Android 常见问题
+权限已在 `pyproject.toml [tool.flet.android]` 中配置
+（INTERNET / WAKE_LOCK / FOREGROUND_SERVICE）。
 
-**问题**: "ANDROID_HOME not set"
-**解决**:
-```bash
-export ANDROID_HOME=/path/to/android/sdk
-# 将此行添加到 ~/.bashrc 或 ~/.zshrc
-```
+## 📚 历史文档（基于旧 Toga/BeeWare 框架，已过时）
 
-**问题**: "SDK location not found"
-**解决**:
-```bash
-# 创建 local.properties 文件
-echo "sdk.dir=/path/to/android/sdk" > android/local.properties
-```
+以下文档记录的是迁移到 Flet 之前的排查与修复过程，仅作历史参考，
+其中的 Briefcase/Toga 命令**不适用于当前框架**：
 
-**问题**: "Insufficient memory for the Java Runtime Environment"
-**解决**:
-```bash
-# 增加 Java 堆内存
-export JAVA_OPTS="-Xmx4g"
-```
-
-**问题**: APK 安装失败
-**解决**:
-- 启用"未知来源"安装
-- 检查设备架构是否匹配
-- 确保设备 Android 版本 >= 5.0
-
-## 📊 性能优化
-
-### iOS 优化
-
-1. **减小应用大小**
-   - 移除未使用的资源
-   - 使用资产目录优化图片
-
-2. **启动时间优化**
-   - 延迟加载非关键组件
-   - 优化初始化代码
-
-### Android 优化
-
-1. **APK 大小优化**
-   ```bash
-   # 启用 ProGuard 混淆
-   python -m briefcase package android --release
-   ```
-
-2. **内存使用优化**
-   - 及时释放不需要的对象
-   - 使用内存分析工具检查泄漏
-
-## 🚀 CI/CD 集成
-
-### GitHub Actions 自动构建
-
-项目已配置自动构建流程：
-
-- **iOS**: 在 macOS 环境中自动构建
-- **Android**: 在 Ubuntu 环境中自动构建
-- **制品上传**: 构建完成后自动上传到 GitHub Releases
-
-### 本地自动化脚本
-
-使用提供的脚本进行本地测试：
-
-```bash
-# 测试所有平台构建
-./scripts/test-build.sh
-
-# 仅测试移动平台
-# 在脚本执行过程中选择 "y" 进行移动平台测试
-```
-
-### iOS 每日自动构建部署
-
-`scripts/deploy_iso.sh` 一键完成 iOS 构建+安装到设备：
-
-```bash
-# 手动执行（需 iPhone 在同一 WiFi 下）
-bash scripts/deploy_iso.sh
-```
-
-脚本自动完成：
-1. 检测连接的 iPhone（通过 WiFi/网络，无需 USB）
-2. `xcodebuild` 构建 Debug 版本
-3. `devicectl` 安装到设备
-
-**定时任务**（`cc-connect` 托管，每天 6:30 自动执行）：
-
-```
-cron: 30 6 * * *
-命令: bash /path/to/scripts/deploy_iso.sh 2>&1 | tee -a scripts/logs/deploy_YYYYMMDD.log
-```
-
-- 日志按日期保存在 `scripts/logs/`（`.gitignore` 已忽略）
-- 通过 `/cron` 查看/管理定时任务
-- 个人免费开发者需每 7 天至少构建一次以续期描述文件
-
-## 📚 参考资源
-
-- [BeeWare iOS Tutorial](https://docs.beeware.org/en/latest/tutorial/tutorial-5/iOS.html)
-- [BeeWare Android Tutorial](https://docs.beeware.org/en/latest/tutorial/tutorial-6/android.html)
-- [iOS App Distribution Guide](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases)
-- [Android Publishing Guide](https://developer.android.com/studio/publish)
-
-## 💡 提示
-
-1. **开发建议**: 先在桌面平台完成功能开发和测试，再适配移动平台
-2. **调试技巧**: 使用 `python -m briefcase dev` 在桌面环境快速调试
-3. **版本管理**: 移动平台的版本号需要与 `pyproject.toml` 中保持一致
-4. **权限配置**: 移动应用可能需要额外的权限配置（如网络访问、存储访问等）
+- [iOS_SIGNING_GUIDE.md](iOS_SIGNING_GUIDE.md)
+- [iOS_BACKGROUND_PLAYBACK.md](iOS_BACKGROUND_PLAYBACK.md)
+- [iOS_MUSIC_PERSISTENCE_FIX.md](iOS_MUSIC_PERSISTENCE_FIX.md)
+- [iOS_COMPLETE_FIX.md](iOS_COMPLETE_FIX.md)
+- [iOS_PROGRESS_FIX.md](iOS_PROGRESS_FIX.md)
+- [ANDROID_BUILD_FIX.md](ANDROID_BUILD_FIX.md)
+- [DEPENDENCY_FIX.md](DEPENDENCY_FIX.md)

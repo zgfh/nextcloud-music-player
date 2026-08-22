@@ -29,6 +29,19 @@ class ConnectionView:
         if self._built and hasattr(self, '_container'):
             return self._container
 
+        try:
+            return self._do_build()
+        except Exception as e:
+            logger.error(f"ConnectionView build 失败: {e}", exc_info=True)
+            # Return a simple error view
+            return ft.Container(
+                content=ft.Column([
+                    ft.Text(f"构建错误: {e}", color=ft.Colors.RED),
+                ]),
+                padding=20,
+            )
+
+    def _do_build(self):
         config_manager = self.app_context['config_manager']
         config = config_manager.get("connection", {})
 
@@ -133,22 +146,25 @@ class ConnectionView:
         self.message_container = ft.Container(visible=False)
 
         # 组装
-        self._container = ft.Column(
-            controls=[
-                ft.Text("NextCloud 连接配置", size=FontSize.TITLE + 4, weight=ft.FontWeight.BOLD),
-                self.status_container,
-                self.url_input,
-                self.username_input,
-                self.password_input,
-                ft.Row([self.sync_folder_input, self.browse_button], spacing=Space.XS),
-                self.remember_password_switch,
-                self.auto_connect_switch,
-                ft.Row([self.connect_button, self.disconnect_button, self.test_button], spacing=Space.SM),
-                self.message_container,
-            ],
-            scroll=ft.ScrollMode.AUTO,
+        self._container = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("NextCloud 连接配置", size=FontSize.TITLE + 4, weight=ft.FontWeight.BOLD),
+                    self.status_container,
+                    self.url_input,
+                    self.username_input,
+                    self.password_input,
+                    ft.Row([self.sync_folder_input, self.browse_button], spacing=Space.XS),
+                    self.remember_password_switch,
+                    self.auto_connect_switch,
+                    ft.Row([self.connect_button, self.disconnect_button, self.test_button], spacing=Space.SM),
+                    self.message_container,
+                ],
+                scroll=ft.ScrollMode.AUTO,
+                spacing=Space.SM,
+                expand=True,
+            ),
             padding=Space.LG,
-            spacing=Space.SM,
             expand=True,
         )
 

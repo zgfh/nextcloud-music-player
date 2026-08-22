@@ -93,6 +93,7 @@ class PlaybackControlComponent:
         )
         self.play_pause_button = ft.FilledButton(
             icon=ft.Icons.PLAY_ARROW,
+            content="",
             on_click=self._on_toggle_playback,
             style=ft.ButtonStyle(
                 bgcolor=Color.PRIMARY,

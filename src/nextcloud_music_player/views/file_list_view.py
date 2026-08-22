@@ -108,19 +108,22 @@ class FileListView:
         self.message_container = ft.Container(visible=False)
 
         # 组装
-        self._container = ft.Column(
-            controls=[
-                ft.Text("音乐文件", size=FontSize.TITLE + 4, weight=ft.FontWeight.BOLD),
-                ft.Row([self.sync_button, self.search_input, self.search_button], spacing=Space.XS),
-                ft.Row([self.folder_text, self.folder_button], spacing=Space.XS),
-                ft.Row([self.add_button, self.play_button, self.select_all_button, self.delete_button], spacing=Space.XS),
-                ft.Container(content=self.stats_text, bgcolor=Color.BG_SUBTLE, padding=Space.SM, border_radius=6, width=float("inf")),
-                ft.Container(content=self.file_list, expand=True, border=ft.border.all(1, ft.Colors.GREY_300), border_radius=8),
-                ft.Row([self.download_button, self.clear_cache_button], spacing=Space.SM),
-                self.message_container,
-            ],
+        self._container = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("音乐文件", size=FontSize.TITLE + 4, weight=ft.FontWeight.BOLD),
+                    ft.Row([self.sync_button, self.search_input, self.search_button], spacing=Space.XS),
+                    ft.Row([self.folder_text, self.folder_button], spacing=Space.XS),
+                    ft.Row([self.add_button, self.play_button, self.select_all_button, self.delete_button], spacing=Space.XS),
+                    ft.Container(content=self.stats_text, bgcolor=Color.BG_SUBTLE, padding=Space.SM, border_radius=6, width=float("inf")),
+                    ft.Container(content=self.file_list, expand=True, border_radius=8),
+                    ft.Row([self.download_button, self.clear_cache_button], spacing=Space.SM),
+                    self.message_container,
+                ],
+                spacing=Space.SM,
+                expand=True,
+            ),
             padding=Space.LG,
-            spacing=Space.SM,
             expand=True,
         )
 
@@ -139,7 +142,7 @@ class FileListView:
         size = song.get('size', 0)
 
         size_str = f"{float(size) / 1024 / 1024:.1f}MB" if size else ""
-        download_icon = ft.Icons.DOWNLOADED if is_downloaded else ft.Icons.DOWNLOAD_OUTLINE
+        download_icon = ft.Icons.DOWNLOAD_DONE if is_downloaded else ft.Icons.DOWNLOAD
         download_color = ft.Colors.GREEN_600 if is_downloaded else ft.Colors.GREY_400
 
         selected = name in self.selected_files

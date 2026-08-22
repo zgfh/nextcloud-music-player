@@ -90,7 +90,7 @@ class FolderSelector:
                     ft.Container(
                         content=ft.Text("没有子文件夹", size=12, color=ft.Colors.GREY_500),
                         padding=16,
-                        alignment=ft.alignment.center,
+                        alignment=ft.Alignment(0, 0),
                     )
                 )
             else:

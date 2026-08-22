@@ -13,6 +13,35 @@ log_message() {
     echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
+usage() {
+    echo "用法: bash scripts/deploy_iso.sh [选项]"
+    echo ""
+    echo "选项:"
+    echo "  (无参数)     自动判断：源码有更新则完整重建，否则仅刷新签名"
+    echo "  --rebuild    强制完整重建（flet 打包 + flutter 签名）"
+    echo "  --refresh    仅刷新签名（跳过 flet 打包，代码未变时用，速度快）"
+    echo "  --help       显示帮助"
+    echo ""
+    echo "说明: 免费开发者账号签名有效期 7 天，请每 7 天内重跑一次以续签。"
+}
+
+# ====== 参数解析 ======
+FORCE_REBUILD=0
+FORCE_REFRESH=0
+for arg in "$@"; do
+    case "$arg" in
+        --rebuild|-r) FORCE_REBUILD=1 ;;
+        --refresh|-s) FORCE_REFRESH=1 ;;
+        --help|-h) usage; exit 0 ;;
+        *) log_message "${RED}❌ 未知参数: $arg${NC}"; usage; exit 1 ;;
+    esac
+done
+
+if [ "$FORCE_REBUILD" = "1" ] && [ "$FORCE_REFRESH" = "1" ]; then
+    log_message "${RED}❌ --rebuild 与 --refresh 不能同时使用${NC}"
+    exit 1
+fi
+
 # ====== 自动检测设备 ======
 log_message "${YELLOW}📱 查找连接的 iOS 设备...${NC}"
 
@@ -26,22 +55,59 @@ fi
 DEVICE_ID=$(echo "$DEVICE_LINE" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
 DEVICE_NAME=$(echo "$DEVICE_LINE" | awk '{print $1}')
 
-log_message "${GREEN}✅ 找到设备: $DEVICE_NAME ($DEVICE_ID)${NC}"
-
-# ====== 1. Flet 打包 Python + 生成 Flutter 工程 ======
-# 注意: flet 0.86 的 `build ipa` 在没有 provisioning profile 时会走 --no-codesign，
-# 无法产出可用 IPA，因此这里只用它完成打包/生成工程，签名在下一步用 flutter 完成。
-log_message "${YELLOW}🔨 打包 Python 应用并生成 Flutter 工程...${NC}"
-
-FLET_CMD="/Users/zzg/code/iso-demo/.venv/bin/flet"
-
-if [ ! -f "$FLET_CMD" ]; then
-    log_message "${RED}❌ 未找到 flet 命令: $FLET_CMD${NC}"
-    log_message "${YELLOW}请先安装: pip install flet${NC}"
-    exit 1
+# 提取设备状态（available / unavailable / booted 等）
+# 注意: 锁屏或待机时状态为 unavailable，此时 devicectl 无法安装应用
+if echo "$DEVICE_LINE" | grep -qi "unavailable"; then
+    DEVICE_STATE="unavailable"
+else
+    DEVICE_STATE="available"
 fi
 
-$FLET_CMD build ipa --yes --no-rich-output 2>&1 | tail -10 || true
+log_message "${GREEN}✅ 找到设备: $DEVICE_NAME ($DEVICE_ID) [状态: $DEVICE_STATE]${NC}"
+
+if [ "$DEVICE_STATE" = "unavailable" ]; then
+    log_message "${RED}⚠️ 设备不可用（手机可能锁屏/待机/断开），devicectl 无法安装应用${NC}"
+    log_message "${YELLOW}将跳过安装，仅构建并刷新签名；请解锁手机后运行 --refresh 安装${NC}"
+fi
+
+# ====== 判断是否需要 flet 打包 ======
+FLET_CMD="${FLET_BIN:-/Users/zzg/code/iso-demo/.venv/bin/flet}"
+PYTHON_APP_REF="build/python-app/main.pyc"
+FLUTTER_IOS_DIR="build/flutter/ios"
+
+NEED_FLET_BUILD=0
+if [ "$FORCE_REBUILD" = "1" ]; then
+    NEED_FLET_BUILD=1
+    REASON="--rebuild 强制重建"
+elif [ "$FORCE_REFRESH" = "1" ]; then
+    NEED_FLET_BUILD=0
+    REASON="--refresh 仅续签"
+elif [ ! -d "$FLUTTER_IOS_DIR" ] || [ ! -f "$PYTHON_APP_REF" ]; then
+    NEED_FLET_BUILD=1
+    REASON="首次构建（缺少打包产物）"
+elif [ -n "$(find src -type f -newer "$PYTHON_APP_REF" 2>/dev/null | head -1)" ] || [ "pyproject.toml" -nt "$PYTHON_APP_REF" ]; then
+    NEED_FLET_BUILD=1
+    REASON="源码有更新"
+else
+    NEED_FLET_BUILD=0
+    REASON="源码无变化，仅刷新签名"
+fi
+
+log_message "${YELLOW}🧭 决策: $REASON${NC}"
+
+# ====== 1. Flet 打包 Python（如需要） ======
+if [ "$NEED_FLET_BUILD" = "1" ]; then
+    if [ ! -f "$FLET_CMD" ]; then
+        log_message "${RED}❌ 未找到 flet 命令: $FLET_CMD${NC}"
+        log_message "${YELLOW}请先安装 flet，或用 FLET_BIN=/path/to/flet 指定${NC}"
+        exit 1
+    fi
+
+    log_message "${YELLOW}🔨 打包 Python 应用并生成 Flutter 工程...${NC}"
+    $FLET_CMD build ipa --yes --no-rich-output 2>&1 | tail -10 || true
+else
+    log_message "${GREEN}⏭️ 跳过 flet 打包，复用已有 build/python-app 与 build/flutter${NC}"
+fi
 
 # ====== 2. 写入自动签名 exportOptions ======
 log_message "${YELLOW}🔏 配置自动签名 (development / team 6CS69Y977H)...${NC}"
@@ -67,13 +133,16 @@ cat > build/flutter/ios/exportOptions.plist <<'PLIST'
 </plist>
 PLIST
 
-# ====== 3. flutter 构建签名 IPA ======
-log_message "${YELLOW}📦 构建签名 IPA...${NC}"
+# ====== 3. flutter 构建并签名 IPA（每次都做，刷新签名） ======
+# 构建前清理旧 IPA，避免 find 命中过期产物
+find build/flutter/build/ios -name "*.ipa" -type f -delete 2>/dev/null || true
+
+log_message "${YELLOW}📦 构建并签名 IPA...${NC}"
 
 export PATH="$HOME/flutter/3.44.8/bin:/usr/local/bin:$PATH"
 (cd build/flutter && flutter build ipa --release --export-options-plist ios/exportOptions.plist 2>&1 | tail -15)
 
-# ====== 4. 查找 IPA 并安装 ======
+# ====== 4. 查找 IPA ======
 IPA_PATH=$(find build/flutter/build/ios -name "*.ipa" -type f 2>/dev/null | head -1)
 
 if [ -z "$IPA_PATH" ]; then
@@ -83,7 +152,45 @@ fi
 
 log_message "${GREEN}✅ 构建成功: $IPA_PATH${NC}"
 
+# ====== 5. 检查签名有效期 ======
+check_signature() {
+    local ipa="$1"
+    local tmp
+    tmp=$(mktemp -d)
+    unzip -q -o "$ipa" "Payload/*.app/embedded.mobileprovision" -d "$tmp" 2>/dev/null
+    local mp
+    mp=$(find "$tmp" -name "embedded.mobileprovision" 2>/dev/null | head -1)
+    if [ -z "$mp" ]; then
+        rm -rf "$tmp"
+        return
+    fi
+    local expiry
+    expiry=$(security cms -D -i "$mp" 2>/dev/null | grep -A1 "ExpirationDate" | grep "<date>" | sed 's/.*<date>\(.*\)<\/date>.*/\1/')
+    rm -rf "$tmp"
+    [ -z "$expiry" ] && return
+
+    local expiry_epoch now_epoch days_left
+    expiry_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$expiry" "+%s" 2>/dev/null)
+    now_epoch=$(date "+%s")
+    days_left=$(( (expiry_epoch - now_epoch) / 86400 ))
+
+    log_message "${YELLOW}⏳ 签名过期时间: $expiry（剩余 $days_left 天）${NC}"
+    if [ "$days_left" -le 1 ]; then
+        log_message "${RED}⚠️ 签名即将过期，请尽快重新运行本脚本续签${NC}"
+    fi
+}
+
+check_signature "$IPA_PATH"
+
+# ====== 6. 安装 ======
+if [ "$DEVICE_STATE" = "unavailable" ]; then
+    log_message "${RED}⏭️ 跳过安装：设备不可用。IPA 已生成并刷新签名${NC}"
+    log_message "${YELLOW}解锁手机后运行: bash scripts/deploy_iso.sh --refresh${NC}"
+    exit 0
+fi
+
 log_message "${YELLOW}📲 安装到 $DEVICE_NAME...${NC}"
 xcrun devicectl device install app --device "$DEVICE_ID" "$IPA_PATH" -t 600 2>&1
 
 log_message "${GREEN}🎉 完成！应用已安装到 $DEVICE_NAME${NC}"
+log_message "${YELLOW}💡 提示: 免费签名 7 天过期，建议每周运行一次 bash scripts/deploy_iso.sh 续签${NC}"
