@@ -115,6 +115,21 @@ fi
 # ====== 2. 写入自动签名 exportOptions ======
 log_message "${YELLOW}🔏 配置自动签名 (development / team 6CS69Y977H)...${NC}"
 
+# 删除缓存的描述文件，强制 Xcode 重新申请 → 每次部署都拿到全新的 7 天有效期
+BUNDLE_ID="com.daozzg.nextcloud-music-player"
+PROF_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+if [ -d "$PROF_DIR" ]; then
+    REMOVED=0
+    for prof in "$PROF_DIR"/*.mobileprovision; do
+        [ -f "$prof" ] || continue
+        if security cms -D -i "$prof" 2>/dev/null | grep -q "$BUNDLE_ID"; then
+            rm -f "$prof"
+            REMOVED=$((REMOVED + 1))
+        fi
+    done
+    [ "$REMOVED" -gt 0 ] && log_message "${GREEN}✅ 已清除 $REMOVED 个旧描述文件，将重新申请（7 天有效期重新起算）${NC}"
+fi
+
 # flet build 每次重新生成 Xcode 工程时会把 Runner 签名重置为 Manual（且不带 profile），
 # 导致 "requires a provisioning profile" 构建失败；这里强制改回 Automatic
 PBXPROJ="build/flutter/ios/Runner.xcodeproj/project.pbxproj"
