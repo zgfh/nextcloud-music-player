@@ -52,8 +52,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]" "flet[test]==0.86.5"
 
-      - name: Run Flet E2E tests (macOS)
-        run: flet test --tests-dir tests/e2e -v
+      # macOS 无头 flutter_tester 宿主的滚动视口约束与真实设备不同，
+      # 播放页布局在真机正常但在该宿主触发 performLayout 断言；
+      # iOS 模拟器与真机渲染管线一致（也是 golden 截图唯一支持的平台）
+      - name: Boot iOS simulator
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -E "iPhone" | head -1 | sed -E 's/.*\(([A-F0-9-]{36})\).*/\1/')
+          if [ -z "$UDID" ]; then echo "No iPhone simulator found"; exit 1; fi
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Run Flet E2E tests (iOS simulator)
+        run: flet test ios --device-id "$UDID" --tests-dir tests/e2e -v
 
       - name: Upload build artifacts on failure
         if: failure()

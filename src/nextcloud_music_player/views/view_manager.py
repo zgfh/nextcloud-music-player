@@ -150,26 +150,6 @@ class ViewManager:
             view.on_view_activated()
 
         self.page.update()
-        self._dump_tree_debug()
-
-    def _dump_tree_debug(self):
-        """调试：打印控件树（ID 与类型），用于与 Flutter 渲染错误的 control_N 对照"""
-        def walk(c, d=0):
-            try:
-                scroll = getattr(c, 'scroll', None)
-                spacing = getattr(c, 'spacing', None)
-                logger.warning(
-                    f"TREE [{getattr(c, '_i', None)}] {'  ' * d}"
-                    f"{type(c).__name__} scroll={scroll} spacing={spacing}"
-                )
-            except Exception:
-                pass
-            children = ([c.content] if getattr(c, 'content', None) else []) \
-                + list(getattr(c, 'controls', None) or [])
-            for ch in children:
-                walk(ch, d + 1)
-
-        walk(self.content_area)
 
     def show_status_message(self, message: str, message_type: str = "info"):
         """在当前视图中显示状态消息"""
