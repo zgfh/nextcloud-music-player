@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **前端框架迁移：Toga (BeeWare) → Flet (Flutter) 0.86.5**
+  - 所有视图重写为 Flet：`views/`、`views/components/`
+  - 服务层 `services/` 保持框架无关，未改动
+  - 导航改为底部 NavigationBar，播放列表/歌词改为 TabBar + TabBarView
+  - Python 最低版本要求提升至 3.10（Flet 0.86 要求）
+- 构建体系从 Briefcase 切换为 `flet build`（iOS/Android）
+
+### Added
+- iOS 一键部署脚本 `scripts/deploy_iso.sh`（自动设备检测、增量构建、自动签名、7 天续签提醒）
+
+### Fixed
+- 播放视图中间区域空白：Flet 0.86 中 `SafeArea` 无 `bottom` 参数，无效属性导致渲染补丁失败
+- 播放/暂停按钮红错：`FilledButton` icon-only 需显式 `content=""`
+
 ## [0.1.0] - 2025-09-04
 
 ### Added

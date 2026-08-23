@@ -1,20 +1,19 @@
 
-# NextCloud Music Player 🎵
+# NextCloud Music Player
 
 免责: 大模型生成的项目,开发学习使用,不保证质量
 
 <div align="center">
 
 ![License](https://img.shields.io/badge/license-BSD%203--Clause-blue.svg)
-![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20iOS%20%7C%20Android-lightgrey.svg)
+![Framework](https://img.shields.io/badge/framework-Flet%200.86-blue.svg)
 ![Status](https://img.shields.io/badge/status-Alpha-orange.svg)
-![Build](https://github.com/zgfh/nextcloud-music-player/actions/workflows/build.yml/badge.svg)
-![Release](https://github.com/zgfh/nextcloud-music-player/actions/workflows/release.yml/badge.svg)
 
-**一个基于 BeeWare 的跨平台音乐播放器，支持 NextCloud 云端音乐同步**
+**一个基于 Flet (Flutter) 的跨平台音乐播放器，支持 NextCloud 云端音乐同步**
 
-[功能特性](#-功能特性) • [安装说明](#-安装说明) • [使用指南](#-使用指南) • [开发指南](#-开发指南) • [自动化构建](#-自动化构建与发布) • [贡献](#-贡献) • [许可证](#-许可证)
+[功能特性](#-功能特性) • [截图预览](#-截图预览) • [安装说明](#-安装说明) • [使用指南](#-使用指南) • [开发指南](#-开发指南) • [自动化构建](#-自动化构建与发布) • [许可证](#-许可证)
 
 </div>
 
@@ -22,12 +21,14 @@
 
 NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜欢使用 NextCloud 云存储服务的用户设计。它能够无缝连接到您的 NextCloud 服务器，同步音乐文件到本地缓存，并提供流畅的音乐播放体验。
 
+项目使用 [Flet](https://flet.dev/) 框架（基于 Flutter 引擎），实现了原生级别的 UI 渲染和流畅的跨平台体验。
+
 ### 🎯 设计理念
 
 - **云端同步**：与 NextCloud 无缝集成，自动同步音乐库
-- **跨平台**：基于 BeeWare Toga 框架，支持 macOS、Linux、Windows、iOS 和 Android
+- **跨平台**：基于 Flet (Flutter) 框架，支持 macOS、Linux、Windows、iOS 和 Android
 - **智能缓存**：本地缓存管理，支持离线播放
-- **用户友好**：直观的界面设计，简单易用
+- **用户友好**：现代化的 Material Design 界面，简单易用
 
 ## ✨ 功能特性
 
@@ -45,11 +46,19 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 - **文件夹选择**：可选择特定文件夹进行同步
 - **缓存管理**：智能本地缓存，支持缓存大小限制
 
+### 📂 SMB 共享来源
+- **来源切换**：连接页支持在 NextCloud 与 SMB 共享之间切换
+- **协议支持**：SMB1/SMB2（纯 Python 实现 pysmb，桌面/Web/iOS/Android 全平台可用）
+- **灵活配置**：主机地址、端口（445/139）、共享名、域、凭据均可自定义
+- **目录浏览**：与 NextCloud 一致的远程文件夹浏览与同步体验
+- **限制说明**：不支持强制 SMB3 加密的服务器，请在服务端允许 SMB2 访问
+
 ### 📱 用户界面
-- **标签式界面**：连接设置、文件列表、播放控制分离
+- **底部导航**：连接设置、文件列表、播放控制三个主要视图
+- **Tab 切换**：播放列表与歌词即时切换
 - **进度显示**：实时显示播放进度和时间
-- **响应式设计**：适配不同屏幕尺寸
-- **表情符号按钮**：直观的播放控制按钮
+- **响应式设计**：适配不同屏幕尺寸，支持 iOS SafeArea
+- **歌词同步**：支持 LRC 格式歌词，自动高亮当前行并滚动
 
 ### 🔧 高级功能
 - **离线播放**：缓存的音乐可离线播放
@@ -57,68 +66,31 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 - **收藏功能**：支持标记喜爱的歌曲
 - **日志系统**：完善的日志记录，便于问题诊断
 
+## 📸 截图预览
+
+<div align="center">
+
+### 播放视图
+![播放视图](docs/screenshots/playback_view.png)
+
+### 连接设置视图
+![连接设置视图](docs/screenshots/connection_view.png)
+
+### 文件列表视图
+![文件列表视图](docs/screenshots/files_view.png)
+
+### 歌词视图
+![歌词视图](docs/screenshots/lyrics_view.png)
+
+</div>
+
 ## 🚀 安装说明
 
-### 📦 预构建版本（推荐）
-
-访问 [Releases 页面](https://github.com/zgfh/nextcloud-music-player/releases) 下载适合您操作系统的预构建安装包：
-
-#### 桌面平台
-- **Windows**: 下载 `.msi` 文件，双击安装
-- **macOS**: 下载 `.dmg` 文件，拖拽到应用程序文件夹
-- **Linux**: 下载 `.deb` 文件，使用包管理器安装
-
-#### 移动平台
-- **iOS**: 下载 iOS 项目文件，需要 Xcode 编译和签名
-- **Android**: 下载 `.apk` 文件（开发版本，未签名）
-
-📱 **移动平台详细安装和构建指南**: [移动平台构建指南](docs/MOBILE_BUILD_GUIDE.md)
-
-```bash
-# Ubuntu/Debian 系统安装示例
-sudo dpkg -i nextcloud-music-player_*.deb
-sudo apt-get install -f  # 如果有依赖问题
-```
-
-#### 移动平台安装说明
-
-**iOS 安装:**
-1. 下载 iOS 构建文件并解压
-2. 使用 Xcode 打开 `.xcodeproj` 文件
-3. 配置开发者证书和描述文件
-4. 连接 iOS 设备并编译安装
-
-自动更新: 
-第一次安装成功后,后续可以配置自动更新
-```
-# 查询设备,找到自己的手机的设备id（最后一个括号内，如: 00008110-000502200123111X）
-xcrun xctrace list devices
-
-# 试试能不能成功
-bash -x scripts/deploy.sh "00008110-000502200123111X"
-
-# 添加自动执行(TODO 因为签名证书不能在cron中操作,目前是写了个脚本一直在终端运行临时解决)
-
-```
-
-
-**Android 安装:**
-1. 在 Android 设备上启用"开发者选项"和"USB调试"
-2. 在"安全"设置中允许"未知来源"安装
-3. 下载并安装 `.apk` 文件
-4. 注意：开发版本未经过签名，仅用于测试
-
-### 系统要求
-
-- **Python**: 3.8 或更高版本
-- **操作系统**: macOS 10.14+、Ubuntu 18.04+、Windows 10+
-- **NextCloud**: 兼容 NextCloud 20+ 版本
-
-### 从源码安装
+### 📦 从源码运行（推荐）
 
 1. **克隆仓库**
    ```bash
-   git clone https://github.com/yourusername/nextcloud-music-player.git
+   git clone https://github.com/zgfh/nextcloud-music-player.git
    cd nextcloud-music-player
    ```
 
@@ -132,106 +104,87 @@ bash -x scripts/deploy.sh "00008110-000502200123111X"
 
 3. **安装依赖**
    ```bash
-   pip install briefcase
-   pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
+   pip install -e ".[desktop]"  # 桌面播放需要 pygame
    ```
 
 4. **运行应用**
    ```bash
-   python -m briefcase dev
+   python -m nextcloud_music_player
    ```
 
-### 构建发布版本
+### 桌面平台
+
+直接运行即可：
+```bash
+python -m nextcloud_music_player
+```
+
+### iOS 平台
+
+推荐使用一键部署脚本（自动检测设备、增量构建、自动签名并安装，免费开发者账号签名 7 天有效，到期重跑续签）：
+```bash
+bash scripts/deploy_iso.sh           # 自动：源码有更新则重建，否则仅续签
+bash scripts/deploy_iso.sh --rebuild # 强制完整重建
+bash scripts/deploy_iso.sh --refresh # 仅刷新签名（代码未变时，速度快）
+```
+
+手动构建（需 macOS + Xcode + CocoaPods，详见 [docs/MOBILE_BUILD_GUIDE.md](docs/MOBILE_BUILD_GUIDE.md)）：
+```bash
+flet build ipa --yes   # 打包 Python 并生成 Flutter 工程（产物未签名，无法直接装真机）
+# 写入 build/flutter/ios/exportOptions.plist（development + 自动签名 + teamID）后：
+cd build/flutter && flutter build ipa --release --export-options-plist ios/exportOptions.plist
+
+# 安装到设备
+xcrun devicectl list devices  # 找到设备 ID
+xcrun devicectl device install app --device <DEVICE_ID> build/flutter/build/ios/ipa/nextcloud_music_player.ipa
+```
+
+### Android 平台
 
 ```bash
-# 构建本平台应用
-python -m briefcase build
-
-# 打包为可分发格式
-python -m briefcase package
+flet build apk
 ```
 
-### 移动平台构建
+### 系统要求
 
-#### iOS 平台
-```bash
-# 系统要求：macOS + Xcode
-# 初始化 iOS 项目
-python -m briefcase create iOS
-python -m briefcase build iOS
-
-# 在 Xcode 中打开项目进行进一步配置
-python -m briefcase open iOS
-
-# 后续更新
-python -m briefcase update iOS
-```
-
-**iOS 构建要求:**
-- macOS 系统
-- Xcode 14.0 或更高版本
-- Apple Developer 账户（用于设备安装）
-- iOS 12.0 或更高版本的目标设备
-
-#### Android 平台
-```bash
-# 系统要求：安装 Android SDK 和 JDK
-# 初始化 Android 项目
-python -m briefcase create android
-python -m briefcase build android
-
-# 打包 APK
-python -m briefcase package android
-
-# 后续更新
-python -m briefcase update android
-```
-
-**Android 构建要求:**
-- JDK 11 或更高版本
-- Android SDK (API Level 21+)
-- Android Build Tools
-- 至少 4GB 可用内存
-
-#### 移动平台注意事项
-- 移动平台构建需要额外的系统配置
-- iOS 需要 Apple Developer 证书进行签名
-- Android APK 默认为调试版本，生产环境需要签名
-- 某些音频功能在移动平台上可能有限制
-python -m briefcase create android
-python -m briefcase build android
-```
+- **Python**: 3.10 或更高版本（Flet 0.86 要求）
+- **Flet**: 0.86.0+
+- **操作系统**: macOS 10.14+、Ubuntu 18.04+、Windows 10+
+- **iOS 构建**: macOS + Xcode 14+ + CocoaPods + Flutter SDK（flet 0.86.5 对应 Flutter 3.44.x）
+- **NextCloud**: 兼容 NextCloud 20+ 版本
 
 ## 📱 使用指南
 
 ### 首次设置
 
-1. **启动应用**：运行应用后，首先进入"连接设置"标签页
+1. **启动应用**：运行应用后，点击底部导航栏的"连接"标签
 2. **配置服务器**：
    - 输入您的 NextCloud 服务器地址（如：`https://cloud.example.com`）
    - 输入用户名和密码（推荐使用应用专用密码）
 3. **测试连接**：点击"测试连接"按钮验证设置
-4. **选择文件夹**：在"同步文件夹"中输入音乐文件夹路径（如：`/Music`）
+4. **选择文件夹**：点击"选择文件夹"按钮选择音乐文件夹路径（如：`/Music`）
 
 ### 音乐同步
 
-1. **点击同步**：在"文件列表"标签页点击"同步音乐文件"
+1. **点击同步**：在"文件"标签页点击"同步音乐文件"
 2. **查看文件**：同步完成后，音乐文件将显示在列表中
 3. **下载状态**：绿色图标表示已下载，红色表示仅在云端
 
 ### 音乐播放
 
 1. **添加到播放列表**：
-   - 选择音乐文件，点击"添加到播放列表"
-   - 或者双击文件直接播放
+   - 在文件列表中选择音乐文件，点击"添加到播放列表"
+   - 或直接点击文件进行播放
 2. **播放控制**：
-   - 使用 ▶️ ⏸️ 按钮控制播放/暂停
-   - 使用 ⏮️ ⏭️ 按钮切换歌曲
+   - 使用 ▶ ⏸ 按钮控制播放/暂停
+   - 使用 ⏮ ⏭ 按钮切换歌曲
    - 拖动进度条调整播放位置
 3. **播放模式**：点击播放模式按钮切换：
-   - 🔁 列表循环
-   - 🔂 单曲循环
-   - 🔀 随机播放
+   - 顺序播放
+   - 单曲循环
+   - 全部循环
+   - 随机播放
+4. **歌词**：切换到"歌词"标签查看当前歌曲歌词，支持自动滚动和高亮
 
 ## 🛠 开发指南
 
@@ -240,22 +193,54 @@ python -m briefcase build android
 ```
 nextcloud-music-player/
 ├── src/nextcloud_music_player/
-│   ├── app.py                  # 主应用类
-│   ├── nextcloud_client.py     # NextCloud API 客户端
-│   ├── music_library.py        # 音乐库管理
-│   ├── config_manager.py       # 配置管理
-│   ├── services/               # 业务逻辑服务
-│   │   ├── music_service.py    # 音乐服务
-│   │   └── playback_service.py # 播放服务
-│   └── views/                  # UI 视图组件
-│       ├── connection_view.py  # 连接设置视图
-│       ├── file_list_view.py   # 文件列表视图
-│       ├── playback_view.py    # 播放控制视图
-│       └── view_manager.py     # 视图管理器
-├── tests/                      # 单元测试
-├── docs/                       # 文档
-└── pyproject.toml             # 项目配置
+│   ├── __main__.py              # 入口 (ft.run)
+│   ├── app.py                   # Flet 主入口
+│   ├── nextcloud_client.py      # NextCloud API 客户端
+│   ├── music_library.py         # 音乐库管理
+│   ├── config_manager.py        # 配置管理
+│   ├── platform_audio.py        # 平台音频抽象
+│   ├── services/                # 业务逻辑服务（与框架无关）
+│   │   ├── music_service.py     # 音乐服务
+│   │   ├── playback_service.py  # 播放服务
+│   │   ├── playback_controller.py # 播放控制器
+│   │   ├── playlist_manager.py  # 播放列表管理
+│   │   └── lyrics_service.py    # 歌词服务
+│   ├── views/                   # Flet UI 视图
+│   │   ├── view_manager.py      # 视图管理器 (NavigationBar)
+│   │   ├── connection_view.py   # 连接设置视图
+│   │   ├── file_list_view.py    # 文件列表视图
+│   │   ├── playback_view.py     # 播放控制视图
+│   │   ├── folder_selector.py   # 文件夹选择器
+│   │   └── components/          # 可复用组件
+│   │       ├── playback_control_component.py
+│   │       ├── playlist_component.py
+│   │       └── lyrics_component.py
+│   └── utils/                   # 工具类
+│       ├── theme.py             # 主题配色
+│       └── platform_ui.py       # 平台 UI 适配
+├── docs/screenshots/            # 应用截图
+├── scripts/                     # 部署脚本
+│   └── deploy_iso.sh            # iOS 部署脚本
+└── pyproject.toml               # 项目配置
 ```
+
+### 技术栈
+
+- **UI 框架**: [Flet](https://flet.dev/) 0.86.5 - 基于 Flutter 的跨平台 UI 框架
+- **音频播放**: [Pygame](https://www.pygame.org/) - 跨平台音频处理（桌面）
+- **网络请求**: [httpx](https://www.python-httpx.org/) - 现代 HTTP 客户端
+- **配置管理**: JSON 格式配置文件
+- **日志系统**: Python 标准 logging 模块
+
+### 架构设计
+
+应用采用分层 MVC 架构：
+
+- **Model**: `music_library.py`、`config_manager.py` - 数据模型和配置
+- **View**: `views/` 目录下的 Flet 视图组件 - 用户界面
+- **Controller**: `services/` 目录下的服务类 - 业务逻辑（完全与 UI 框架解耦）
+
+服务层设计为框架无关，可复用于任何 UI 框架。
 
 ### 开发环境设置
 
@@ -275,96 +260,115 @@ nextcloud-music-player/
    flake8 src/ tests/
    ```
 
-### 技术栈
+### 🐞 调试
 
-- **UI 框架**: [BeeWare Toga](https://toga.readthedocs.io/) - 跨平台原生 UI
-- **音频播放**: [Pygame](https://www.pygame.org/) - 跨平台音频处理
-- **网络请求**: [httpx](https://www.python-httpx.org/) - 现代 HTTP 客户端
-- **配置管理**: JSON 格式配置文件
-- **日志系统**: Python 标准 logging 模块
+#### 方式一：热重载开发（日常迭代，秒级生效）
 
-### 架构设计
+Python 跑在电脑上，手机只做 UI 渲染，改代码保存即热更新，无需重新打包签名：
 
-应用采用 MVC 架构模式：
+```bash
+flet run --ios -r -p 8551  # iOS 真机（-r 递归监听 src/；-p 固定端口，地址保持不变）
+flet run --android -r      # Android 真机
+flet run -w                # 浏览器（最轻量）
+flet run                   # 桌面窗口
+```
 
-- **Model**: `music_library.py`、`config_manager.py` - 数据模型和配置
-- **View**: `views/` 目录下的各个视图组件 - 用户界面
-- **Controller**: `services/` 目录下的服务类 - 业务逻辑
+以 iOS 为例：手机从 App Store 安装免费的 [Flet](https://apps.apple.com/app/flet/id1624979699) app，与电脑同一 Wi-Fi，在 Flet app 中输入终端显示的地址（如 `http://192.168.x.x:8551/src/main.py`）即可连接，也可扫终端里的二维码。
+
+> 排查提示：若改了代码手机上没变化，先杀掉 Flet app 重连；仍不行则检查电脑上是否有泄漏的旧进程占用端口（`lsof -i :8551`），清理后重启 `flet run`。
+
+**限制**：Python 在电脑端执行——联网走电脑的网络（电脑必须能访问 NextCloud 服务器）；iOS 平台专属能力（后台音频、`rubicon-objc`）不生效。界面偶发的键盘残留灰块是伴生 app webview 的渲染问题，滑动屏幕即可恢复，与本项目代码无关。
+
+#### 方式二：真机整机调试 `flet debug`（验证平台能力 / 看前端报错）
+
+构建完整 app（Python 打包进手机）并直接运行，Dart/Flutter 前端的报错和日志实时输出到终端：
+
+```bash
+flet devices                          # 查看设备 ID
+flet debug ios --device-id <ID> -v    # 首次加 -v 排查问题
+```
+
+**要求与注意**：手机需用 **USB 线**连接（`flutter run` 不识别纯 Wi-Fi 连接的设备）；首次构建较慢，之后有增量缓存；会用 debug 签名覆盖手机上同 bundle id 的正式版。
+
+#### 方式三：真机截图与系统日志（USB）
+
+基于 [libimobiledevice](https://libimobiledevice.org/)（`brew install libimobiledevice`），排查"手机上到底显示成什么样"：
+
+```bash
+idevicescreenshot /tmp/phone.png   # 抓取当前屏幕
+idevicesyslog                      # 实时系统日志（含崩溃信息）
+```
+
+#### 辅助技巧
+
+- **手机布局复现**：用 Chrome DevTools CLI 以手机尺寸渲染热重载会话，可截图、可交互，无需手机即可复现布局问题（见下条）。
+- **应用日志**：`~/Library/Application Support/nextcloud_music_player/logs/nextcloud_music_player.log`（macOS；热重载模式下所有会话共用此文件）
+- **Chrome DevTools CLI 交互式调试**（本次 README 截图即用此方式生成）：比一次性无头截图更进一步，可真实点击、切换标签、逐视图截图，适合批量更新 `docs/screenshots/`：
+  ```bash
+  npm i -g chrome-devtools-mcp      # 提供 chrome-devtools 命令
+  uv run flet run -w -p 8550 &      # 启动 web 热重载会话
+
+  chrome-devtools start --allowUnrestrictedPaths=true  # 允许把截图写到仓库目录
+  chrome-devtools new_page "http://localhost:8550"
+  chrome-devtools resize_page 390 844                 # 切换到手机竖屏
+  chrome-devtools take_screenshot --filePath docs/screenshots/playback_view.png
+
+  # Flutter Web 默认不开无障碍语义树，快照/点击前需先激活：
+  chrome-devtools evaluate_script "() => { const b=document.querySelector('flt-semantics-placeholder'); b.focus(); b.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); }"
+  chrome-devtools take_snapshot   # 之后即可拿到各元素 uid，用 click 切换视图后逐张截图
+  ```
 
 ## 🧪 测试
 
-### 运行单元测试
+无头交互测试：不启动界面、不连真实网络，用替身（FakeNextcloudClient 可模拟慢网络/下载失败/404）驱动真实的视图代码，全自动断言交互行为，**无需截图人工核对**。
+
+覆盖的交互场景：
+
+- **播放**：未下载歌曲的"下载中"提示、切歌先停旧歌、连点两首时慢下载不会顶掉最新选择、下载失败/播放失败的状态反馈
+- **连接**：连接中禁用按钮、成功跳转文件列表、凭据错误/网络异常提示、SnackBar 走 `show_dialog`
+- **文件夹选择**：对话框打开/关闭、目录导航、目录 404 自动回退根目录
+- **文件列表**：同步进度提示、同步失败反馈、同步中重复点击防抖、搜索过滤
+
 ```bash
 # 运行所有测试
 python -m pytest tests/ -v
 
-# 运行特定测试文件
-python -m pytest tests/test_nextcloud_client.py -v
+# 只跑播放交互测试
+python -m pytest tests/test_playback_interactions.py -v
 
 # 生成覆盖率报告
 python -m pytest tests/ --cov=src/nextcloud_music_player --cov-report=html
 ```
 
-### 手动测试
+截图验证仅用于发布前的视觉效果检查，交互行为回归全部由上述自动化测试承担。
 
-项目包含以下 VS Code 任务，可通过命令面板执行：
+## 📦 构建与发布
 
-- **运行 NextCloud 音乐播放器**: 启动开发版本
-- **运行单元测试**: 执行完整测试套件
-- **构建应用**: 构建发布版本
-- **NextCloud 连接测试**: 测试服务器连接
-
-## � 自动化构建与发布
-
-本项目配置了完整的 CI/CD 流水线，支持自动构建、测试和发布。
-
-### 🔄 持续集成
-
-每次推送代码或创建 Pull Request 时，会自动执行：
-- 单元测试
-- 代码质量检查（flake8, black, isort）
-- 安全漏洞扫描（bandit, safety）
-- 多平台构建测试
-
-### 📦 自动发布
-
-#### 开发版本
-每次推送到 `main` 分支时，自动创建开发版本：
-- 构建所有平台的应用包（Windows .msi、macOS .dmg、Linux .deb）
-- 创建预发布版本，标签格式：`dev-{commit-sha}`
-- 上传构建产物到 GitHub Releases
-
-#### 正式版本
-创建新的版本标签时，自动发布正式版本：
+### 桌面平台
 
 ```bash
-# 使用发布脚本（推荐）
-./scripts/release.sh 1.0.0
+# 直接运行
+python -m nextcloud_music_player
 
-# 或手动创建标签
-git tag -a v1.0.0 -m "Release version 1.0.0"
-git push origin v1.0.0
+# 或使用 Flet 构建
+flet build macos  # macOS
+flet build linux  # Linux
+flet build windows  # Windows
 ```
 
-发布流程会：
-- 自动生成更改日志
-- 创建详细的 Release 说明
-- 上传所有平台的安装包
-- 发送发布通知
+### iOS
 
-### 📊 构建状态
+```bash
+bash scripts/deploy_iso.sh  # 自动构建、签名并安装到连接的设备（推荐）
+```
 
-- **构建状态**: ![Build](https://github.com/zgfh/nextcloud-music-player/actions/workflows/build.yml/badge.svg)
-- **发布状态**: ![Release](https://github.com/zgfh/nextcloud-music-player/actions/workflows/release.yml/badge.svg)
-- **代码质量**: ![Quality](https://github.com/zgfh/nextcloud-music-player/actions/workflows/quality.yml/badge.svg)
+### Android
 
-查看详细构建信息：
-- [Actions 页面](https://github.com/zgfh/nextcloud-music-player/actions)
-- [Releases 页面](https://github.com/zgfh/nextcloud-music-player/releases)
+```bash
+flet build apk
+```
 
-更多信息请参考 [工作流说明文档](.github/workflows/README.md)。
-
-## �📄 许可证
+## 📄 许可证
 
 本项目采用 BSD 3-Clause 许可证。详见 [LICENSE](LICENSE) 文件。
 
@@ -378,22 +382,9 @@ git push origin v1.0.0
 4. 推送分支 (`git push origin feature/AmazingFeature`)
 5. 开启 Pull Request
 
-### 贡献指南
-
-- 请确保代码通过所有测试
-- 遵循现有的代码风格
-- 为新功能添加相应的测试
-- 更新相关文档
-
-## 📞 支持与反馈
-
-- **问题报告**: [GitHub Issues](https://github.com/yourusername/nextcloud-music-player/issues)
-- **功能请求**: [GitHub Discussions](https://github.com/yourusername/nextcloud-music-player/discussions)
-- **文档**: [项目 Wiki](https://github.com/yourusername/nextcloud-music-player/wiki)
-
 ## 🙏 致谢
 
-- [BeeWare Project](https://beeware.org/) - 提供优秀的跨平台 Python 框架
+- [Flet](https://flet.dev/) - 基于 Flutter 的跨平台 Python UI 框架
 - [NextCloud](https://nextcloud.com/) - 开源云存储解决方案
 - [Pygame](https://www.pygame.org/) - 跨平台游戏和多媒体库
 

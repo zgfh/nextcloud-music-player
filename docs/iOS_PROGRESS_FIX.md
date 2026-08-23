@@ -1,3 +1,5 @@
+> ⚠️ **本文档基于旧 Toga (BeeWare) 框架，已过时**（项目已于 2026-08 迁移至 Flet 0.86）。文中 Briefcase/Toga 命令不适用于当前框架，请参考 [MOBILE_BUILD_GUIDE.md](MOBILE_BUILD_GUIDE.md)。
+
 # iOS 音频播放卡顿修复说明 ## 最新修复方案 (2025-09-02 深度优化)
 
 ### 问题根本原因
