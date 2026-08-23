@@ -46,6 +46,13 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 - **文件夹选择**：可选择特定文件夹进行同步
 - **缓存管理**：智能本地缓存，支持缓存大小限制
 
+### 📂 SMB 共享来源
+- **来源切换**：连接页支持在 NextCloud 与 SMB 共享之间切换
+- **协议支持**：SMB1/SMB2（纯 Python 实现 pysmb，桌面/Web/iOS/Android 全平台可用）
+- **灵活配置**：主机地址、端口（445/139）、共享名、域、凭据均可自定义
+- **目录浏览**：与 NextCloud 一致的远程文件夹浏览与同步体验
+- **限制说明**：不支持强制 SMB3 加密的服务器，请在服务端允许 SMB2 访问
+
 ### 📱 用户界面
 - **底部导航**：连接设置、文件列表、播放控制三个主要视图
 - **Tab 切换**：播放列表与歌词即时切换
@@ -294,14 +301,22 @@ idevicesyslog                      # 实时系统日志（含崩溃信息）
 
 #### 辅助技巧
 
-- **手机布局复现**：用无头 Chrome 以手机尺寸渲染热重载会话并截图，无需手机即可复现布局问题：
-  ```bash
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-    --headless=new --hide-scrollbars --window-size=390,844 \
-    --virtual-time-budget=15000 --screenshot=/tmp/shot.png \
-    "http://<电脑IP>:<端口>/src/main.py"
-  ```
+- **手机布局复现**：用 Chrome DevTools CLI 以手机尺寸渲染热重载会话，可截图、可交互，无需手机即可复现布局问题（见下条）。
 - **应用日志**：`~/Library/Application Support/nextcloud_music_player/logs/nextcloud_music_player.log`（macOS；热重载模式下所有会话共用此文件）
+- **Chrome DevTools CLI 交互式调试**（本次 README 截图即用此方式生成）：比一次性无头截图更进一步，可真实点击、切换标签、逐视图截图，适合批量更新 `docs/screenshots/`：
+  ```bash
+  npm i -g chrome-devtools-mcp      # 提供 chrome-devtools 命令
+  uv run flet run -w -p 8550 &      # 启动 web 热重载会话
+
+  chrome-devtools start --allowUnrestrictedPaths=true  # 允许把截图写到仓库目录
+  chrome-devtools new_page "http://localhost:8550"
+  chrome-devtools resize_page 390 844                 # 切换到手机竖屏
+  chrome-devtools take_screenshot --filePath docs/screenshots/playback_view.png
+
+  # Flutter Web 默认不开无障碍语义树，快照/点击前需先激活：
+  chrome-devtools evaluate_script "() => { const b=document.querySelector('flt-semantics-placeholder'); b.focus(); b.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); }"
+  chrome-devtools take_snapshot   # 之后即可拿到各元素 uid，用 click 切换视图后逐张截图
+  ```
 
 ## 🧪 测试
 
