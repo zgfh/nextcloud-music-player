@@ -1,1 +1,2 @@
+assets
 nextcloud_music_player

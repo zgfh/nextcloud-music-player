@@ -313,7 +313,7 @@ class FileListView:
         self.show_message("正在同步...", "info")
 
         try:
-            sync_folder = self.app_context['config_manager'].get("connection.default_sync_folder", "/")
+            sync_folder = self.music_service.get_default_sync_folder()
             if not sync_folder:
                 self.show_message("请先设置同步文件夹", "error")
                 return
@@ -446,7 +446,7 @@ class FileListView:
     def on_view_activated(self):
         """视图激活时刷新列表"""
         self.reload_music_list()
-        sync_folder = self.app_context['config_manager'].get("connection.default_sync_folder", "")
+        sync_folder = self.music_service.get_default_sync_folder()
         if sync_folder:
             self.folder_text.value = f"文件夹: {sync_folder}"
             self.page.update()

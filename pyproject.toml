@@ -57,6 +57,9 @@ desktop = [
 testpaths = ["tests"]
 pythonpath = ["src", "tests"]
 asyncio_mode = "auto"
+# e2e 集成测试（tests/e2e）需要 flet test 预置 Flutter 测试宿主，
+# 不参与日常 pytest；显式运行：flet test --tests-dir tests/e2e
+norecursedirs = [".*", "build", "dist", "CVS", "_darcs", "{arch}", "*.egg", "e2e"]
 # 交互测试大量使用 asyncio.sleep 模拟慢网络，统一用事件循环时间
 filterwarnings = [
     "ignore::DeprecationWarning",

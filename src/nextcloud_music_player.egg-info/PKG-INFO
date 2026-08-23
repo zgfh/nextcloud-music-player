@@ -54,9 +54,11 @@ Requires-Dist: flet>=0.86.0
 Requires-Dist: flet-audio>=0.86.0
 Requires-Dist: requests>=2.25.0
 Requires-Dist: httpx>=0.24.0
+Requires-Dist: pysmb
 Requires-Dist: rubicon-objc; sys_platform == "darwin" or sys_platform == "ios"
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"
 Requires-Dist: pytest-cov; extra == "dev"
 Requires-Dist: black; extra == "dev"
 Requires-Dist: flake8; extra == "dev"
@@ -113,6 +115,13 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 - **增量同步**：只下载新文件，避免重复传输
 - **文件夹选择**：可选择特定文件夹进行同步
 - **缓存管理**：智能本地缓存，支持缓存大小限制
+
+### 📂 SMB 共享来源
+- **来源切换**：连接页支持在 NextCloud 与 SMB 共享之间切换
+- **协议支持**：SMB1/SMB2（纯 Python 实现 pysmb，桌面/Web/iOS/Android 全平台可用）
+- **灵活配置**：主机地址、端口（445/139）、共享名、域、凭据均可自定义
+- **目录浏览**：与 NextCloud 一致的远程文件夹浏览与同步体验
+- **限制说明**：不支持强制 SMB3 加密的服务器，请在服务端允许 SMB2 访问
 
 ### 📱 用户界面
 - **底部导航**：连接设置、文件列表、播放控制三个主要视图
@@ -373,13 +382,27 @@ idevicesyslog                      # 实时系统日志（含崩溃信息）
 
 ## 🧪 测试
 
+无头交互测试：不启动界面、不连真实网络，用替身（FakeNextcloudClient 可模拟慢网络/下载失败/404）驱动真实的视图代码，全自动断言交互行为，**无需截图人工核对**。
+
+覆盖的交互场景：
+
+- **播放**：未下载歌曲的"下载中"提示、切歌先停旧歌、连点两首时慢下载不会顶掉最新选择、下载失败/播放失败的状态反馈
+- **连接**：连接中禁用按钮、成功跳转文件列表、凭据错误/网络异常提示、SnackBar 走 `show_dialog`
+- **文件夹选择**：对话框打开/关闭、目录导航、目录 404 自动回退根目录
+- **文件列表**：同步进度提示、同步失败反馈、同步中重复点击防抖、搜索过滤
+
 ```bash
 # 运行所有测试
 python -m pytest tests/ -v
 
+# 只跑播放交互测试
+python -m pytest tests/test_playback_interactions.py -v
+
 # 生成覆盖率报告
 python -m pytest tests/ --cov=src/nextcloud_music_player --cov-report=html
 ```
+
+截图验证仅用于发布前的视觉效果检查，交互行为回归全部由上述自动化测试承担。
 
 ## 📦 构建与发布
 

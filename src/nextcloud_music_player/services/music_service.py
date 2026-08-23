@@ -82,23 +82,30 @@ class MusicService:
             logger.error(f"检查文件缓存状态失败: {e}")
             return False
     
+    def get_default_sync_folder(self) -> str:
+        """获取当前来源类型（nextcloud/smb）的默认同步文件夹"""
+        source_type = self.config_manager.get("connection.source_type", "nextcloud")
+        if source_type == "smb":
+            return self.config_manager.get("connection.smb.default_sync_folder", "/")
+        return self.config_manager.get("connection.default_sync_folder", "")
+
     async def sync_music_files(self, sync_folder: str = "") -> List[Dict[str, Any]]:
         """
         同步音乐文件
-        
+
         Args:
             sync_folder: 指定的同步文件夹路径
-            
+
         Returns:
             同步后的音乐文件列表
         """
         if not self.nextcloud_client:
             raise Exception("NextCloud客户端未连接")
-        
+
         try:
             # 如果没有指定文件夹，使用默认配置
             if not sync_folder.strip():
-                sync_folder = self.config_manager.get("connection.default_sync_folder", "")
+                sync_folder = self.get_default_sync_folder()
             
             logger.info(f"开始同步音乐文件，文件夹: {sync_folder}")
             

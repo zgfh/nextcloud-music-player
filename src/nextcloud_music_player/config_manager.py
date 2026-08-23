@@ -68,12 +68,24 @@ class ConfigManager:
         # 默认配置
         self.default_config = {
             "connection": {
+                # 音乐来源类型：nextcloud | smb
+                "source_type": "nextcloud",
                 "server_url": "http://cloud.home.daozzg.com",
-                "username": "guest", 
+                "username": "guest",
                 "password": "",
                 "default_sync_folder": "/mp3/音乐/当月抖音热播流行歌曲484首/",
                 "auto_connect": False,
-                "remember_credentials": True
+                "remember_credentials": True,
+                # SMB 来源配置（路径均为共享内相对路径，'/' 为共享根）
+                "smb": {
+                    "host": "",
+                    "port": 445,
+                    "share": "",
+                    "username": "",
+                    "password": "",
+                    "domain": "",
+                    "default_sync_folder": "/"
+                }
             },
             "player": {
                 "volume": 70,
