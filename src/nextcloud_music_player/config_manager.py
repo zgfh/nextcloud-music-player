@@ -2,6 +2,7 @@
 配置管理器 - 负责保存和加载用户配置和数据
 """
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -331,17 +332,17 @@ class ConfigManager:
                     loaded_config = json.load(f)
                     
                 # 合并默认配置和加载的配置
-                config = self.default_config.copy()
+                config = copy.deepcopy(self.default_config)
                 self._deep_merge(config, loaded_config)
                 logger.info(f"配置文件已加载: {self.config_file}")
                 return config
             else:
                 logger.info("配置文件不存在，使用默认配置")
-                return self.default_config.copy()
+                return copy.deepcopy(self.default_config)
                 
         except Exception as e:
             logger.error(f"加载配置文件失败: {e}")
-            return self.default_config.copy()
+            return copy.deepcopy(self.default_config)
     
     def save_config(self) -> bool:
         """保存配置文件"""

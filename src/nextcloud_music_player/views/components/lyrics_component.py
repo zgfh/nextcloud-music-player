@@ -81,12 +81,13 @@ class LyricsDisplayComponent:
     def _show_no_lyrics(self):
         """显示无歌词提示"""
         self.lyrics_list.controls.clear()
+        # 注意：ListView 条目不能带 expand（滚动容器高度无限，
+        # flex 子项会触发 "non-zero flex but unbounded constraints" 渲染异常）
         self.lyrics_list.controls.append(
             ft.Container(
                 content=self.no_lyrics_text,
                 alignment=ft.Alignment(0, 0),
                 padding=Space.XL,
-                expand=True,
             )
         )
         self.page.update()
