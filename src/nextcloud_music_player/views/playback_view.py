@@ -156,7 +156,9 @@ class PlaybackView:
             size=FontSize.SUBTITLE + 2,
             weight=ft.FontWeight.BOLD,
             color=Color.TEXT_PRIMARY,
-            expand=True,
+            # 不能加 expand：Column 中的 expand 是竖向 flex，
+            # 处于外层 Column 的无限高滚动内容中会触发
+            # "non-zero flex but unbounded constraints" 渲染异常
             max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS,
         )
