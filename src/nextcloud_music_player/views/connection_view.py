@@ -117,11 +117,11 @@ class ConnectionView:
             style=ft.ButtonStyle(
                 bgcolor={
                     ft.ControlState.SELECTED: tint(Color.PRIMARY, "26"),
-                    "": Color.BG_SURFACE_ALT,
+                    ft.ControlState.DEFAULT: Color.BG_SURFACE_ALT,
                 },
                 color={
                     ft.ControlState.SELECTED: Color.PRIMARY,
-                    "": Color.TEXT_SECONDARY,
+                    ft.ControlState.DEFAULT: Color.TEXT_SECONDARY,
                 },
                 side=ft.BorderSide(1, Color.BORDER),
                 shape=ft.RoundedRectangleBorder(radius=Radius.MD),
@@ -292,10 +292,10 @@ class ConnectionView:
             style=ft.ButtonStyle(
                 bgcolor={
                     ft.ControlState.DISABLED: Color.BG_ELEVATED,
-                    "": Color.PRIMARY,
+                    ft.ControlState.DEFAULT: Color.PRIMARY,
                 },
-                color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, "": Color.PRIMARY_TEXT},
-                icon_color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, "": Color.PRIMARY_TEXT},
+                color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.PRIMARY_TEXT},
+                icon_color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.PRIMARY_TEXT},
                 elevation={ft.ControlState.DEFAULT: 6, ft.ControlState.PRESSED: 2},
                 shadow_color=tint(Color.PRIMARY, "66"),
                 shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
@@ -308,8 +308,8 @@ class ConnectionView:
             on_click=self._disconnect_from_nextcloud,
             disabled=True,
             style=ft.ButtonStyle(
-                color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, "": Color.DANGER_TEXT},
-                icon_color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, "": Color.DANGER},
+                color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.DANGER_TEXT},
+                icon_color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.DANGER},
                 side=ft.BorderSide(1, tint(Color.DANGER, "59")),
                 shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
             ),

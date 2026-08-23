@@ -211,11 +211,11 @@ class PlaybackView:
             style=ft.ButtonStyle(
                 bgcolor={
                     ft.ControlState.SELECTED: tint(Color.PRIMARY, "26"),
-                    "": Color.BG_SURFACE_ALT,
+                    ft.ControlState.DEFAULT: Color.BG_SURFACE_ALT,
                 },
                 color={
                     ft.ControlState.SELECTED: Color.PRIMARY,
-                    "": Color.TEXT_SECONDARY,
+                    ft.ControlState.DEFAULT: Color.TEXT_SECONDARY,
                 },
                 side=ft.BorderSide(1, Color.BORDER),
                 shape=ft.RoundedRectangleBorder(radius=Radius.MD),
