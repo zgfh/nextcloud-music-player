@@ -253,8 +253,13 @@ class PlaybackView:
         self.playback_control_component.update_mode_buttons()
 
         # 启动 UI 定时器（在 build 完成后启动；旧的先取消）
+        # flet test 环境跳过：周期 page.update 会让 Dart 侧 testWidgets
+        # 在结束时留下未完成的帧而被判失败（FLET_TEST_* 由 flet test 注入
+        # 并透传至 embedded Python）
         self._cancel_ui_timer()
-        self._ui_task = asyncio.create_task(self._schedule_ui_update())
+        if not (os.environ.get("FLET_TEST_DEVICE_MODE")
+                or os.environ.get("FLET_TEST_PLATFORM")):
+            self._ui_task = asyncio.create_task(self._schedule_ui_update())
 
         return self._container
 
