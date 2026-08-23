@@ -191,36 +191,37 @@ class PlaybackView:
             shadow=glow_soft(Color.ACCENT),
         )
 
-        # Tab 切换 - Flet 0.86 Tabs = TabBar + TabBarView
+        # Tab 切换 - SegmentedButton + Visibility（不使用 Tabs/TabBarView：
+        # PageView 在 flutter test 视口下给子页 unbounded 高度，触发
+        # "non-zero flex but unbounded constraints" 渲染异常）
         playlist_view = self.playlist_component.build()
         lyrics_view = self.lyrics_component.build()
 
-        self.tabs = ft.Tabs(
-            length=2,
-            selected_index=0,
+        self.tab_selector = ft.SegmentedButton(
+            selected=["playlist"],
+            segments=[
+                ft.Segment(value="playlist", label="播放列表", icon=ft.Icons.QUEUE_MUSIC),
+                ft.Segment(value="lyrics", label="歌词", icon=ft.Icons.LYRICS_OUTLINED),
+            ],
+            allow_multiple_selection=False,
+            allow_empty_selection=False,
             on_change=self._on_tab_change,
-            expand=True,
-            content=ft.Column([
-                ft.TabBar(
-                    tabs=[
-                        ft.Tab(label="播放列表"),
-                        ft.Tab(label="歌词"),
-                    ],
-                    indicator_color=Color.PRIMARY,
-                    label_color=Color.TEXT_PRIMARY,
-                    unselected_label_color=Color.TEXT_MUTED,
-                    divider_color=Color.BORDER,
-                    indicator_size=ft.TabBarIndicatorSize.TAB,
-                ),
-                ft.TabBarView(
-                    expand=True,
-                    controls=[
-                        playlist_view,
-                        lyrics_view,
-                    ],
-                ),
-            ], spacing=0, expand=True),
+            style=ft.ButtonStyle(
+                bgcolor={
+                    ft.ControlState.SELECTED: tint(Color.PRIMARY, "26"),
+                    "": Color.BG_SURFACE_ALT,
+                },
+                color={
+                    ft.ControlState.SELECTED: Color.PRIMARY,
+                    "": Color.TEXT_SECONDARY,
+                },
+                side=ft.BorderSide(1, Color.BORDER),
+                shape=ft.RoundedRectangleBorder(radius=Radius.MD),
+            ),
         )
+
+        self.playlist_panel = ft.Container(content=playlist_view, expand=True)
+        self.lyrics_panel = ft.Container(content=lyrics_view, expand=True, visible=False)
 
         # 消息区
         self.message_container = ft.Container(visible=False)
@@ -232,7 +233,9 @@ class PlaybackView:
         self._container = ft.Container(
             content=ft.Column([
                 now_playing,
-                self.tabs,
+                self.tab_selector,
+                self.playlist_panel,
+                self.lyrics_panel,
                 self.message_container,
                 controls,
             ], spacing=Space.SM, expand=True),
@@ -254,8 +257,15 @@ class PlaybackView:
         return self._container
 
     def _on_tab_change(self, e):
-        """Tab 切换"""
-        pass
+        """Tab 切换（SegmentedButton 控制两个面板的可见性）"""
+        try:
+            selected = self.tab_selector.selected
+            current = next(iter(selected), "playlist")
+        except Exception:
+            current = "playlist"
+        self.playlist_panel.visible = (current == "playlist")
+        self.lyrics_panel.visible = (current == "lyrics")
+        self.page.update()
 
     def _set_status(self, text: str, color: str):
         """更新播放状态胶囊（文字 + 霓虹 tint）"""
