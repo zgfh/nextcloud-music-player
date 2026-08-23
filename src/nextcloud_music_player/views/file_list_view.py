@@ -2,13 +2,20 @@
 文件列表视图 - Flet 版本
 """
 
-import flet as ft
 import asyncio
 import logging
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
+import flet as ft
 
 from ..utils.theme import (
-    Color, Space, FontSize, Radius, glow, tint, get_message_style,
+    Color,
+    FontSize,
+    Radius,
+    Space,
+    get_message_style,
+    glow,
+    tint,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,7 +27,7 @@ class FileListView:
     def __init__(self, page: ft.Page, app_context: dict, view_manager):
         self.page = page
         self.app_context = app_context
-        self.music_service = app_context['music_service']
+        self.music_service = app_context["music_service"]
         self.view_manager = view_manager
         self.music_files = []
         self.selected_files = set()
@@ -35,24 +42,42 @@ class FileListView:
 
     def build(self):
         """构建并返回视图内容"""
-        if self._built and hasattr(self, '_container'):
+        if self._built and hasattr(self, "_container"):
             return self._container
 
         # === 标题区 ===
-        title_row = ft.Row([
-            ft.Container(
-                content=ft.Icon(ft.Icons.LIBRARY_MUSIC_OUTLINED, color=Color.PRIMARY, size=20),
-                width=36, height=36,
-                border_radius=Radius.SM,
-                bgcolor=tint(Color.PRIMARY, "14"),
-                border=ft.Border.all(1, tint(Color.PRIMARY, "33")),
-            ),
-            ft.Column([
-                ft.Text("音乐库", size=FontSize.TITLE + 4, weight=ft.FontWeight.BOLD, color=Color.TEXT_PRIMARY),
-                ft.Text("LIBRARY · 云端文件", size=FontSize.MICRO, color=Color.TEXT_MUTED,
-                        style=ft.TextStyle(letter_spacing=2)),
-            ], spacing=0),
-        ], spacing=Space.MD)
+        title_row = ft.Row(
+            [
+                ft.Container(
+                    content=ft.Icon(
+                        ft.Icons.LIBRARY_MUSIC_OUTLINED, color=Color.PRIMARY, size=20
+                    ),
+                    width=36,
+                    height=36,
+                    border_radius=Radius.SM,
+                    bgcolor=tint(Color.PRIMARY, "14"),
+                    border=ft.Border.all(1, tint(Color.PRIMARY, "33")),
+                ),
+                ft.Column(
+                    [
+                        ft.Text(
+                            "音乐库",
+                            size=FontSize.TITLE + 4,
+                            weight=ft.FontWeight.BOLD,
+                            color=Color.TEXT_PRIMARY,
+                        ),
+                        ft.Text(
+                            "LIBRARY · 云端文件",
+                            size=FontSize.MICRO,
+                            color=Color.TEXT_MUTED,
+                            style=ft.TextStyle(letter_spacing=2),
+                        ),
+                    ],
+                    spacing=0,
+                ),
+            ],
+            spacing=Space.MD,
+        )
 
         # 操作栏
         self.sync_button = ft.FilledButton(
@@ -127,20 +152,31 @@ class FileListView:
             icon=ft.Icons.PLAY_ARROW,
             on_click=self._play_selected,
             style=ft.ButtonStyle(
-                bgcolor={ft.ControlState.DISABLED: Color.BG_ELEVATED, ft.ControlState.DEFAULT: Color.PRIMARY},
-                color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.PRIMARY_TEXT},
-                icon_color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.PRIMARY_TEXT},
+                bgcolor={
+                    ft.ControlState.DISABLED: Color.BG_ELEVATED,
+                    ft.ControlState.DEFAULT: Color.PRIMARY,
+                },
+                color={
+                    ft.ControlState.DISABLED: Color.TEXT_DISABLED,
+                    ft.ControlState.DEFAULT: Color.PRIMARY_TEXT,
+                },
+                icon_color={
+                    ft.ControlState.DISABLED: Color.TEXT_DISABLED,
+                    ft.ControlState.DEFAULT: Color.PRIMARY_TEXT,
+                },
                 elevation={ft.ControlState.DEFAULT: 4, ft.ControlState.PRESSED: 1},
                 shadow_color=tint(Color.PRIMARY, "59"),
                 shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
             ),
         )
         self.select_all_button = ft.TextButton(
-            "全选", on_click=self._select_all,
+            "全选",
+            on_click=self._select_all,
             style=ft.ButtonStyle(color=Color.TEXT_SECONDARY),
         )
         self.delete_button = ft.TextButton(
-            "删除", on_click=self._delete_selected,
+            "删除",
+            on_click=self._delete_selected,
             style=ft.ButtonStyle(color=Color.DANGER_TEXT),
         )
 
@@ -154,7 +190,8 @@ class FileListView:
 
         # 文件列表
         self.file_list = ft.ListView(
-            expand=True, spacing=6,
+            expand=True,
+            spacing=6,
             padding=ft.Padding(left=0, right=0, top=0, bottom=Space.SM),
         )
 
@@ -165,9 +202,18 @@ class FileListView:
             on_click=self._download_selected,
             disabled=True,
             style=ft.ButtonStyle(
-                bgcolor={ft.ControlState.DISABLED: Color.BG_ELEVATED, ft.ControlState.DEFAULT: Color.BG_ELEVATED},
-                color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.SUCCESS_TEXT},
-                icon_color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.SUCCESS},
+                bgcolor={
+                    ft.ControlState.DISABLED: Color.BG_ELEVATED,
+                    ft.ControlState.DEFAULT: Color.BG_ELEVATED,
+                },
+                color={
+                    ft.ControlState.DISABLED: Color.TEXT_DISABLED,
+                    ft.ControlState.DEFAULT: Color.SUCCESS_TEXT,
+                },
+                icon_color={
+                    ft.ControlState.DISABLED: Color.TEXT_DISABLED,
+                    ft.ControlState.DEFAULT: Color.SUCCESS,
+                },
                 side=ft.BorderSide(1, tint(Color.SUCCESS, "40")),
                 shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
             ),
@@ -192,14 +238,30 @@ class FileListView:
             content=ft.Column(
                 controls=[
                     title_row,
-                    ft.Row([self.sync_button, self.search_input, self.search_button], spacing=Space.XS),
+                    ft.Row(
+                        [self.sync_button, self.search_input, self.search_button],
+                        spacing=Space.XS,
+                    ),
                     ft.Row([self.folder_text, self.folder_button], spacing=Space.XS),
-                    ft.Row([self.add_button, self.play_button, self.select_all_button, self.delete_button], spacing=Space.XS),
+                    ft.Row(
+                        [
+                            self.add_button,
+                            self.play_button,
+                            self.select_all_button,
+                            self.delete_button,
+                        ],
+                        spacing=Space.XS,
+                    ),
                     ft.Container(
-                        content=ft.Row([
-                            ft.Icon(ft.Icons.QUERY_STATS, size=14, color=Color.PRIMARY),
-                            self.stats_text,
-                        ], spacing=Space.SM),
+                        content=ft.Row(
+                            [
+                                ft.Icon(
+                                    ft.Icons.QUERY_STATS, size=14, color=Color.PRIMARY
+                                ),
+                                self.stats_text,
+                            ],
+                            spacing=Space.SM,
+                        ),
                         bgcolor=tint(Color.PRIMARY, "0D"),
                         border=ft.Border.all(1, tint(Color.PRIMARY, "26")),
                         padding=ft.Padding(left=12, right=12, top=8, bottom=8),
@@ -214,7 +276,10 @@ class FileListView:
                         border_radius=Radius.LG,
                         padding=Space.XS,
                     ),
-                    ft.Row([self.download_button, self.clear_cache_button], spacing=Space.SM),
+                    ft.Row(
+                        [self.download_button, self.clear_cache_button],
+                        spacing=Space.SM,
+                    ),
                     self.message_container,
                 ],
                 spacing=Space.MD,
@@ -231,16 +296,18 @@ class FileListView:
 
     def build_file_item(self, song: Dict[str, Any]) -> ft.Container:
         """构建单个文件项（暗色卡片，选中态霓虹发光）"""
-        name = song.get('name', 'Unknown')
-        title = song.get('title', name)
-        if title.endswith('.mp3'):
+        name = song.get("name", "Unknown")
+        title = song.get("title", name)
+        if title.endswith(".mp3"):
             title = title[:-4]
-        artist = song.get('artist', '未知艺术家')
-        is_downloaded = song.get('is_downloaded', False)
-        size = song.get('size', 0)
+        artist = song.get("artist", "未知艺术家")
+        is_downloaded = song.get("is_downloaded", False)
+        size = song.get("size", 0)
 
         size_str = f"{float(size) / 1024 / 1024:.1f}MB" if size else ""
-        download_icon = ft.Icons.TASK_ALT if is_downloaded else ft.Icons.CLOUD_DOWNLOAD_OUTLINED
+        download_icon = (
+            ft.Icons.TASK_ALT if is_downloaded else ft.Icons.CLOUD_DOWNLOAD_OUTLINED
+        )
         download_color = Color.SUCCESS if is_downloaded else Color.TEXT_DISABLED
 
         selected = name in self.selected_files
@@ -251,22 +318,45 @@ class FileListView:
         )
 
         return ft.Container(
-            content=ft.Row([
-                check_icon,
-                ft.Icon(download_icon, color=download_color, size=18),
-                ft.Column([
-                    ft.Text(title, size=FontSize.BODY + 1, weight=ft.FontWeight.W_500,
-                            color=Color.TEXT_PRIMARY if selected else Color.TEXT_PRIMARY,
-                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                    ft.Text(f"{artist} · {size_str}", size=FontSize.CAPTION, color=Color.TEXT_MUTED,
-                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                ], spacing=2, expand=True),
-            ], spacing=Space.SM),
+            content=ft.Row(
+                [
+                    check_icon,
+                    ft.Icon(download_icon, color=download_color, size=18),
+                    ft.Column(
+                        [
+                            ft.Text(
+                                title,
+                                size=FontSize.BODY + 1,
+                                weight=ft.FontWeight.W_500,
+                                color=(
+                                    Color.TEXT_PRIMARY
+                                    if selected
+                                    else Color.TEXT_PRIMARY
+                                ),
+                                max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                            ft.Text(
+                                f"{artist} · {size_str}",
+                                size=FontSize.CAPTION,
+                                color=Color.TEXT_MUTED,
+                                max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                ],
+                spacing=Space.SM,
+            ),
             padding=ft.Padding(left=12, right=12, top=10, bottom=10),
             border_radius=Radius.MD,
             on_click=lambda e, n=name: self._toggle_select(n),
             bgcolor=tint(Color.PRIMARY, "1A") if selected else Color.BG_SURFACE,
-            border=ft.Border.all(1, tint(Color.PRIMARY, "66") if selected else Color.BORDER),
+            border=ft.Border.all(
+                1, tint(Color.PRIMARY, "66") if selected else Color.BORDER
+            ),
             shadow=glow(Color.PRIMARY, radius=12, alpha="26") if selected else None,
         )
 
@@ -286,7 +376,7 @@ class FileListView:
         """更新统计栏"""
         total = len(self.music_files)
         selected = len(self.selected_files)
-        downloaded = sum(1 for s in self.music_files if s.get('is_downloaded', False))
+        downloaded = sum(1 for s in self.music_files if s.get("is_downloaded", False))
         self.stats_text.value = f"总数 {total} · 已选 {selected} · 已下载 {downloaded}"
         self.download_button.disabled = selected == 0
         self.page.update()
@@ -348,7 +438,7 @@ class FileListView:
         if len(self.selected_files) == len(self.music_files):
             self.selected_files.clear()
         else:
-            self.selected_files = {s.get('name', '') for s in self.music_files}
+            self.selected_files = {s.get("name", "") for s in self.music_files}
         self.reload_music_list(keep_scroll=True)
 
     def _delete_selected(self, e):
@@ -367,7 +457,7 @@ class FileListView:
         """计算播放起始索引：从最后点选的歌曲开始，未命中则回到 0"""
         if self.last_selected_name:
             for i, song in enumerate(selected_files):
-                if song.get('name') == self.last_selected_name:
+                if song.get("name") == self.last_selected_name:
                     return i
         return 0
 
@@ -377,12 +467,18 @@ class FileListView:
             self.show_message("请先选择文件", "warning")
             return
         playback_view = self.view_manager.get_view("playback")
-        selected_files = [s for s in self.music_files if s.get('name') in self.selected_files]
+        selected_files = [
+            s for s in self.music_files if s.get("name") in self.selected_files
+        ]
         if playback_view:
             playback_view.handle_play_selected(
-                selected_files, start_index=self._get_selected_start_index(selected_files))
+                selected_files,
+                start_index=self._get_selected_start_index(selected_files),
+            )
             self.view_manager.switch_to_view("playback")
-            self.show_message(f"已添加 {len(selected_files)} 首歌曲到播放列表", "success")
+            self.show_message(
+                f"已添加 {len(selected_files)} 首歌曲到播放列表", "success"
+            )
 
     def _play_selected(self, e):
         """播放选中文件（从最后点选的歌曲开始）"""
@@ -390,10 +486,14 @@ class FileListView:
             self.show_message("请先选择文件", "warning")
             return
         playback_view = self.view_manager.get_view("playback")
-        selected_files = [s for s in self.music_files if s.get('name') in self.selected_files]
+        selected_files = [
+            s for s in self.music_files if s.get("name") in self.selected_files
+        ]
         if playback_view:
             playback_view.handle_play_selected(
-                selected_files, start_index=self._get_selected_start_index(selected_files))
+                selected_files,
+                start_index=self._get_selected_start_index(selected_files),
+            )
             self.view_manager.switch_to_view("playback")
 
     async def _download_selected(self, e):
@@ -406,9 +506,9 @@ class FileListView:
 
         success_count = 0
         for name in list(self.selected_files):
-            song = next((s for s in self.music_files if s.get('name') == name), None)
-            if song and not song.get('is_downloaded', False):
-                remote_path = song.get('remote_path', '')
+            song = next((s for s in self.music_files if s.get("name") == name), None)
+            if song and not song.get("is_downloaded", False):
+                remote_path = song.get("remote_path", "")
                 if remote_path:
                     try:
                         ok = await self.music_service.download_file(remote_path, name)
@@ -431,10 +531,13 @@ class FileListView:
     def show_message(self, message: str, message_type: str = "info"):
         """显示消息（霓虹芯片风）"""
         bg_color, text_color, icon = get_message_style(message_type)
-        self.message_container.content = ft.Row([
-            ft.Icon(ft.Icons.INFO_OUTLINE, color=text_color, size=18),
-            ft.Text(message, color=text_color, size=FontSize.BODY),
-        ], spacing=Space.XS)
+        self.message_container.content = ft.Row(
+            [
+                ft.Icon(ft.Icons.INFO_OUTLINE, color=text_color, size=18),
+                ft.Text(message, color=text_color, size=FontSize.BODY),
+            ],
+            spacing=Space.XS,
+        )
         self.message_container.bgcolor = bg_color
         self.message_container.padding = Space.SM
         self.message_container.border = ft.Border.all(1, bg_color)

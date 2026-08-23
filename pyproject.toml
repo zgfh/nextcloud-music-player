@@ -69,6 +69,10 @@ filterwarnings = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# 与 black 输出保持一致，避免 isort --check 与 black --check 互相冲突
+[tool.isort]
+profile = "black"
+
 [tool.setuptools.package-data]
 "nextcloud_music_player.resources" = ["*"]
 

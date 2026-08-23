@@ -2,15 +2,22 @@
 播放控制组件 - Flet 版本
 """
 
-import flet as ft
 import asyncio
 import logging
-from typing import Optional, Callable
+from typing import Callable, Optional
 
-from ...utils.theme import (
-    Color, Space, FontSize, Radius, Gradient, glow, tint,
-)
+import flet as ft
+
 from ...utils.platform_ui import get_button_height, get_button_icon_size
+from ...utils.theme import (
+    Color,
+    FontSize,
+    Gradient,
+    Radius,
+    Space,
+    glow,
+    tint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +25,13 @@ logger = logging.getLogger(__name__)
 class PlaybackControlComponent:
     """播放控制组件"""
 
-    def __init__(self, page: ft.Page, app_context: dict, playback_controller, on_play_mode_change_callback=None):
+    def __init__(
+        self,
+        page: ft.Page,
+        app_context: dict,
+        playback_controller,
+        on_play_mode_change_callback=None,
+    ):
         self.page = page
         self.app_context = app_context
         self.playback_controller = playback_controller
@@ -32,7 +45,7 @@ class PlaybackControlComponent:
 
     def build(self):
         """构建并返回控制组件"""
-        if self._built and hasattr(self, '_container'):
+        if self._built and hasattr(self, "_container"):
             return self._container
 
         icon_primary = get_button_icon_size(primary=True)
@@ -41,11 +54,16 @@ class PlaybackControlComponent:
 
         # === 进度条（霓虹滑轨） ===
         self.current_time_label = ft.Text(
-            "00:00", size=FontSize.CAPTION, color=Color.PRIMARY,
-            width=45, weight=ft.FontWeight.BOLD,
+            "00:00",
+            size=FontSize.CAPTION,
+            color=Color.PRIMARY,
+            width=45,
+            weight=ft.FontWeight.BOLD,
         )
         self.progress_slider = ft.Slider(
-            min=0, max=100, value=0,
+            min=0,
+            max=100,
+            value=0,
             expand=True,
             on_change=self._on_seek,
             active_color=Color.PRIMARY,
@@ -53,13 +71,17 @@ class PlaybackControlComponent:
             thumb_color=Color.PRIMARY,
         )
         self.total_time_label = ft.Text(
-            "00:00", size=FontSize.CAPTION, color=Color.TEXT_MUTED,
+            "00:00",
+            size=FontSize.CAPTION,
+            color=Color.TEXT_MUTED,
             width=45,
         )
 
         # === 音量 ===
         self.volume_slider = ft.Slider(
-            min=0, max=100, value=self.playback_service.get_volume() if self.playback_service else 70,
+            min=0,
+            max=100,
+            value=self.playback_service.get_volume() if self.playback_service else 70,
             expand=True,
             on_change=self._on_volume_change,
             active_color=Color.ACCENT,
@@ -78,7 +100,9 @@ class PlaybackControlComponent:
             )
 
         self.normal_button = mode_button(ft.Icons.REPEAT, "顺序播放", "normal")
-        self.repeat_one_button = mode_button(ft.Icons.REPEAT_ONE, "单曲循环", "repeat_one")
+        self.repeat_one_button = mode_button(
+            ft.Icons.REPEAT_ONE, "单曲循环", "repeat_one"
+        )
         self.repeat_all_button = mode_button(ft.Icons.REPEAT, "全部循环", "repeat_all")
         self.shuffle_button = mode_button(ft.Icons.SHUFFLE, "随机播放", "shuffle")
 
@@ -96,10 +120,13 @@ class PlaybackControlComponent:
         )
 
         # 主播放键：圆形渐变 + 霓虹光晕
-        self.play_icon = ft.Icon(ft.Icons.PLAY_ARROW, color=Color.PRIMARY_TEXT, size=play_button_size - 22)
+        self.play_icon = ft.Icon(
+            ft.Icons.PLAY_ARROW, color=Color.PRIMARY_TEXT, size=play_button_size - 22
+        )
         self.play_pause_button = ft.Container(
             content=self.play_icon,
-            width=play_button_size, height=play_button_size,
+            width=play_button_size,
+            height=play_button_size,
             border_radius=play_button_size / 2,
             gradient=Gradient.primary(),
             shadow=glow(Color.GLOW_CYAN, radius=18, alpha="59"),
@@ -125,27 +152,58 @@ class PlaybackControlComponent:
 
         # === 组装（控制台卡片） ===
         self._container = ft.Container(
-            content=ft.Column([
-                # 进度条
-                ft.Row([self.current_time_label, self.progress_slider, self.total_time_label],
-                       spacing=Space.XS),
-                # 音量 + 模式
-                ft.Row([
-                    ft.Row([
-                        ft.Icon(ft.Icons.VOLUME_UP, color=Color.TEXT_MUTED, size=18),
-                        self.volume_slider,
-                    ], spacing=4, expand=True),
-                    ft.Row([
-                        self.normal_button, self.repeat_one_button,
-                        self.repeat_all_button, self.shuffle_button,
-                    ], spacing=2),
-                ], spacing=Space.SM),
-                # 播放控制按钮
-                ft.Row(
-                    [self.prev_button, self.play_pause_button, self.next_button, self.stop_button],
-                    alignment=ft.MainAxisAlignment.CENTER, spacing=Space.MD,
-                ),
-            ], spacing=Space.SM),
+            content=ft.Column(
+                [
+                    # 进度条
+                    ft.Row(
+                        [
+                            self.current_time_label,
+                            self.progress_slider,
+                            self.total_time_label,
+                        ],
+                        spacing=Space.XS,
+                    ),
+                    # 音量 + 模式
+                    ft.Row(
+                        [
+                            ft.Row(
+                                [
+                                    ft.Icon(
+                                        ft.Icons.VOLUME_UP,
+                                        color=Color.TEXT_MUTED,
+                                        size=18,
+                                    ),
+                                    self.volume_slider,
+                                ],
+                                spacing=4,
+                                expand=True,
+                            ),
+                            ft.Row(
+                                [
+                                    self.normal_button,
+                                    self.repeat_one_button,
+                                    self.repeat_all_button,
+                                    self.shuffle_button,
+                                ],
+                                spacing=2,
+                            ),
+                        ],
+                        spacing=Space.SM,
+                    ),
+                    # 播放控制按钮
+                    ft.Row(
+                        [
+                            self.prev_button,
+                            self.play_pause_button,
+                            self.next_button,
+                            self.stop_button,
+                        ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        spacing=Space.MD,
+                    ),
+                ],
+                spacing=Space.SM,
+            ),
             bgcolor=Color.BG_SURFACE,
             border=ft.Border.all(1, Color.BORDER),
             border_radius=Radius.LG,
@@ -175,7 +233,9 @@ class PlaybackControlComponent:
         await self._safe_button_action(self.playback_controller.next_song, "下一曲")
 
     async def _on_toggle_playback(self, e):
-        await self._safe_button_action(self.playback_controller.toggle_playback, "切换播放")
+        await self._safe_button_action(
+            self.playback_controller.toggle_playback, "切换播放"
+        )
 
     async def _on_stop_playback(self, e):
         await self._safe_button_action(self.playback_controller.stop_playback, "停止")
@@ -185,12 +245,13 @@ class PlaybackControlComponent:
         if self.playback_service:
             volume = int(e.control.value)
             self.playback_service.set_volume(volume)
-            self.app_context['config_manager'].set("player.volume", volume)
-            self.app_context['config_manager'].save_config()
+            self.app_context["config_manager"].set("player.volume", volume)
+            self.app_context["config_manager"].save_config()
 
     def _set_play_mode(self, mode: str):
         """设置播放模式"""
         from ...services.playback_controller import PlayMode
+
         mode_map = {
             "normal": PlayMode.NORMAL,
             "repeat_one": PlayMode.REPEAT_ONE,
@@ -208,13 +269,16 @@ class PlaybackControlComponent:
             return
         if self._seek_timer:
             self._seek_timer.cancel()
+
         def do_seek():
             position = float(e.control.value) / 100.0
             duration = self.get_current_duration()
             if duration > 0:
                 target = position * duration
                 self.playback_service.seek_to_position(target)
+
         import threading
+
         self._seek_timer = threading.Timer(0.5, do_seek)
         self._seek_timer.start()
 
@@ -222,7 +286,7 @@ class PlaybackControlComponent:
         """更新进度条和时间显示"""
         if not self._built or not self.playback_service:
             return
-        if not hasattr(self, 'progress_slider'):
+        if not hasattr(self, "progress_slider"):
             return
         self._updating_progress = True
         try:
@@ -260,7 +324,11 @@ class PlaybackControlComponent:
     def get_current_position(self) -> float:
         """获取当前播放位置"""
         try:
-            if self.playback_service and hasattr(self.playback_service, 'audio_player') and self.playback_service.audio_player:
+            if (
+                self.playback_service
+                and hasattr(self.playback_service, "audio_player")
+                and self.playback_service.audio_player
+            ):
                 return self.playback_service.audio_player.get_position()
         except:
             pass
@@ -271,7 +339,11 @@ class PlaybackControlComponent:
         try:
             if self._cached_duration > 0:
                 return self._cached_duration
-            if self.playback_service and hasattr(self.playback_service, 'audio_player') and self.playback_service.audio_player:
+            if (
+                self.playback_service
+                and hasattr(self.playback_service, "audio_player")
+                and self.playback_service.audio_player
+            ):
                 dur = self.playback_service.audio_player.get_duration()
                 if dur > 0:
                     self._cached_duration = dur
@@ -282,12 +354,13 @@ class PlaybackControlComponent:
 
     def update_play_pause_button(self, is_playing: bool):
         """更新播放/暂停按钮状态（渐变 + 光晕随状态切换）"""
-        if not self._built or not hasattr(self, 'play_pause_button'):
+        if not self._built or not hasattr(self, "play_pause_button"):
             return
         if is_playing:
             self.play_icon.name = ft.Icons.PAUSE
             self.play_pause_button.gradient = ft.LinearGradient(
-                begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
+                begin=ft.Alignment(-1, -1),
+                end=ft.Alignment(1, 1),
                 colors=Gradient.WARNING,
             )
             self.play_pause_button.shadow = glow(Color.WARNING, radius=18, alpha="59")
@@ -299,9 +372,10 @@ class PlaybackControlComponent:
 
     def update_mode_buttons(self):
         """更新播放模式按钮状态（霓虹激活态）"""
-        if not self._built or not hasattr(self, 'normal_button'):
+        if not self._built or not hasattr(self, "normal_button"):
             return
         from ...services.playback_controller import PlayMode
+
         mode = self.playback_controller.get_play_mode()
         buttons = {
             PlayMode.NORMAL: self.normal_button,
@@ -326,6 +400,11 @@ class PlaybackControlComponent:
 
     def enable_controls(self, enabled: bool):
         """启用/禁用控制"""
-        for btn in [self.prev_button, self.play_pause_button, self.next_button, self.stop_button]:
+        for btn in [
+            self.prev_button,
+            self.play_pause_button,
+            self.next_button,
+            self.stop_button,
+        ]:
             btn.disabled = not enabled
         self.page.update()

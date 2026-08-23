@@ -10,7 +10,9 @@ from .theme import Space
 
 def _is_mobile():
     """检测是否运行在移动平台"""
-    return sys.platform == 'ios' or 'iOS' in str(sys.platform) or sys.platform == 'android'
+    return (
+        sys.platform == "ios" or "iOS" in str(sys.platform) or sys.platform == "android"
+    )
 
 
 def get_button_height(primary=True, secondary=False):
@@ -76,7 +78,7 @@ def get_font_sizes():
             "icon_secondary": 22,
             "icon_small": 16,
             "text_normal": 12,
-            "text_small": 11
+            "text_small": 11,
         }
     else:
         return {
@@ -84,11 +86,19 @@ def get_font_sizes():
             "icon_secondary": 16,
             "icon_small": 12,
             "text_normal": 11,
-            "text_small": 10
+            "text_small": 10,
         }
 
 
-def ft_padding(all=None, vertical=None, horizontal=None, top=None, bottom=None, left=None, right=None):
+def ft_padding(
+    all=None,
+    vertical=None,
+    horizontal=None,
+    top=None,
+    bottom=None,
+    left=None,
+    right=None,
+):
     """生成 Flet padding 值
 
     返回一个整数或 ft.Padding 对象的参数字典。

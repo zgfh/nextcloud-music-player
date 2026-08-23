@@ -2,22 +2,30 @@
 播放视图 - Flet 版本
 """
 
-import flet as ft
 import asyncio
 import logging
 import os
-from typing import Optional, Dict, List, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
+import flet as ft
+
+from ..services.playback_controller import PlaybackController, PlayMode
 from ..services.playback_service import PlaybackService
 from ..services.playlist_manager import PlaylistManager
-from ..services.playback_controller import PlaybackController, PlayMode
-from .components.playlist_component import PlaylistViewComponent
-from .components.playback_control_component import PlaybackControlComponent
-from .components.lyrics_component import LyricsDisplayComponent
 from ..utils.theme import (
-    Color, Space, FontSize, Radius, glow, glow_soft, tint, get_message_style,
+    Color,
+    FontSize,
+    Radius,
+    Space,
+    get_message_style,
+    glow,
+    glow_soft,
+    tint,
 )
+from .components.lyrics_component import LyricsDisplayComponent
+from .components.playback_control_component import PlaybackControlComponent
+from .components.playlist_component import PlaylistViewComponent
 
 logger = logging.getLogger(__name__)
 
@@ -31,22 +39,25 @@ class PlaybackView:
         self.view_manager = view_manager
         self.play_mode = PlayMode.REPEAT_ONE
 
-        config_manager = app_context['config_manager']
-        music_service = app_context.get('music_service')
+        config_manager = app_context["config_manager"]
+        music_service = app_context.get("music_service")
 
         # 初始化播放服务
         self.playback_service = PlaybackService(
             config_manager=config_manager,
             music_service=music_service,
             play_music_callback=None,
-            add_background_task_callback=lambda task: asyncio.create_task(task) if asyncio.iscoroutine(task) else asyncio.create_task(task()),
+            add_background_task_callback=lambda task: (
+                asyncio.create_task(task)
+                if asyncio.iscoroutine(task)
+                else asyncio.create_task(task())
+            ),
             page=page,
         )
 
         # 播放列表管理器
         self.playlist_manager = PlaylistManager(
-            config_manager=config_manager,
-            music_service=music_service
+            config_manager=config_manager, music_service=music_service
         )
 
         # 播放控制器
@@ -54,7 +65,7 @@ class PlaybackView:
             playback_service=self.playback_service,
             playlist_manager=self.playlist_manager,
             play_song_callback=self.play_selected_song,
-            ui_update_callback=self.on_playback_state_changed
+            ui_update_callback=self.on_playback_state_changed,
         )
 
         # 播放控制组件
@@ -62,7 +73,7 @@ class PlaybackView:
             page=page,
             app_context=app_context,
             playback_controller=self.playback_controller,
-            on_play_mode_change_callback=self.on_play_mode_changed
+            on_play_mode_change_callback=self.on_play_mode_changed,
         )
 
         # 播放列表组件
@@ -72,16 +83,16 @@ class PlaybackView:
             playlist_manager=self.playlist_manager,
             on_song_select_callback=self.on_playlist_song_selected,
             on_playlist_change_callback=self.on_playlist_changed,
-            playback_service=self.playback_service
+            playback_service=self.playback_service,
         )
 
         # 歌词组件
-        lyrics_service = app_context.get('lyrics_service')
+        lyrics_service = app_context.get("lyrics_service")
         self.lyrics_component = LyricsDisplayComponent(
             page=page,
             app_context=app_context,
             config_manager=config_manager,
-            lyrics_service=lyrics_service
+            lyrics_service=lyrics_service,
         )
 
         # 播放列表回调
@@ -93,7 +104,7 @@ class PlaybackView:
             set_volume_callback=lambda v: None,
             seek_to_position_callback=None,
             get_duration_callback=None,
-            set_play_mode_callback=None
+            set_play_mode_callback=None,
         )
 
         self.playback_controller.set_play_mode(PlayMode.REPEAT_ONE)
@@ -115,12 +126,15 @@ class PlaybackView:
         """重建视图（Flet 0.86 控件脱离页面后被冻结且不可复用，切回时必须重建）"""
         self._cancel_ui_timer()
         self._built = False
-        for component in (self.playback_control_component, self.playlist_component,
-                          self.lyrics_component):
-            if hasattr(component, '_built'):
+        for component in (
+            self.playback_control_component,
+            self.playlist_component,
+            self.lyrics_component,
+        ):
+            if hasattr(component, "_built"):
                 component._built = False
         # 旧的歌词行控件也已冻结，清空避免后台继续更新它们
-        if hasattr(self.lyrics_component, '_lyric_items'):
+        if hasattr(self.lyrics_component, "_lyric_items"):
             self.lyrics_component._lyric_items = []
         return self.build()
 
@@ -136,16 +150,18 @@ class PlaybackView:
 
     def build(self):
         """构建并返回视图"""
-        if self._built and hasattr(self, '_container'):
+        if self._built and hasattr(self, "_container"):
             return self._container
 
         # === 正在播放卡：渐变 + 霓虹描边 ===
         self.album_art = ft.Container(
             content=ft.Icon(ft.Icons.GRAPHIC_EQ, color=Color.PRIMARY, size=28),
-            width=52, height=52,
+            width=52,
+            height=52,
             border_radius=Radius.LG,
             gradient=ft.LinearGradient(
-                begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
+                begin=ft.Alignment(-1, -1),
+                end=ft.Alignment(1, 1),
                 colors=["#0E2434", "#1A1030"],
             ),
             border=ft.Border.all(1, tint(Color.PRIMARY, "40")),
@@ -177,15 +193,26 @@ class PlaybackView:
             border_radius=Radius.CIRCLE,
         )
         now_playing = ft.Container(
-            content=ft.Row([
-                self.album_art,
-                ft.Column([
-                    self.song_title_label,
-                    ft.Text("NOW PLAYING", size=FontSize.MICRO, color=Color.TEXT_MUTED,
-                            style=ft.TextStyle(letter_spacing=3)),
-                ], spacing=2, expand=True),
-                self.status_chip,
-            ], spacing=Space.MD),
+            content=ft.Row(
+                [
+                    self.album_art,
+                    ft.Column(
+                        [
+                            self.song_title_label,
+                            ft.Text(
+                                "NOW PLAYING",
+                                size=FontSize.MICRO,
+                                color=Color.TEXT_MUTED,
+                                style=ft.TextStyle(letter_spacing=3),
+                            ),
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                    self.status_chip,
+                ],
+                spacing=Space.MD,
+            ),
             bgcolor=Color.BG_SURFACE,
             border=ft.Border.all(1, Color.BORDER),
             border_radius=Radius.LG,
@@ -202,7 +229,9 @@ class PlaybackView:
         self.tab_selector = ft.SegmentedButton(
             selected=["playlist"],
             segments=[
-                ft.Segment(value="playlist", label="播放列表", icon=ft.Icons.QUEUE_MUSIC),
+                ft.Segment(
+                    value="playlist", label="播放列表", icon=ft.Icons.QUEUE_MUSIC
+                ),
                 ft.Segment(value="lyrics", label="歌词", icon=ft.Icons.LYRICS_OUTLINED),
             ],
             allow_multiple_selection=False,
@@ -223,7 +252,9 @@ class PlaybackView:
         )
 
         self.playlist_panel = ft.Container(content=playlist_view, expand=True)
-        self.lyrics_panel = ft.Container(content=lyrics_view, expand=True, visible=False)
+        self.lyrics_panel = ft.Container(
+            content=lyrics_view, expand=True, visible=False
+        )
 
         # 消息区
         self.message_container = ft.Container(visible=False)
@@ -233,14 +264,18 @@ class PlaybackView:
 
         # 组装（顶部/底部安全区由 ViewManager 的全局 SafeArea 统一处理）
         self._container = ft.Container(
-            content=ft.Column([
-                now_playing,
-                self.tab_selector,
-                self.playlist_panel,
-                self.lyrics_panel,
-                self.message_container,
-                controls,
-            ], spacing=Space.SM, expand=True),
+            content=ft.Column(
+                [
+                    now_playing,
+                    self.tab_selector,
+                    self.playlist_panel,
+                    self.lyrics_panel,
+                    self.message_container,
+                    controls,
+                ],
+                spacing=Space.SM,
+                expand=True,
+            ),
             padding=Space.LG,
             expand=True,
             bgcolor=Color.BG_APP,
@@ -257,8 +292,10 @@ class PlaybackView:
         # 在结束时留下未完成的帧而被判失败（FLET_TEST_* 由 flet test 注入
         # 并透传至 embedded Python）
         self._cancel_ui_timer()
-        if not (os.environ.get("FLET_TEST_DEVICE_MODE")
-                or os.environ.get("FLET_TEST_PLATFORM")):
+        if not (
+            os.environ.get("FLET_TEST_DEVICE_MODE")
+            or os.environ.get("FLET_TEST_PLATFORM")
+        ):
             self._ui_task = asyncio.create_task(self._schedule_ui_update())
 
         return self._container
@@ -270,8 +307,8 @@ class PlaybackView:
             current = next(iter(selected), "playlist")
         except Exception:
             current = "playlist"
-        self.playlist_panel.visible = (current == "playlist")
-        self.lyrics_panel.visible = (current == "lyrics")
+        self.playlist_panel.visible = current == "playlist"
+        self.lyrics_panel.visible = current == "lyrics"
         self.page.update()
 
     def _set_status(self, text: str, color: str):
@@ -281,20 +318,24 @@ class PlaybackView:
         self.status_chip.bgcolor = tint(color, "1F")
         self.status_chip.border = ft.Border.all(1, tint(color, "40"))
         self.album_art.border = ft.Border.all(1, tint(color, "59"))
-        self.album_art.shadow = glow(color, radius=14, alpha="33") if text != "停止" else None
+        self.album_art.shadow = (
+            glow(color, radius=14, alpha="33") if text != "停止" else None
+        )
 
     async def on_playlist_song_selected(self, song_entry: Dict[str, Any], index: int):
         """播放列表歌曲选择回调"""
         try:
-            song_info = song_entry.get('info', {})
-            song_name = song_entry.get('name', '')
+            song_info = song_entry.get("info", {})
+            song_name = song_entry.get("name", "")
             self.current_song_info = song_info
             self._update_current_song_info()
 
             if self.lyrics_component and song_name:
                 self.lyrics_component.load_lyrics_for_song(song_name)
 
-            auto_play = self.app_context['config_manager'].get("player.auto_play_on_select", True)
+            auto_play = self.app_context["config_manager"].get(
+                "player.auto_play_on_select", True
+            )
             if auto_play:
                 # 用刷新后的歌曲信息（下载状态/本地路径可能是加入列表后更新的）
                 await self.play_selected_song(self.current_song_info or song_info)
@@ -341,19 +382,22 @@ class PlaybackView:
             return request_id != self._play_request_seq
 
         try:
-            if self.playback_service.is_playing() or self.playback_service.current_song_state.get('is_paused'):
+            if (
+                self.playback_service.is_playing()
+                or self.playback_service.current_song_state.get("is_paused")
+            ):
                 await self.playback_service.stop_music()
             self._set_status("切换中...", Color.INFO)
             self.page.update()
 
-            if song_info.get('is_downloaded') and song_info.get('filepath'):
-                local_path = song_info['filepath']
+            if song_info.get("is_downloaded") and song_info.get("filepath"):
+                local_path = song_info["filepath"]
                 if os.path.exists(local_path):
                     return await self.play_music_file(local_path, request_id=request_id)
 
-            song_name = song_info.get('name', '')
-            remote_path = song_info.get('remote_path', '')
-            music_service = self.app_context.get('music_service')
+            song_name = song_info.get("name", "")
+            remote_path = song_info.get("remote_path", "")
+            music_service = self.app_context.get("music_service")
             if not (music_service and remote_path):
                 self._set_status("无法播放", Color.DANGER_TEXT)
                 self.page.update()
@@ -375,10 +419,14 @@ class PlaybackView:
                 self.page.update()
                 return False
 
-            music_library = self.app_context.get('music_library')
-            updated_info = music_library.get_song_info(song_name) if music_library else None
-            if updated_info and updated_info.get('filepath'):
-                return await self.play_music_file(updated_info['filepath'], request_id=request_id)
+            music_library = self.app_context.get("music_library")
+            updated_info = (
+                music_library.get_song_info(song_name) if music_library else None
+            )
+            if updated_info and updated_info.get("filepath"):
+                return await self.play_music_file(
+                    updated_info["filepath"], request_id=request_id
+                )
 
             self._set_status("播放失败", Color.DANGER_TEXT)
             self.page.update()
@@ -387,7 +435,9 @@ class PlaybackView:
             logger.error(f"播放选中歌曲失败: {e}")
             return False
 
-    async def play_music_file(self, file_path: str, request_id: Optional[int] = None) -> bool:
+    async def play_music_file(
+        self, file_path: str, request_id: Optional[int] = None
+    ) -> bool:
         """播放音乐文件（request_id 过期时放弃播放）"""
         try:
             if request_id is not None and request_id != self._play_request_seq:
@@ -405,7 +455,9 @@ class PlaybackView:
 
             if self.lyrics_component:
                 song_name = os.path.basename(file_path)
-                self.lyrics_component.load_lyrics_for_song(song_name, auto_download=True)
+                self.lyrics_component.load_lyrics_for_song(
+                    song_name, auto_download=True
+                )
 
             self._set_status("播放中", Color.STATUS_PLAYING)
             self.update_ui()
@@ -423,6 +475,7 @@ class PlaybackView:
     async def _schedule_ui_update(self):
         """定时更新 UI（仅在视图激活时刷新，避免更新已冻结控件）"""
         from ..platform_audio import is_ios
+
         update_interval = 2.0 if is_ios() else 0.5
 
         while True:
@@ -442,8 +495,16 @@ class PlaybackView:
             if self.playback_control_component:
                 self.playback_control_component.update_progress()
 
-            position = self.playback_control_component.get_current_position() if self.playback_control_component else 0
-            duration = self.playback_control_component.get_current_duration() if self.playback_control_component else 0
+            position = (
+                self.playback_control_component.get_current_position()
+                if self.playback_control_component
+                else 0
+            )
+            duration = (
+                self.playback_control_component.get_current_duration()
+                if self.playback_control_component
+                else 0
+            )
 
             if self.lyrics_component:
                 self.lyrics_component.update_lyrics_position(position)
@@ -452,6 +513,7 @@ class PlaybackView:
             if duration > 0 and position > 0:
                 progress_ratio = position / duration
                 from ..platform_audio import is_ios
+
                 threshold = 0.98 if is_ios() else 0.99
 
                 if progress_ratio >= threshold and not self._song_completed:
@@ -462,7 +524,9 @@ class PlaybackView:
 
             # 更新状态
             is_playing = self.playback_service.is_playing()
-            is_paused = getattr(self.playback_service, 'current_song_state', {}).get('is_paused', False)
+            is_paused = getattr(self.playback_service, "current_song_state", {}).get(
+                "is_paused", False
+            )
 
             if is_playing:
                 self._set_status("播放中", Color.STATUS_PLAYING)
@@ -495,11 +559,13 @@ class PlaybackView:
 
             if current_song and self.current_song_info:
                 song_info = self.current_song_info
-                display_title = song_info.get('title', song_info.get('name', '未知歌曲'))
-                if display_title.endswith('.mp3'):
+                display_title = song_info.get(
+                    "title", song_info.get("name", "未知歌曲")
+                )
+                if display_title.endswith(".mp3"):
                     display_title = display_title[:-4]
-                artist = song_info.get('artist', '未知艺术家')
-                if artist and artist != '未知艺术家':
+                artist = song_info.get("artist", "未知艺术家")
+                if artist and artist != "未知艺术家":
                     new_title = f"{display_title} - {artist}"
                 else:
                     new_title = display_title
@@ -520,10 +586,10 @@ class PlaybackView:
             if not current_song:
                 self.current_song_info = None
                 return
-            song_info = current_song.get('info', {})
-            music_library = self.app_context.get('music_library')
+            song_info = current_song.get("info", {})
+            music_library = self.app_context.get("music_library")
             if music_library:
-                song_name = current_song.get('name') or song_info.get('name')
+                song_name = current_song.get("name") or song_info.get("name")
                 if song_name:
                     detailed = music_library.get_song_info(song_name)
                     if detailed:
@@ -539,10 +605,10 @@ class PlaybackView:
         """获取当前播放歌曲条目"""
         try:
             playlist = self.playlist_manager.get_current_playlist()
-            if not playlist or not playlist.get('songs'):
+            if not playlist or not playlist.get("songs"):
                 return None
-            current_index = playlist.get('current_index', 0)
-            songs = playlist['songs']
+            current_index = playlist.get("current_index", 0)
+            songs = playlist["songs"]
             if 0 <= current_index < len(songs):
                 return songs[current_index]
             return None
@@ -552,10 +618,13 @@ class PlaybackView:
     def show_message(self, message: str, message_type: str = "info"):
         """显示消息"""
         bg_color, text_color, icon = get_message_style(message_type)
-        self.message_container.content = ft.Row([
-            ft.Icon(ft.Icons.INFO_OUTLINE, color=text_color, size=18),
-            ft.Text(message, color=text_color, size=FontSize.BODY),
-        ], spacing=Space.XS)
+        self.message_container.content = ft.Row(
+            [
+                ft.Icon(ft.Icons.INFO_OUTLINE, color=text_color, size=18),
+                ft.Text(message, color=text_color, size=FontSize.BODY),
+            ],
+            spacing=Space.XS,
+        )
         self.message_container.bgcolor = bg_color
         self.message_container.border = ft.Border.all(1, bg_color)
         self.message_container.padding = Space.SM
@@ -563,9 +632,13 @@ class PlaybackView:
         self.message_container.visible = True
         self.page.update()
 
-    def handle_play_selected(self, music_files: List[Dict[str, Any]], start_index: int = 0):
+    def handle_play_selected(
+        self, music_files: List[Dict[str, Any]], start_index: int = 0
+    ):
         """处理从文件列表播放选中歌曲"""
-        logger.info(f"处理播放选中歌曲请求，文件数: {len(music_files)}, 开始索引: {start_index}")
+        logger.info(
+            f"处理播放选中歌曲请求，文件数: {len(music_files)}, 开始索引: {start_index}"
+        )
         try:
             if music_files:
                 self.playlist_manager.clear_current_playlist()
@@ -574,12 +647,18 @@ class PlaybackView:
 
                 current_playlist = self.playlist_manager.get_current_playlist()
                 if current_playlist and 0 <= start_index < len(music_files):
-                    current_playlist['current_index'] = start_index
+                    current_playlist["current_index"] = start_index
                     self.playlist_manager.save_current_playlist(current_playlist)
 
-                auto_play = self.app_context['config_manager'].get("player.auto_play_on_select", True)
+                auto_play = self.app_context["config_manager"].get(
+                    "player.auto_play_on_select", True
+                )
                 if auto_play and music_files:
-                    target = music_files[start_index] if start_index < len(music_files) else music_files[0]
+                    target = (
+                        music_files[start_index]
+                        if start_index < len(music_files)
+                        else music_files[0]
+                    )
                     asyncio.create_task(self.play_selected_song(target))
         except Exception as e:
             logger.error(f"处理播放选中歌曲请求失败: {e}")

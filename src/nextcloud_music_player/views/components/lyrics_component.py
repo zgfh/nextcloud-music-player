@@ -2,13 +2,14 @@
 歌词显示组件 - Flet 版本
 """
 
-import flet as ft
-import logging
 import asyncio
-from typing import Optional, List
+import logging
+from typing import List, Optional
+
+import flet as ft
 
 from ...services.lyrics_service import LyricsService
-from ...utils.theme import Color, Space, FontSize, Radius
+from ...utils.theme import Color, FontSize, Radius, Space
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,13 @@ logger = logging.getLogger(__name__)
 class LyricsDisplayComponent:
     """歌词显示组件"""
 
-    def __init__(self, page: ft.Page, app_context: dict, config_manager, lyrics_service: Optional[LyricsService]):
+    def __init__(
+        self,
+        page: ft.Page,
+        app_context: dict,
+        config_manager,
+        lyrics_service: Optional[LyricsService],
+    ):
         self.page = page
         self.app_context = app_context
         self.config_manager = config_manager
@@ -24,19 +31,24 @@ class LyricsDisplayComponent:
         self.current_song_name = None
         self.current_position = 0
         self.auto_scroll = True
-        self.font_size = config_manager.get("lyrics.font_size", 14) if config_manager else 14
+        self.font_size = (
+            config_manager.get("lyrics.font_size", 14) if config_manager else 14
+        )
         self._built = False
         self._lyric_items = []  # 用于跟踪歌词行控件
 
     def build(self):
         """构建并返回组件"""
-        if self._built and hasattr(self, '_container'):
+        if self._built and hasattr(self, "_container"):
             return self._container
 
         # 标题栏
         self.title_label = ft.Text(
-            "歌词", size=FontSize.SUBTITLE, weight=ft.FontWeight.W_500,
-            color=Color.TEXT_SECONDARY, expand=True,
+            "歌词",
+            size=FontSize.SUBTITLE,
+            weight=ft.FontWeight.W_500,
+            color=Color.TEXT_SECONDARY,
+            expand=True,
             style=ft.TextStyle(letter_spacing=2),
         )
         self.download_button = ft.IconButton(
@@ -63,16 +75,20 @@ class LyricsDisplayComponent:
             text_align=ft.TextAlign.CENTER,
         )
 
-        self._container = ft.Column([
-            ft.Row([self.title_label, self.download_button], spacing=4),
-            ft.Container(
-                content=self.lyrics_list,
-                expand=True,
-                bgcolor=Color.LYRICS_BG,
-                border=ft.Border.all(1, Color.BORDER),
-                border_radius=Radius.LG,
-            ),
-        ], spacing=Space.XS, expand=True)
+        self._container = ft.Column(
+            [
+                ft.Row([self.title_label, self.download_button], spacing=4),
+                ft.Container(
+                    content=self.lyrics_list,
+                    expand=True,
+                    bgcolor=Color.LYRICS_BG,
+                    border=ft.Border.all(1, Color.BORDER),
+                    border_radius=Radius.LG,
+                ),
+            ],
+            spacing=Space.XS,
+            expand=True,
+        )
 
         self._built = True
         self._show_no_lyrics()
@@ -100,7 +116,9 @@ class LyricsDisplayComponent:
 
         self.current_song_name = song_name
         try:
-            loaded = self.lyrics_service.load_lyrics(song_name, auto_download=auto_download)
+            loaded = self.lyrics_service.load_lyrics(
+                song_name, auto_download=auto_download
+            )
             if loaded:
                 self._display_all_lyrics()
                 self.download_button.visible = False
@@ -126,7 +144,7 @@ class LyricsDisplayComponent:
         metadata = self.lyrics_service.get_lyrics_metadata()
         if metadata:
             meta_parts = []
-            for key in ['ti', 'ar', 'al']:
+            for key in ["ti", "ar", "al"]:
                 if key in metadata:
                     meta_parts.append(metadata[key])
             if meta_parts:
@@ -211,14 +229,16 @@ class LyricsDisplayComponent:
         self.page.update()
 
         try:
-            song_info = self.app_context.get('music_library')
+            song_info = self.app_context.get("music_library")
             remote_path = ""
             if song_info:
                 info = song_info.get_song_info(self.current_song_name)
                 if info:
-                    remote_path = info.get('remote_path', '')
+                    remote_path = info.get("remote_path", "")
 
-            success = await self.lyrics_service.download_lyrics(self.current_song_name, remote_path)
+            success = await self.lyrics_service.download_lyrics(
+                self.current_song_name, remote_path
+            )
             if success:
                 self.load_lyrics_for_song(self.current_song_name)
                 self.download_button.visible = False

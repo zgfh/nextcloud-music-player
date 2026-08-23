@@ -2,10 +2,11 @@
 NextCloud Music Player - Flet 主入口
 """
 
-import flet as ft
 import asyncio
 import logging
 from typing import Optional
+
+import flet as ft
 
 from .config_manager import ConfigManager
 from .music_library import MusicLibrary
@@ -19,7 +20,7 @@ def setup_logging():
     try:
         config_manager = ConfigManager()
         log_dir = config_manager.get_log_directory()
-        log_file = log_dir / 'nextcloud_music_player.log'
+        log_file = log_dir / "nextcloud_music_player.log"
 
         handlers = [logging.StreamHandler()]
         try:
@@ -29,8 +30,8 @@ def setup_logging():
 
         logging.basicConfig(
             level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=handlers
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            handlers=handlers,
         )
         logger.info("日志系统初始化完成")
     except Exception as e:
@@ -77,14 +78,15 @@ async def main(page: ft.Page):
     # 每个会话独立的上下文（Web 模式下多个浏览器标签页 = 多个会话，
     # 共用模块级全局字典会导致 A 会话连接的客户端被 B 会话覆盖/清空）
     app_context = {
-        'config_manager': config_manager,
-        'music_library': music_library,
-        'nextcloud_client': None,
-        'page': page,
+        "config_manager": config_manager,
+        "music_library": music_library,
+        "nextcloud_client": None,
+        "page": page,
     }
 
     # 创建视图管理器
     from .views.view_manager import ViewManager
+
     view_manager = ViewManager(page, app_context)
 
     # 恢复上次视图

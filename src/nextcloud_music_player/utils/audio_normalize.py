@@ -26,16 +26,24 @@ MIN_SAMPLE_RATE = 44100
 def _probe(filepath: Path) -> Optional[dict]:
     """用 ffprobe 读取首个音频流信息"""
     import subprocess
+
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "error",
-                "-select_streams", "a:0",
-                "-show_entries", "stream=codec_name,sample_rate",
-                "-of", "json",
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_name,sample_rate",
+                "-of",
+                "json",
                 str(filepath),
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             return None
@@ -73,18 +81,28 @@ def normalize_audio_if_needed(filepath) -> bool:
         return False
 
     import subprocess
+
     tmp_path = filepath.with_name(filepath.stem + ".norm.tmp.mp3")
     try:
         result = subprocess.run(
             [
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-i", str(filepath),
-                "-ar", str(MIN_SAMPLE_RATE),
-                "-codec:a", "libmp3lame",
-                "-b:a", "320k",
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(filepath),
+                "-ar",
+                str(MIN_SAMPLE_RATE),
+                "-codec:a",
+                "libmp3lame",
+                "-b:a",
+                "320k",
                 str(tmp_path),
             ],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True,
+            text=True,
+            timeout=300,
         )
         if result.returncode != 0 or not tmp_path.exists():
             logger.error(f"音频转码失败: {result.stderr[-300:]}")
@@ -92,7 +110,9 @@ def normalize_audio_if_needed(filepath) -> bool:
             return False
 
         os.replace(tmp_path, filepath)
-        logger.info(f"音频已标准化 {sample_rate}Hz -> {MIN_SAMPLE_RATE}Hz: {filepath.name}")
+        logger.info(
+            f"音频已标准化 {sample_rate}Hz -> {MIN_SAMPLE_RATE}Hz: {filepath.name}"
+        )
         return True
     except Exception as e:
         logger.error(f"音频转码异常: {e}")

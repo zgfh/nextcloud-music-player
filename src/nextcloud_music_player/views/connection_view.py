@@ -2,14 +2,22 @@
 连接配置视图 - Flet 版本
 """
 
-import flet as ft
 import asyncio
 import logging
 import threading
 import time
 
+import flet as ft
+
 from ..utils.theme import (
-    Color, Space, FontSize, Radius, Gradient, glow, tint, get_message_style,
+    Color,
+    FontSize,
+    Gradient,
+    Radius,
+    Space,
+    get_message_style,
+    glow,
+    tint,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,7 +61,7 @@ class ConnectionView:
 
     def build(self):
         """构建并返回视图内容"""
-        if self._built and hasattr(self, '_container'):
+        if self._built and hasattr(self, "_container"):
             return self._container
 
         try:
@@ -61,15 +69,17 @@ class ConnectionView:
         except Exception as e:
             logger.error(f"ConnectionView build 失败: {e}", exc_info=True)
             return ft.Container(
-                content=ft.Column([
-                    ft.Text(f"构建错误: {e}", color=Color.DANGER_TEXT),
-                ]),
+                content=ft.Column(
+                    [
+                        ft.Text(f"构建错误: {e}", color=Color.DANGER_TEXT),
+                    ]
+                ),
                 padding=20,
                 bgcolor=Color.BG_APP,
             )
 
     def _do_build(self):
-        config_manager = self.app_context['config_manager']
+        config_manager = self.app_context["config_manager"]
         config = config_manager.get("connection", {})
         smb_config = config.get("smb", {})
         source_type = config.get("source_type", "nextcloud")
@@ -77,7 +87,8 @@ class ConnectionView:
         # === Hero 头部：渐变徽标 + 标题 ===
         logo = ft.Container(
             content=ft.Icon(ft.Icons.CLOUD_DONE_OUTLINED, color=Color.PRIMARY, size=26),
-            width=52, height=52,
+            width=52,
+            height=52,
             border_radius=Radius.LG,
             gradient=Gradient.surface(),
             border=ft.Border.all(1, tint(Color.PRIMARY, "59")),
@@ -96,10 +107,17 @@ class ConnectionView:
             color=Color.TEXT_MUTED,
             style=ft.TextStyle(letter_spacing=2),
         )
-        hero = ft.Row([
-            logo,
-            ft.Column([self.title_text, subtitle_text], spacing=2, alignment=ft.MainAxisAlignment.CENTER),
-        ], spacing=Space.MD)
+        hero = ft.Row(
+            [
+                logo,
+                ft.Column(
+                    [self.title_text, subtitle_text],
+                    spacing=2,
+                    alignment=ft.MainAxisAlignment.CENTER,
+                ),
+            ],
+            spacing=Space.MD,
+        )
 
         # === 来源类型切换：Nextcloud / SMB ===
         # 注意：Flet 0.86 的 selected 类型是 list[str]，
@@ -108,7 +126,9 @@ class ConnectionView:
             key="source_selector",
             selected=[source_type],
             segments=[
-                ft.Segment(value="nextcloud", label="Nextcloud", icon=ft.Icons.CLOUD_OUTLINED),
+                ft.Segment(
+                    value="nextcloud", label="Nextcloud", icon=ft.Icons.CLOUD_OUTLINED
+                ),
                 ft.Segment(value="smb", label="SMB 共享", icon=ft.Icons.LAN_OUTLINED),
             ],
             allow_multiple_selection=False,
@@ -130,7 +150,9 @@ class ConnectionView:
 
         # === 状态胶囊 ===
         self.status_dot = ft.Container(
-            width=8, height=8, border_radius=4,
+            width=8,
+            height=8,
+            border_radius=4,
             bgcolor=Color.DANGER,
             shadow=glow(Color.DANGER, radius=8, alpha="80"),
         )
@@ -142,11 +164,14 @@ class ConnectionView:
             style=ft.TextStyle(letter_spacing=1),
         )
         self.status_container = ft.Container(
-            content=ft.Row([
-                ft.Icon(ft.Icons.SATELLITE_ALT, size=16, color=Color.TEXT_MUTED),
-                self.status_dot,
-                self.status_text,
-            ], spacing=Space.SM),
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.SATELLITE_ALT, size=16, color=Color.TEXT_MUTED),
+                    self.status_dot,
+                    self.status_text,
+                ],
+                spacing=Space.SM,
+            ),
             bgcolor=tint(Color.DANGER, "1F"),
             border=ft.Border.all(1, tint(Color.DANGER, "40")),
             padding=ft.Padding(left=14, right=14, top=10, bottom=10),
@@ -171,7 +196,11 @@ class ConnectionView:
 
         self.password_input = _dark_input(
             label="密码",
-            value=config.get("password", "") if config.get("remember_credentials", True) else "",
+            value=(
+                config.get("password", "")
+                if config.get("remember_credentials", True)
+                else ""
+            ),
             hint_text="输入密码",
             password=True,
             can_reveal_password=True,
@@ -180,10 +209,13 @@ class ConnectionView:
 
         self.sync_folder_input = _dark_input(
             label="同步文件夹路径",
-            value=config.get("default_sync_folder", "/mp3/音乐/当月抖音热播流行歌曲484首/"),
+            value=config.get(
+                "default_sync_folder", "/mp3/音乐/当月抖音热播流行歌曲484首/"
+            ),
             hint_text="/Music 或留空表示根目录",
             prefix_icon=ft.Icons.FOLDER_OUTLINED,
             on_change=self._on_sync_folder_changed,
+            expand=1,
         )
 
         self.browse_button = ft.OutlinedButton(
@@ -206,14 +238,17 @@ class ConnectionView:
             value=smb_config.get("host", ""),
             hint_text="如 192.168.1.100 或 nas.local",
             prefix_icon=ft.Icons.LAN_OUTLINED,
+            expand=True,
         )
 
+        # 固定窄宽：端口仅数字，Row 内不设宽度会在窄屏上把输入框挤出屏幕
         self.smb_port_input = _dark_input(
             label="端口",
             value=str(smb_config.get("port", 445)),
             hint_text="445",
             prefix_icon=ft.Icons.NUMBERS,
             keyboard_type=ft.KeyboardType.NUMBER,
+            width=110,
         )
 
         self.smb_share_input = _dark_input(
@@ -226,9 +261,14 @@ class ConnectionView:
 
         self.smb_username_input = _dark_input(
             label="用户名",
-            value=smb_config.get("username", "") if config.get("remember_credentials", True) else "",
+            value=(
+                smb_config.get("username", "")
+                if config.get("remember_credentials", True)
+                else ""
+            ),
             hint_text="guest 访问可留空",
             prefix_icon=ft.Icons.PERSON_OUTLINE,
+            expand=1,
         )
 
         self.smb_domain_input = _dark_input(
@@ -236,11 +276,16 @@ class ConnectionView:
             value=smb_config.get("domain", ""),
             hint_text="默认 WORKGROUP",
             prefix_icon=ft.Icons.PUBLIC,
+            expand=1,
         )
 
         self.smb_password_input = _dark_input(
             label="密码",
-            value=smb_config.get("password", "") if config.get("remember_credentials", True) else "",
+            value=(
+                smb_config.get("password", "")
+                if config.get("remember_credentials", True)
+                else ""
+            ),
             hint_text="guest 访问可留空",
             password=True,
             can_reveal_password=True,
@@ -253,6 +298,7 @@ class ConnectionView:
             hint_text="/ 表示共享根目录",
             prefix_icon=ft.Icons.FOLDER_OUTLINED,
             on_change=self._on_sync_folder_changed,
+            expand=1,
         )
 
         self.smb_browse_button = ft.OutlinedButton(
@@ -289,13 +335,20 @@ class ConnectionView:
             "建立连接",
             icon=ft.Icons.BOLT,
             on_click=self._connect_to_server,
+            expand=2,
             style=ft.ButtonStyle(
                 bgcolor={
                     ft.ControlState.DISABLED: Color.BG_ELEVATED,
                     ft.ControlState.DEFAULT: Color.PRIMARY,
                 },
-                color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.PRIMARY_TEXT},
-                icon_color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.PRIMARY_TEXT},
+                color={
+                    ft.ControlState.DISABLED: Color.TEXT_DISABLED,
+                    ft.ControlState.DEFAULT: Color.PRIMARY_TEXT,
+                },
+                icon_color={
+                    ft.ControlState.DISABLED: Color.TEXT_DISABLED,
+                    ft.ControlState.DEFAULT: Color.PRIMARY_TEXT,
+                },
                 elevation={ft.ControlState.DEFAULT: 6, ft.ControlState.PRESSED: 2},
                 shadow_color=tint(Color.PRIMARY, "66"),
                 shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
@@ -307,9 +360,16 @@ class ConnectionView:
             icon=ft.Icons.LINK_OFF,
             on_click=self._disconnect_from_nextcloud,
             disabled=True,
+            expand=1,
             style=ft.ButtonStyle(
-                color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.DANGER_TEXT},
-                icon_color={ft.ControlState.DISABLED: Color.TEXT_DISABLED, ft.ControlState.DEFAULT: Color.DANGER},
+                color={
+                    ft.ControlState.DISABLED: Color.TEXT_DISABLED,
+                    ft.ControlState.DEFAULT: Color.DANGER_TEXT,
+                },
+                icon_color={
+                    ft.ControlState.DISABLED: Color.TEXT_DISABLED,
+                    ft.ControlState.DEFAULT: Color.DANGER,
+                },
                 side=ft.BorderSide(1, tint(Color.DANGER, "59")),
                 shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
             ),
@@ -319,6 +379,7 @@ class ConnectionView:
             "测试",
             icon=ft.Icons.NETWORK_CHECK,
             on_click=self._test_connection,
+            expand=1,
             style=ft.ButtonStyle(
                 color=Color.TEXT_SECONDARY,
                 icon_color=Color.INFO,
@@ -339,12 +400,17 @@ class ConnectionView:
 
         # === 组装：表单卡片（按来源类型显示其一） ===
         self.nextcloud_form_card = ft.Container(
-            content=ft.Column([
-                self.url_input,
-                self.username_input,
-                self.password_input,
-                ft.Row([self.sync_folder_input, self.browse_button], spacing=Space.XS),
-            ], spacing=Space.SM),
+            content=ft.Column(
+                [
+                    self.url_input,
+                    self.username_input,
+                    self.password_input,
+                    ft.Row(
+                        [self.sync_folder_input, self.browse_button], spacing=Space.XS
+                    ),
+                ],
+                spacing=Space.SM,
+            ),
             bgcolor=Color.BG_SURFACE,
             border=ft.Border.all(1, Color.BORDER),
             border_radius=Radius.LG,
@@ -353,13 +419,24 @@ class ConnectionView:
         )
 
         self.smb_form_card = ft.Container(
-            content=ft.Column([
-                ft.Row([self.smb_host_input, self.smb_port_input], spacing=Space.XS),
-                self.smb_share_input,
-                ft.Row([self.smb_username_input, self.smb_domain_input], spacing=Space.XS),
-                self.smb_password_input,
-                ft.Row([self.smb_sync_folder_input, self.smb_browse_button], spacing=Space.XS),
-            ], spacing=Space.SM),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [self.smb_host_input, self.smb_port_input], spacing=Space.XS
+                    ),
+                    self.smb_share_input,
+                    ft.Row(
+                        [self.smb_username_input, self.smb_domain_input],
+                        spacing=Space.XS,
+                    ),
+                    self.smb_password_input,
+                    ft.Row(
+                        [self.smb_sync_folder_input, self.smb_browse_button],
+                        spacing=Space.XS,
+                    ),
+                ],
+                spacing=Space.SM,
+            ),
             bgcolor=Color.BG_SURFACE,
             border=ft.Border.all(1, Color.BORDER),
             border_radius=Radius.LG,
@@ -377,15 +454,25 @@ class ConnectionView:
                     self.nextcloud_form_card,
                     self.smb_form_card,
                     ft.Container(
-                        content=ft.Column([
-                            self.remember_password_switch,
-                            self.auto_connect_switch,
-                        ], spacing=Space.XS),
-                        padding=ft.Padding(left=Space.XS, top=Space.XS, bottom=Space.XS, right=Space.XS),
+                        content=ft.Column(
+                            [
+                                self.remember_password_switch,
+                                self.auto_connect_switch,
+                            ],
+                            spacing=Space.XS,
+                        ),
+                        padding=ft.Padding(
+                            left=Space.XS, top=Space.XS, bottom=Space.XS, right=Space.XS
+                        ),
                     ),
-                    ft.Row([
-                        self.connect_button, self.disconnect_button, self.test_button
-                    ], spacing=Space.SM),
+                    ft.Row(
+                        [
+                            self.connect_button,
+                            self.disconnect_button,
+                            self.test_button,
+                        ],
+                        spacing=Space.SM,
+                    ),
                 ],
                 scroll=ft.ScrollMode.AUTO,
                 spacing=Space.MD,
@@ -413,14 +500,16 @@ class ConnectionView:
             config_key = "connection.default_sync_folder"
         if self._save_timer:
             self._save_timer.cancel()
+
         def delayed_save():
             try:
                 new_value = e.control.value.strip()
-                self.app_context['config_manager'].set(config_key, new_value)
-                self.app_context['config_manager'].save_config()
+                self.app_context["config_manager"].set(config_key, new_value)
+                self.app_context["config_manager"].save_config()
                 logger.info(f"同步目录已自动保存: {new_value}")
             except Exception as ex:
                 logger.error(f"自动保存失败: {ex}")
+
         self._save_timer = threading.Timer(2.0, delayed_save)
         self._save_timer.start()
 
@@ -445,8 +534,10 @@ class ConnectionView:
         self.smb_form_card.visible = is_smb
         self.title_text.value = "SMB" if is_smb else "NEXTCLOUD"
         try:
-            self.app_context['config_manager'].set("connection.source_type", source_type)
-            self.app_context['config_manager'].save_config()
+            self.app_context["config_manager"].set(
+                "connection.source_type", source_type
+            )
+            self.app_context["config_manager"].save_config()
         except Exception as ex:
             logger.error(f"保存来源类型失败: {ex}")
         self.page.update()
@@ -463,6 +554,7 @@ class ConnectionView:
             except ValueError:
                 raise ValueError("SMB 端口必须是数字")
             from ..smb_client import SMBClient
+
             return SMBClient(
                 host=host,
                 username=self.smb_username_input.value.strip(),
@@ -478,6 +570,7 @@ class ConnectionView:
         if not server_url or not username or not password:
             raise ValueError("请填写完整的连接信息")
         from ..nextcloud_client import NextCloudClient
+
         return NextCloudClient(server_url, username, password)
 
     async def _connect_to_server(self, e):
@@ -498,12 +591,14 @@ class ConnectionView:
         try:
             # app_context['nextcloud_client'] 槽位承载"当前来源客户端"
             # （NextCloudClient / SMBClient 共用同一事实接口）
-            self.app_context['nextcloud_client'] = client
+            self.app_context["nextcloud_client"] = client
 
-            if self.app_context.get('music_service'):
-                self.app_context['music_service'].update_nextcloud_client(client)
-            if self.app_context.get('lyrics_service'):
-                self.app_context['lyrics_service'].update_clients(nextcloud_client=client)
+            if self.app_context.get("music_service"):
+                self.app_context["music_service"].update_nextcloud_client(client)
+            if self.app_context.get("lyrics_service"):
+                self.app_context["lyrics_service"].update_clients(
+                    nextcloud_client=client
+                )
 
             success = await client.test_connection()
 
@@ -512,7 +607,9 @@ class ConnectionView:
                 self._update_connection_status(True)
                 self.show_message("连接成功！", "success")
                 self._toast("连接成功", "success")
-                logger.info(f"✅ 连接成功，点击到完成总耗时 {time.monotonic() - t_start:.1f}s")
+                logger.info(
+                    f"✅ 连接成功，点击到完成总耗时 {time.monotonic() - t_start:.1f}s"
+                )
                 self._save_config()
                 self.view_manager.switch_to_view("file_list")
             else:
@@ -531,11 +628,11 @@ class ConnectionView:
 
     async def _disconnect_from_nextcloud(self, e):
         """断开连接"""
-        self.app_context['nextcloud_client'] = None
-        if self.app_context.get('music_service'):
-            self.app_context['music_service'].update_nextcloud_client(None)
-        if self.app_context.get('lyrics_service'):
-            self.app_context['lyrics_service'].update_clients(nextcloud_client=None)
+        self.app_context["nextcloud_client"] = None
+        if self.app_context.get("music_service"):
+            self.app_context["music_service"].update_nextcloud_client(None)
+        if self.app_context.get("lyrics_service"):
+            self.app_context["lyrics_service"].update_clients(nextcloud_client=None)
         self.is_connected = False
         self._update_connection_status(False)
         self.show_message("已断开连接", "info")
@@ -572,7 +669,7 @@ class ConnectionView:
     def _save_config(self):
         """保存连接配置（含来源类型与 SMB 凭据）"""
         try:
-            cm = self.app_context['config_manager']
+            cm = self.app_context["config_manager"]
             source_type = self._current_source_type()
             remember = self.remember_password_switch.value
 
@@ -581,22 +678,35 @@ class ConnectionView:
             # Nextcloud 字段始终保存（保留另一来源的表单内容）
             cm.set("connection.server_url", self.url_input.value.strip())
             cm.set("connection.username", self.username_input.value.strip())
-            cm.set("connection.default_sync_folder", self.sync_folder_input.value.strip())
+            cm.set(
+                "connection.default_sync_folder", self.sync_folder_input.value.strip()
+            )
             cm.set("connection.auto_connect", self.auto_connect_switch.value)
             cm.set("connection.remember_credentials", remember)
-            cm.set("connection.password", self.password_input.value or "" if remember else "")
+            cm.set(
+                "connection.password",
+                self.password_input.value or "" if remember else "",
+            )
 
             # SMB 字段
             cm.set("connection.smb.host", self.smb_host_input.value.strip())
             cm.set("connection.smb.share", self.smb_share_input.value.strip())
-            cm.set("connection.smb.default_sync_folder", self.smb_sync_folder_input.value.strip() or "/")
+            cm.set(
+                "connection.smb.default_sync_folder",
+                self.smb_sync_folder_input.value.strip() or "/",
+            )
             cm.set("connection.smb.username", self.smb_username_input.value.strip())
             cm.set("connection.smb.domain", self.smb_domain_input.value.strip())
             try:
-                cm.set("connection.smb.port", int(self.smb_port_input.value.strip() or 445))
+                cm.set(
+                    "connection.smb.port", int(self.smb_port_input.value.strip() or 445)
+                )
             except ValueError:
                 cm.set("connection.smb.port", 445)
-            cm.set("connection.smb.password", self.smb_password_input.value or "" if remember else "")
+            cm.set(
+                "connection.smb.password",
+                self.smb_password_input.value or "" if remember else "",
+            )
 
             cm.save_config()
             logger.info("连接配置已保存")
@@ -640,11 +750,13 @@ class ConnectionView:
         """底部悬浮提示，无需滚动即可看到连接结果"""
         bg_color, text_color, _ = get_message_style(message_type)
         try:
-            self.page.show_dialog(ft.SnackBar(
-                ft.Text(message, color=text_color),
-                bgcolor=bg_color,
-                duration=3000,
-            ))
+            self.page.show_dialog(
+                ft.SnackBar(
+                    ft.Text(message, color=text_color),
+                    bgcolor=bg_color,
+                    duration=3000,
+                )
+            )
         except Exception as e:
             logger.debug(f"SnackBar 显示失败: {e}")
 
@@ -660,8 +772,11 @@ class ConnectionView:
             ft.Icons.INFO_OUTLINE, color=text_color, size=22
         )
         self.message_banner.content = ft.Text(
-            message, color=text_color, size=FontSize.BODY,
-            max_lines=3, overflow=ft.TextOverflow.ELLIPSIS,
+            message,
+            color=text_color,
+            size=FontSize.BODY,
+            max_lines=3,
+            overflow=ft.TextOverflow.ELLIPSIS,
         )
         self.message_banner.bgcolor = bg_color
         self.message_banner.visible = True
@@ -670,14 +785,14 @@ class ConnectionView:
 
     def on_view_activated(self):
         """视图激活时检查连接状态"""
-        if self.app_context.get('nextcloud_client'):
+        if self.app_context.get("nextcloud_client"):
             self._update_connection_status(True)
         else:
             self._update_connection_status(False)
 
     def _browse_folder(self, e):
         """浏览文件夹（当前来源的远程目录）"""
-        if not self.app_context.get('nextcloud_client'):
+        if not self.app_context.get("nextcloud_client"):
             self.show_message("请先连接服务器", "error")
             return
 
@@ -693,7 +808,7 @@ class ConnectionView:
         current_folder = folder_input.value.strip()
         selector = FolderSelector(
             self.page,
-            self.app_context['nextcloud_client'],
+            self.app_context["nextcloud_client"],
             current_folder,
         )
 
@@ -701,7 +816,7 @@ class ConnectionView:
             folder_input.value = path
             self.page.update()
             self.show_message(f"已选择文件夹: {path or '/'}", "success")
-            self.app_context['config_manager'].set(config_key, path)
-            self.app_context['config_manager'].save_config()
+            self.app_context["config_manager"].set(config_key, path)
+            self.app_context["config_manager"].save_config()
 
         selector.show_dialog(on_selected)

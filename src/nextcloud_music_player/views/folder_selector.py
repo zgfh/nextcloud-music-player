@@ -2,10 +2,11 @@
 文件夹选择器 - Flet 版本，使用 AlertDialog
 """
 
-import flet as ft
 import asyncio
 import logging
 from pathlib import Path
+
+import flet as ft
 
 from ..utils.theme import Color, Radius
 
@@ -41,27 +42,54 @@ class FolderSelector:
             padding=8,
         )
 
-        self.loading_text = ft.Text("加载中...", size=12, color=Color.TEXT_MUTED, visible=False)
+        self.loading_text = ft.Text(
+            "加载中...", size=12, color=Color.TEXT_MUTED, visible=False
+        )
 
         self.dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("选择同步文件夹", size=16, weight=ft.FontWeight.BOLD),
             content=ft.Container(
-                content=ft.Column([
-                    ft.Row([self.path_display], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                    ft.Row([
-                        ft.IconButton(ft.Icons.ARROW_UPWARD, tooltip="上级目录", on_click=self._go_back),
-                        ft.IconButton(ft.Icons.HOME, tooltip="根目录", on_click=self._go_root),
-                        ft.IconButton(ft.Icons.REFRESH, tooltip="刷新", on_click=self._refresh),
-                    ], spacing=4),
-                    self.loading_text,
-                    ft.Container(content=self.folder_list, height=350),
-                ], spacing=8, tight=True),
+                content=ft.Column(
+                    [
+                        ft.Row(
+                            [self.path_display],
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        ),
+                        ft.Row(
+                            [
+                                ft.IconButton(
+                                    ft.Icons.ARROW_UPWARD,
+                                    tooltip="上级目录",
+                                    on_click=self._go_back,
+                                ),
+                                ft.IconButton(
+                                    ft.Icons.HOME,
+                                    tooltip="根目录",
+                                    on_click=self._go_root,
+                                ),
+                                ft.IconButton(
+                                    ft.Icons.REFRESH,
+                                    tooltip="刷新",
+                                    on_click=self._refresh,
+                                ),
+                            ],
+                            spacing=4,
+                        ),
+                        self.loading_text,
+                        ft.Container(content=self.folder_list, height=350),
+                    ],
+                    spacing=8,
+                    tight=True,
+                ),
                 width=400,
             ),
             actions=[
-                ft.TextButton("取消", on_click=self._cancel,
-                              style=ft.ButtonStyle(color=Color.TEXT_SECONDARY)),
+                ft.TextButton(
+                    "取消",
+                    on_click=self._cancel,
+                    style=ft.ButtonStyle(color=Color.TEXT_SECONDARY),
+                ),
                 ft.FilledButton(
                     "选择此文件夹",
                     icon=ft.Icons.CHECK,
@@ -95,21 +123,27 @@ class FolderSelector:
             if not folders:
                 self.folder_list.controls.append(
                     ft.Container(
-                        content=ft.Text("没有子文件夹", size=12, color=Color.TEXT_MUTED),
+                        content=ft.Text(
+                            "没有子文件夹", size=12, color=Color.TEXT_MUTED
+                        ),
                         padding=16,
                         alignment=ft.Alignment(0, 0),
                     )
                 )
             else:
                 for folder in folders:
-                    folder_name = folder.get('name', folder.get('path', ''))
+                    folder_name = folder.get("name", folder.get("path", ""))
                     icon = ft.Icons.FOLDER
 
                     self.folder_list.controls.append(
                         ft.ListTile(
                             leading=ft.Icon(icon, color=Color.ACCENT),
-                            title=ft.Text(folder_name, size=13, color=Color.TEXT_PRIMARY),
-                            on_click=lambda e, name=folder_name: self._enter_folder(name),
+                            title=ft.Text(
+                                folder_name, size=13, color=Color.TEXT_PRIMARY
+                            ),
+                            on_click=lambda e, name=folder_name: self._enter_folder(
+                                name
+                            ),
                         )
                     )
         except Exception as e:

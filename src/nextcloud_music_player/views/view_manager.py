@@ -2,8 +2,9 @@
 视图管理器 - 基于 Flet NavigationBar 管理三个主要界面的切换
 """
 
-import flet as ft
 import logging
+
+import flet as ft
 
 from ..utils.theme import Color
 
@@ -18,9 +19,9 @@ class ViewManager:
         self.app_context = app_context
         self.current_view = None
 
-        config_manager = app_context['config_manager']
-        music_library = app_context['music_library']
-        nextcloud_client = app_context.get('nextcloud_client')
+        config_manager = app_context["config_manager"]
+        music_library = app_context["music_library"]
+        nextcloud_client = app_context.get("nextcloud_client")
 
         # 创建服务（复用服务层）
         from ..services.lyrics_service import LyricsService
@@ -29,22 +30,24 @@ class ViewManager:
         self.lyrics_service = LyricsService(
             config_manager=config_manager,
             nextcloud_client=nextcloud_client,
-            music_library=music_library
+            music_library=music_library,
         )
 
         self.music_service = MusicService(
             music_library=music_library,
             nextcloud_client=nextcloud_client,
             config_manager=config_manager,
-            lyrics_service=self.lyrics_service
+            lyrics_service=self.lyrics_service,
         )
 
-        app_context['music_service'] = self.music_service
-        app_context['lyrics_service'] = self.lyrics_service
+        app_context["music_service"] = self.music_service
+        app_context["lyrics_service"] = self.lyrics_service
 
         # 设置回调
         self.music_service.set_playlist_change_callback(self._handle_playlist_change)
-        self.music_service.set_sync_folder_change_callback(self._handle_sync_folder_change)
+        self.music_service.set_sync_folder_change_callback(
+            self._handle_sync_folder_change
+        )
 
         # 创建视图
         from .connection_view import ConnectionView
@@ -89,13 +92,17 @@ class ViewManager:
         # 组装页面 - SafeArea 处理 iOS 刘海/灵动岛（顶部）与 Home 指示条（底部）遮挡
         page.add(
             ft.SafeArea(
-                content=ft.Column([
-                    self.content_area,
-                    ft.Container(
-                        content=self.nav_bar,
-                        border=ft.Border.only(top=ft.BorderSide(1, Color.BORDER)),
-                    ),
-                ], expand=True, spacing=0),
+                content=ft.Column(
+                    [
+                        self.content_area,
+                        ft.Container(
+                            content=self.nav_bar,
+                            border=ft.Border.only(top=ft.BorderSide(1, Color.BORDER)),
+                        ),
+                    ],
+                    expand=True,
+                    spacing=0,
+                ),
                 expand=True,
             )
         )
@@ -127,14 +134,16 @@ class ViewManager:
         view, nav_index = view_map.get(view_name, (self.playback_view, 2))
 
         # 通知旧视图切出（停止定时刷新等）
-        if self.current_view is not view and hasattr(self.current_view, 'on_view_deactivated'):
+        if self.current_view is not view and hasattr(
+            self.current_view, "on_view_deactivated"
+        ):
             try:
                 self.current_view.on_view_deactivated()
             except Exception as e:
                 logger.error(f"视图切出回调失败: {e}")
 
         # Flet 0.86：控件脱离页面后会被冻结且不可复用，切回时必须重建
-        if hasattr(view, 'rebuild'):
+        if hasattr(view, "rebuild"):
             self.content_area.content = view.rebuild()
         else:
             self.content_area.content = view.build()
@@ -142,18 +151,18 @@ class ViewManager:
         self.current_view = view
 
         # 保存当前视图到配置
-        self.app_context['config_manager'].set("app.last_view", view_name)
-        self.app_context['config_manager'].save_config()
+        self.app_context["config_manager"].set("app.last_view", view_name)
+        self.app_context["config_manager"].save_config()
 
         # 通知视图激活
-        if hasattr(view, 'on_view_activated'):
+        if hasattr(view, "on_view_activated"):
             view.on_view_activated()
 
         self.page.update()
 
     def show_status_message(self, message: str, message_type: str = "info"):
         """在当前视图中显示状态消息"""
-        if hasattr(self.current_view, 'show_message'):
+        if hasattr(self.current_view, "show_message"):
             self.current_view.show_message(message, message_type)
 
     def get_view(self, view_name: str):
