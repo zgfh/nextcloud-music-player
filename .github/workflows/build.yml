@@ -69,6 +69,7 @@ jobs:
       with:
         name: android-build
         path: build/flutter/build/app/outputs/flutter-apk/*.apk
+        if-no-files-found: error
         retention-days: 7
 
   build-linux:
@@ -105,14 +106,15 @@ jobs:
 
     - name: Package Linux app
       run: |
-        cd build/flutter/build/linux/x64/release
-        tar -czf "../../../../nextcloud-music-player-linux-x64.tar.gz" bundle
+        tar -czf nextcloud-music-player-linux-x64.tar.gz \
+          -C build/flutter/build/linux/x64/release bundle
 
     - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4
       with:
         name: linux-build
         path: nextcloud-music-player-linux-x64.tar.gz
+        if-no-files-found: error
         retention-days: 7
 
   build-windows:
@@ -154,6 +156,7 @@ jobs:
       with:
         name: windows-build
         path: nextcloud-music-player-windows-x64.zip
+        if-no-files-found: error
         retention-days: 7
 
   build-macos:
@@ -192,6 +195,7 @@ jobs:
       with:
         name: macos-build
         path: nextcloud-music-player-macos.zip
+        if-no-files-found: error
         retention-days: 7
 
   # CI 无 Apple 开发者证书/描述文件，正式签名的 IPA 由本地 deploy_iso.sh 完成；
@@ -231,6 +235,7 @@ jobs:
       with:
         name: ios-build
         path: nextcloud-music-player-ios-simulator.zip
+        if-no-files-found: error
         retention-days: 7
 
   # 发布开发版本（仅 main 分支 push，避免 PR 触发刷 release）
