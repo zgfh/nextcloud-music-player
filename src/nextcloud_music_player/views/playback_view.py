@@ -107,6 +107,9 @@ class PlaybackView:
         self._built = False
         self._view_active = False
         self._ui_task = None
+        # 播放请求序号：每次新的播放请求自增，仍在进行的旧请求（下载/播放）完成后发现
+        # 序号已过期即丢弃，避免慢网络下旧下载完成把用户最新选择的歌曲顶掉
+        self._play_request_seq = 0
 
     def rebuild(self):
         """重建视图（Flet 0.86 控件脱离页面后被冻结且不可复用，切回时必须重建）"""
@@ -307,45 +310,92 @@ class PlaybackView:
             self._set_status("暂停", Color.STATUS_PAUSED)
         self.page.update()
 
-    async def play_selected_song(self, song_info: Dict[str, Any]):
-        """播放选中的歌曲"""
+    async def play_selected_song(self, song_info: Dict[str, Any]) -> bool:
+        """播放选中的歌曲。
+
+        每次调用都视为一次新的播放请求：先停掉旧歌并给出"切换中"反馈
+        （未下载的歌曲在慢网络下要等很久，不能没有任何提示），
+        请求序号用于让更早的、仍在下载的旧请求在完成后被丢弃。
+        """
+        request_id = self._play_request_seq + 1
+        self._play_request_seq = request_id
+
+        def superseded() -> bool:
+            return request_id != self._play_request_seq
+
         try:
+            if self.playback_service.is_playing() or self.playback_service.current_song_state.get('is_paused'):
+                await self.playback_service.stop_music()
+            self._set_status("切换中...", Color.INFO)
+            self.page.update()
+
             if song_info.get('is_downloaded') and song_info.get('filepath'):
                 local_path = song_info['filepath']
                 if os.path.exists(local_path):
-                    await self.play_music_file(local_path)
-                    return
+                    return await self.play_music_file(local_path, request_id=request_id)
 
             song_name = song_info.get('name', '')
             remote_path = song_info.get('remote_path', '')
             music_service = self.app_context.get('music_service')
-            if music_service and remote_path:
+            if not (music_service and remote_path):
+                self._set_status("无法播放", Color.DANGER_TEXT)
+                self.page.update()
+                return False
+
+            self._set_status("下载中...", Color.INFO)
+            self.page.update()
+            try:
                 success = await music_service.download_file(remote_path, song_name)
-                if success:
-                    music_library = self.app_context.get('music_library')
-                    updated_info = music_library.get_song_info(song_name) if music_library else None
-                    if updated_info and updated_info.get('filepath'):
-                        await self.play_music_file(updated_info['filepath'])
+            except Exception as dl_error:
+                logger.error(f"下载歌曲失败: {song_name} - {dl_error}")
+                success = False
+
+            if superseded():
+                logger.info(f"播放请求已过期，丢弃下载结果: {song_name}")
+                return False
+            if not success:
+                self._set_status("下载失败", Color.DANGER_TEXT)
+                self.page.update()
+                return False
+
+            music_library = self.app_context.get('music_library')
+            updated_info = music_library.get_song_info(song_name) if music_library else None
+            if updated_info and updated_info.get('filepath'):
+                return await self.play_music_file(updated_info['filepath'], request_id=request_id)
+
+            self._set_status("播放失败", Color.DANGER_TEXT)
+            self.page.update()
+            return False
         except Exception as e:
             logger.error(f"播放选中歌曲失败: {e}")
+            return False
 
-    async def play_music_file(self, file_path: str):
-        """播放音乐文件"""
+    async def play_music_file(self, file_path: str, request_id: Optional[int] = None) -> bool:
+        """播放音乐文件（request_id 过期时放弃播放）"""
         try:
+            if request_id is not None and request_id != self._play_request_seq:
+                logger.info(f"播放请求已过期，放弃播放: {file_path}")
+                return False
+
             self.playback_service.set_current_song(file_path)
             try:
                 await asyncio.wait_for(self.playback_service.play_music(), timeout=5.0)
             except asyncio.TimeoutError:
                 logger.error("播放音乐超时")
-                return
+                self._set_status("播放失败", Color.DANGER_TEXT)
+                self.page.update()
+                return False
 
             if self.lyrics_component:
                 song_name = os.path.basename(file_path)
                 self.lyrics_component.load_lyrics_for_song(song_name, auto_download=True)
 
+            self._set_status("播放中", Color.STATUS_PLAYING)
             self.update_ui()
+            return True
         except Exception as e:
             logger.error(f"播放音乐文件失败: {e}")
+            return False
 
     async def _stop_music(self):
         """停止播放"""

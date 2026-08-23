@@ -305,13 +305,27 @@ idevicesyslog                      # 实时系统日志（含崩溃信息）
 
 ## 🧪 测试
 
+无头交互测试：不启动界面、不连真实网络，用替身（FakeNextcloudClient 可模拟慢网络/下载失败/404）驱动真实的视图代码，全自动断言交互行为，**无需截图人工核对**。
+
+覆盖的交互场景：
+
+- **播放**：未下载歌曲的"下载中"提示、切歌先停旧歌、连点两首时慢下载不会顶掉最新选择、下载失败/播放失败的状态反馈
+- **连接**：连接中禁用按钮、成功跳转文件列表、凭据错误/网络异常提示、SnackBar 走 `show_dialog`
+- **文件夹选择**：对话框打开/关闭、目录导航、目录 404 自动回退根目录
+- **文件列表**：同步进度提示、同步失败反馈、同步中重复点击防抖、搜索过滤
+
 ```bash
 # 运行所有测试
 python -m pytest tests/ -v
 
+# 只跑播放交互测试
+python -m pytest tests/test_playback_interactions.py -v
+
 # 生成覆盖率报告
 python -m pytest tests/ --cov=src/nextcloud_music_player --cov-report=html
 ```
+
+截图验证仅用于发布前的视觉效果检查，交互行为回归全部由上述自动化测试承担。
 
 ## 📦 构建与发布
 

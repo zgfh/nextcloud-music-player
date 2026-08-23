@@ -30,6 +30,9 @@ dependencies = [
     "flet-audio>=0.86.0",
     "requests>=2.25.0",
     "httpx>=0.24.0",
+    # SMB 音乐来源：必须保持纯 Python（仅依赖 pyasn1），
+    # 以便 flet build ios/android 的 serious-python 能打包进应用。
+    "pysmb",
     # 注意：flet build ios 在 macOS (darwin) 上执行打包，
     # `sys_platform == 'ios'` 标记在打包机上永远为假，包不会进入 iOS bundle，
     # 故不能使用该标记（曾导致 iOS 上无声回退到 FallbackAudioPlayer）。
@@ -39,6 +42,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-asyncio",
     "pytest-cov",
     "black",
     "flake8",
@@ -47,6 +51,15 @@ dev = [
 ]
 desktop = [
     "pygame>=2.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+asyncio_mode = "auto"
+# 交互测试大量使用 asyncio.sleep 模拟慢网络，统一用事件循环时间
+filterwarnings = [
+    "ignore::DeprecationWarning",
 ]
 
 # 明确指定包的位置
