@@ -1,608 +1,248 @@
 name: Build and Release
 
+# Flet 打包（flet build）：与本地 deploy_iso.sh 同一套工具链
+# （Flutter 3.44.8 + flet 0.86.5），按平台矩阵出包。
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   release:
     types: [published]
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.44.8'
+  FLET_VERSION: '0.86.5'
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
+
+    - uses: actions/setup-python@v5
       with:
-        python-version: '3.12'
-    
+        python-version: '3.13'
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest
-        # 只安装核心依赖，避免GUI相关依赖
-        pip install requests>=2.25.0 httpx>=0.24.0
-    
-    - name: Run basic tests
-      run: |
-        # 只运行最小化的测试，避免GUI依赖
-        pytest tests/test_minimal.py -v
+        pip install -e ".[dev]"
 
-  build-linux:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.12'
-    
-
-    - name: Debug pkg-config and GObject Introspection
-      run: |
-        echo "=== Checking pkg-config path ==="
-        echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
-        pkg-config --list-all | grep -i gir || true
-        echo "=== Checking available .pc files ==="
-        find /usr -name "*.pc" 2>/dev/null | grep -i gir || true
-        echo "=== Checking GObject Introspection packages ==="
-        apt-cache search gobject | grep -i introspection || true
-        dpkg -l | grep -i gir || true
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        
-        # 检查 Ubuntu 版本
-        echo "=== System information ==="
-        lsb_release -a || cat /etc/os-release
-        
-        # 获取 Ubuntu 版本
-        UBUNTU_VERSION=$(lsb_release -rs 2>/dev/null || echo "unknown")
-        echo "Ubuntu version: $UBUNTU_VERSION"
-        
-        # 安装基础依赖
-        echo "=== Installing base dependencies ==="
-        sudo apt-get install -y \
-          git \
-          build-essential \
-          pkg-config \
-          python3-dev \
-          python3-venv \
-          libcairo2-dev \
-          gir1.2-gtk-3.0 \
-          libcanberra-gtk3-module \
-          libglib2.0-dev \
-          gobject-introspection
-        
-        # 根据 Ubuntu 版本选择正确的 girepository 包
-        echo "=== Installing girepository package based on Ubuntu version ==="
-        if [[ "$UBUNTU_VERSION" =~ ^(24\.|25\.|26\.) ]]; then
-          echo "Ubuntu 24.04+ detected - using libgirepository-2.0-dev"
-          sudo apt-get install -y libgirepository-2.0-dev || {
-            echo "libgirepository-2.0-dev not available, trying libgirepository1.0-dev"
-            sudo apt-get install -y libgirepository1.0-dev
-          }
-        else
-          echo "Ubuntu 22.04 or earlier detected - using libgirepository1.0-dev"
-          sudo apt-get install -y libgirepository1.0-dev || {
-            echo "libgirepository1.0-dev not available, trying libgirepository-2.0-dev"
-            sudo apt-get install -y libgirepository-2.0-dev
-          }
-        fi
-        
-        # 补充其他必要的依赖
-        echo "=== Installing additional dependencies ==="
-        sudo apt-get install -y \
-          libpango1.0-dev \
-          libgtk-3-dev || true
-        
-        # 智能选择 WebKit 版本
-        echo "=== Checking available WebKit packages ==="
-        if apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
-          echo "Installing WebKit 4.1"
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            gir1.2-webkit2-4.1 \
-            libwebkit2gtk-4.1-0 || true
-        elif apt-cache show libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
-          echo "Installing WebKit 4.0"
-          sudo apt-get install -y \
-            libwebkit2gtk-4.0-dev \
-            gir1.2-webkit2-4.0 \
-            libwebkit2gtk-4.0-37 || true
-        else
-          echo "No suitable WebKit version found, skipping"
-        fi
-        
-        # 安装音频相关依赖
-        sudo apt-get install -y \
-          libasound2-dev \
-          libpulse-dev \
-          portaudio19-dev \
-          libgstreamer1.0-dev \
-          libgstreamer-plugins-base1.0-dev || true
-        
-        # 验证关键依赖是否安装成功
-        echo "=== Verifying installations ==="
-        pkg-config --exists glib-2.0 && echo "✓ glib-2.0 found" || echo "✗ glib-2.0 missing"
-        pkg-config --exists cairo && echo "✓ cairo found" || echo "✗ cairo missing"
-        pkg-config --exists cairo-gobject && echo "✓ cairo-gobject found" || echo "✗ cairo-gobject missing"
-        if pkg-config --exists girepository-1.0; then
-          echo "✓ girepository-1.0 found"
-        elif pkg-config --exists girepository-2.0; then
-          echo "✓ girepository-2.0 found"
-        else
-          echo "✗ girepository not found"
-        fi
-    
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install briefcase
-        pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
-        # 安装音频相关的Python包（用于Linux构建）
-        pip install pygame>=2.0.0 mutagen>=1.45.0 || true
-    
-
-    - name: Build Linux app
-      run: |
-        echo "=== Starting Linux build process ==="
-        echo "Python version: $(python --version)"
-        echo "System python3 version: $(python3 --version)"
-        echo "Briefcase version: $(python -m briefcase --version)"
-        
-        # 方法1: 尝试直接构建
-        echo "=== Method 1: Direct build ==="
-        if python -m briefcase build linux; then
-          echo "✓ Direct build successful"
-          BUILD_SUCCESS=true
-        else
-          echo "✗ Direct build failed"
-          BUILD_SUCCESS=false
-        fi
-        
-        # 方法2: 如果直接构建失败，尝试使用 Docker
-        if [ "$BUILD_SUCCESS" = false ]; then
-          echo "=== Method 2: Docker build fallback ==="
-          if command -v docker >/dev/null 2>&1; then
-            echo "Docker available, attempting Docker build..."
-            python -m briefcase build linux --target docker || {
-              echo "Docker build also failed"
-              DOCKER_SUCCESS=false
-            }
-            if [ "${DOCKER_SUCCESS:-true}" != false ]; then
-              echo "✓ Docker build successful"
-              BUILD_SUCCESS=true
-            fi
-          else
-            echo "Docker not available"
-          fi
-        fi
-        
-        # 如果构建失败，显示日志并退出
-        if [ "$BUILD_SUCCESS" = false ]; then
-          echo "=== All build methods failed, checking logs ==="
-          find . -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \; || true
-          exit 1
-        fi
-        
-        # 尝试打包
-        python -m briefcase package linux || {
-          echo "=== Package failed, checking logs ==="
-          find . -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \; || true
-          exit 1
-        }
-        
-        echo "=== Build completed successfully ==="
-        ls -la dist/ || true
-    
-    - name: Upload Linux artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: linux-build
-        path: dist/*.deb
-
-  build-windows:
-    needs: test
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install briefcase
-        pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
-    
-    - name: Build Windows app
-      run: |
-        python -m briefcase build windows
-        python -m briefcase package windows
-    
-    - name: Upload Windows artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-build
-        path: dist/*.msi
-
-  build-macos:
-    needs: test
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install briefcase
-        pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
-    
-    - name: Build macOS app
-      run: |
-        python -m briefcase build macOS
-        # 使用 ad-hoc 签名（适用于开发和测试），不需要交互输入
-        python -m briefcase package macOS --adhoc-sign --no-input
-    
-    - name: Upload macOS artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-build
-        path: dist/*.dmg
-
-  build-ios:
-    needs: test
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: Set up Xcode
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: latest-stable
-    
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install briefcase
-        pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
-    
-    - name: Create iOS app
-      run: |
-        python -m briefcase create iOS
-    
-    - name: Build iOS app
-      run: |
-        python -m briefcase build iOS
-        echo "=== Listing iOS build output ==="
-        find . -name "*.app" -type d | head -10
-        find . -path "*/ios/xcode/build/*" -type d | head -10
-      continue-on-error: true  # iOS构建可能因为缺少证书而失败
-    
-    - name: Package iOS app
-      run: |
-        echo "=== Attempting iOS packaging with different signing strategies ==="
-        
-        # 策略1: 尝试 ad-hoc 签名（最可能成功）
-        echo "Strategy 1: Ad-hoc signing"
-        if python -m briefcase package iOS --adhoc-sign; then
-          echo "✓ Ad-hoc signing successful"
-        else
-          echo "✗ Ad-hoc signing failed"
-        fi
-        
-        # 策略2: 尝试无签名构建（仅生成 .app）
-        echo "Strategy 2: No signing (development only)"
-        python -m briefcase build iOS || echo "Build step failed"
-        
-        # 策略3: 手动创建未签名的 IPA（如果有 .app 文件）
-        echo "Strategy 3: Manual unsigned IPA creation"
-        APP_PATH=$(find . -name "*.app" -type d | head -1)
-        if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
-          echo "Found .app at: $APP_PATH"
-          mkdir -p Payload
-          cp -r "$APP_PATH" Payload/
-          zip -r "NextCloud-Music-Player-unsigned.ipa" Payload/
-          rm -rf Payload/
-          echo "✓ Created unsigned IPA: NextCloud-Music-Player-unsigned.ipa"
-        else
-          echo "✗ No .app file found for manual IPA creation"
-        fi
-        
-        echo "=== Listing all iOS artifacts ==="
-        find . -name "*.ipa" 2>/dev/null || echo "No .ipa files found"
-        find . -name "*.app" -type d 2>/dev/null | head -5
-        ls -la build/nextcloud-music-player/ios/xcode/build/ || true
-      continue-on-error: true
-    
-    - name: Create iOS archive
-      run: |
-        # 创建包含源码和构建产物的压缩包
-        mkdir -p ios-distribution
-        
-        # 复制 Xcode 项目
-        if [ -d "build/nextcloud-music-player/ios" ]; then
-          cp -r build/nextcloud-music-player/ios ios-distribution/
-        fi
-        
-        # 复制任何生成的 .app 文件
-        find . -name "*.app" -type d -exec cp -r {} ios-distribution/ \; 2>/dev/null || true
-        
-        # 复制任何生成的 .ipa 文件（包括未签名的）
-        find . -name "*.ipa" -exec cp {} ios-distribution/ \; 2>/dev/null || true
-        
-        # 创建详细的说明文件
-        cat > ios-distribution/README.md << 'EOF'
-        # iOS Build Artifacts
-        
-        This package contains NextCloud Music Player for iOS in multiple formats.
-        
-        ## Installation Options
-        
-        ### Option 1: Ready-to-install IPA (if available)
-        - Look for .ipa files in this directory
-        - Signed IPA: Can be installed directly via Xcode or third-party tools
-        - Unsigned IPA: Requires re-signing with your certificate
-        
-        ### Option 2: Xcode Project (Always Available)
-        1. Open ios/xcode/NextCloud Music Player.xcodeproj in Xcode
-        2. Configure your Apple Developer account and signing
-        3. Build and run on your device
-        
-        ## Manual Installation Steps
-        
-        ### For Signed IPA:
-        Install via Xcode or iOS App Installer tools
-        
-        ### For Unsigned IPA:
-        Re-sign with your certificate using codesign
-        
-        ### For Xcode Project:
-        1. Open Xcode
-        2. File -> Open -> Select the .xcodeproj file
-        3. Select your development team in Project Settings -> Signing & Capabilities
-        4. Connect your iOS device
-        5. Product -> Run
-        
-        ## File Types Explained
-        
-        - .app files: Raw application bundles (need Xcode to install)
-        - .ipa files: iOS App Store packages (can be installed directly)
-        - ios/ folder: Complete Xcode project source
-        
-        ## Important Notes
-        
-        - Unsigned builds: Only work on jailbroken devices or require re-signing
-        - Development builds: Require the device to be added to your Apple Developer account
-        - App Store builds: Need Apple Developer Program membership and proper certificates
-        
-        For development and testing, using the Xcode project is the most reliable method.
-        EOF
-        
-        # 列出包含的文件
-        echo "" >> ios-distribution/README.md
-        echo "## Files in this package:" >> ios-distribution/README.md
-        find ios-distribution -type f -not -name "README.md" | sed 's|ios-distribution/|- |' >> ios-distribution/README.md
-        
-        # 创建压缩包
-        tar -czf ios-build.tar.gz ios-distribution/
-        
-        echo "=== iOS distribution package created ==="
-        ls -la ios-build.tar.gz
-        echo "=== Contents summary ==="
-        ls -la ios-distribution/
-    
-    - name: Upload iOS artifacts
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: ios-build
-        path: |
-          ios-build.tar.gz
-          ios-distribution/**/*
-        retention-days: 7
+    - name: Run unit tests
+      run: python -m pytest tests/ -v
 
   build-android:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
+
+    - uses: actions/setup-python@v5
       with:
-        python-version: '3.12'
-    
-    - name: Check available Cairo packages
-      run: |
-        echo "=== Checking available Cairo packages ==="
-        apt-cache search cairo | grep -i gobject || true
-        apt-cache search libcairo || true
-    
-    - name: Debug pkg-config and GObject Introspection
-      run: |
-        echo "=== Checking pkg-config path ==="
-        echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
-        pkg-config --list-all | grep -i gir || true
-        echo "=== Checking available .pc files ==="
-        find /usr -name "*.pc" 2>/dev/null | grep -i gir || true
-        find /usr -name "girepository*.pc" 2>/dev/null || true
-        echo "=== Checking GObject Introspection packages ==="
-        apt-cache search gobject | grep -i introspection || true
-        dpkg -l | grep -i gir || true
-        echo "=== Testing pkg-config for girepository-2.0 ==="
-        pkg-config --exists girepository-2.0 && echo "Found!" || echo "Not found"
-        echo "=== Looking for girepository .pc files ==="
-        find /usr -name "*girepository*.pc" 2>/dev/null || true
-        echo "=== Checking pkg-config search path ==="
-        pkg-config --variable pc_path pkg-config || true
-        echo "=== Trying to locate girepository-2.0.pc ==="
-        locate girepository-2.0.pc 2>/dev/null || find /usr -name "girepository-2.0.pc" 2>/dev/null || true
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        
-        # 检查 Ubuntu 版本
-        echo "=== Ubuntu version ==="
-        lsb_release -a || cat /etc/os-release
-        
-        # 获取 Ubuntu 版本
-        UBUNTU_VERSION=$(lsb_release -rs 2>/dev/null || echo "unknown")
-        echo "Ubuntu version: $UBUNTU_VERSION"
-        
-        # 安装基础依赖
-        echo "=== Installing base dependencies for Android build ==="
-        sudo apt-get install -y \
-          git \
-          build-essential \
-          pkg-config \
-          python3-dev \
-          python3-venv \
-          libcairo2-dev \
-          gir1.2-gtk-3.0 \
-          libcanberra-gtk3-module \
-          libglib2.0-dev \
-          gobject-introspection
-        
-        # 根据 Ubuntu 版本选择正确的 girepository 包
-        echo "=== Installing girepository package based on Ubuntu version ==="
-        if [[ "$UBUNTU_VERSION" =~ ^(24\.|25\.|26\.) ]]; then
-          echo "Ubuntu 24.04+ detected - using libgirepository-2.0-dev"
-          sudo apt-get install -y libgirepository-2.0-dev || {
-            echo "libgirepository-2.0-dev not available, trying libgirepository1.0-dev"
-            sudo apt-get install -y libgirepository1.0-dev
-          }
-        else
-          echo "Ubuntu 22.04 or earlier detected - using libgirepository1.0-dev"
-          sudo apt-get install -y libgirepository1.0-dev || {
-            echo "libgirepository1.0-dev not available, trying libgirepository-2.0-dev"
-            sudo apt-get install -y libgirepository-2.0-dev
-          }
-        fi
-        
-        # 补充其他必要的依赖
-        echo "=== Installing additional dependencies ==="
-        sudo apt-get install -y \
-          libpango1.0-dev \
-          libgtk-3-dev || true
-        
-        # 验证关键依赖
-        echo "=== Verifying Android build dependencies ==="
-        pkg-config --exists glib-2.0 && echo "✓ glib-2.0 found" || echo "✗ glib-2.0 missing"
-        pkg-config --exists cairo && echo "✓ cairo found" || echo "✗ cairo missing"
-        if pkg-config --exists girepository-1.0; then
-          echo "✓ girepository-1.0 found"
-        elif pkg-config --exists girepository-2.0; then
-          echo "✓ girepository-2.0 found" 
-        else
-          echo "⚠ girepository not found - Android build may still succeed"
-        fi
-    
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
+        python-version: '3.13'
+
+    - uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
+    - uses: subosito/flutter-action@v2
       with:
-        log-accepted-android-sdk-licenses: false
-
-    - name: Accept Android SDK licenses
-      run: |
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
-    - name: Install Android SDK components
-      run: |
-        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-          "platforms;android-33" \
-          "build-tools;33.0.0" \
-          "cmake;3.22.1" \
-          "ndk;25.1.8937393"
-
-    - name: Set Android environment variables
-      run: |
-        echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
-        echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: stable
+        cache: true
 
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install briefcase
-        pip install toga>=0.4.0 requests>=2.25.0 httpx>=0.24.0
-    
-    - name: Create Android app
-      run: |
-        python -m briefcase create android
-    
-    - name: Build Android app
-      run: |
-        python -m briefcase build android
-      continue-on-error: true  # Android构建可能因为环境配置而失败
-    
-    - name: Package Android app
-      run: |
-        python -m briefcase package android
-      continue-on-error: true
-    
+        pip install -e . "flet==${FLET_VERSION}" "flet-audio==${FLET_VERSION}" "flet-cli==${FLET_VERSION}"
+
+    - name: Build Android APK
+      run: flet build apk --yes
+
     - name: Upload Android artifacts
       uses: actions/upload-artifact@v4
-      if: always()
       with:
         name: android-build
-        path: |
-          nextcloud-music-player/android/
-          nextcloud-music-player/android/gradle/app/build/outputs/apk/**/*.apk
+        path: build/flutter/build/app/outputs/flutter-apk/*.apk
         retention-days: 7
 
-  # 发布开发版本（推送到 main/master 分支时）
+  build-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build clang libgtk-3-dev
+
+    - uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: stable
+        cache: true
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e . "flet==${FLET_VERSION}" "flet-audio==${FLET_VERSION}" "flet-cli==${FLET_VERSION}"
+
+    - name: Build Linux app
+      run: flet build linux --yes
+
+    - name: Package Linux app
+      run: |
+        cd build/flutter/build/linux/x64/release
+        tar -czf "../../../../nextcloud-music-player-linux-x64.tar.gz" bundle
+
+    - name: Upload Linux artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-build
+        path: nextcloud-music-player-linux-x64.tar.gz
+        retention-days: 7
+
+  build-windows:
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: stable
+        cache: true
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e . "flet==${Env:FLET_VERSION}" "flet-audio==${Env:FLET_VERSION}" "flet-cli==${Env:FLET_VERSION}"
+      shell: pwsh
+
+    - name: Build Windows app
+      run: flet build windows --yes
+
+    - name: Package Windows app
+      run: |
+        Compress-Archive -Path "build/flutter/build/windows/x64/runner/Release/*" -DestinationPath "nextcloud-music-player-windows-x64.zip"
+      shell: pwsh
+
+    - name: Upload Windows artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-build
+        path: nextcloud-music-player-windows-x64.zip
+        retention-days: 7
+
+  build-macos:
+    needs: test
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: stable
+        cache: true
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e . "flet==${FLET_VERSION}" "flet-audio==${FLET_VERSION}" "flet-cli==${FLET_VERSION}"
+
+    # CI 无开发者证书，走 ad-hoc 签名（可本地运行，分发需重签）
+    - name: Build macOS app
+      run: flet build macos --yes
+
+    - name: Package macOS app
+      run: |
+        APP=$(find build/flutter/build/macos/Build/Products/Release -name "*.app" -maxdepth 1 | head -1)
+        ditto -c -k --keepParent "$APP" nextcloud-music-player-macos.zip
+
+    - name: Upload macOS artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-build
+        path: nextcloud-music-player-macos.zip
+        retention-days: 7
+
+  # CI 无 Apple 开发者证书/描述文件，正式签名的 IPA 由本地 deploy_iso.sh 完成；
+  # 这里出模拟器 .app 验证 iOS 端可编译打包。
+  build-ios:
+    needs: test
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: stable
+        cache: true
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e . "flet==${FLET_VERSION}" "flet-audio==${FLET_VERSION}" "flet-cli==${FLET_VERSION}"
+
+    - name: Build iOS Simulator app
+      run: flet build ios-simulator --yes
+
+    - name: Package iOS Simulator app
+      run: |
+        APP=$(find build/flutter/build/ios/iphonesimulator -name "*.app" -maxdepth 1 | head -1)
+        ditto -c -k --keepParent "$APP" nextcloud-music-player-ios-simulator.zip
+
+    - name: Upload iOS artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ios-build
+        path: nextcloud-music-player-ios-simulator.zip
+        retention-days: 7
+
+  # 发布开发版本（仅 main 分支 push，避免 PR 触发刷 release）
   publish-dev:
-    if: always() && (needs.build-linux.result == 'success' || needs.build-windows.result == 'success' || needs.build-macos.result == 'success' || needs.build-ios.result == 'success' || needs.build-android.result == 'success')
-    needs: [build-linux, build-windows, build-macos, build-ios, build-android]
+    if: github.event_name == 'push' && (needs.build-android.result == 'success' || needs.build-linux.result == 'success' || needs.build-windows.result == 'success' || needs.build-macos.result == 'success' || needs.build-ios.result == 'success')
+    needs: [build-android, build-linux, build-windows, build-macos, build-ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
         path: artifacts
-    
-    - name: List all artifacts for debugging
-      run: |
-        echo "=== Downloaded artifacts structure ==="
-        find artifacts -type f -ls | head -20
-        echo ""
-        echo "=== iOS build contents ==="
-        ls -la artifacts/ios-build/ || echo "No iOS build artifacts found"
-        echo ""
-        echo "=== All available files for release ==="
-        find artifacts -name "*.deb" -o -name "*.msi" -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.apk" | sort
-    
+
     - name: Create development release
       uses: softprops/action-gh-release@v1
       with:
@@ -610,56 +250,48 @@ jobs:
         name: Development Build ${{ github.sha }}
         body: |
           Development build from commit ${{ github.sha }}
-          
+
           This is an automated development release. Use at your own risk.
-          
+
           **📦 Available Downloads:**
-          - **Desktop**: Linux (.deb), Windows (.msi), macOS (.dmg)
-          - **Mobile**: 
-            - iOS: Source code + Xcode project (ios-build.tar.gz) - requires manual signing
-            - Android: APK file (if build succeeded)
-          
-          **📱 iOS Installation:**
-          1. Download and extract ios-build.tar.gz
-          2. Open the Xcode project
-          3. Configure your development team and signing certificates
-          4. Build and install to your device
-          
-          **Note**: Mobile builds may not contain signed packages and are for development/testing purposes.
-          
+          - **Desktop**: Linux (tar.gz), Windows (zip), macOS (zip, ad-hoc signed)
+          - **Mobile**: Android APK, iOS Simulator app (zip)
+
+          **📱 iOS 设备安装：** 正式签名 IPA 请使用本地 `scripts/deploy_iso.sh` 构建（需要 Apple 开发者证书）。
+
           **Changes:**
           ${{ github.event.head_commit.message }}
         files: |
-          artifacts/linux-build/**/*.deb
-          artifacts/windows-build/**/*.msi
-          artifacts/macos-build/**/*.dmg
-          artifacts/ios-build/ios-build.tar.gz
-          artifacts/android-build/**/*.apk
+          artifacts/android-build/*.apk
+          artifacts/linux-build/*.tar.gz
+          artifacts/windows-build/*.zip
+          artifacts/macos-build/*.zip
+          artifacts/ios-build/*.zip
         prerelease: true
         token: ${{ secrets.GITHUB_TOKEN }}
 
-  # 发布正式版本（创建 tag 时）
+  # 发布正式版本（GitHub Release 发布时）
   publish-release:
     if: github.event_name == 'release'
-    needs: [build-linux, build-windows, build-macos, build-ios, build-android]
+    needs: [build-android, build-linux, build-windows, build-macos, build-ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
         path: artifacts
-    
+
     - name: Upload release assets
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          artifacts/linux-build/**/*.deb
-          artifacts/windows-build/**/*.msi
-          artifacts/macos-build/**/*.dmg
-          artifacts/ios-build/ios-build.tar.gz
-          artifacts/android-build/**/*.apk
+          artifacts/android-build/*.apk
+          artifacts/linux-build/*.tar.gz
+          artifacts/windows-build/*.zip
+          artifacts/macos-build/*.zip
+          artifacts/ios-build/*.zip
         token: ${{ secrets.GITHUB_TOKEN }}
