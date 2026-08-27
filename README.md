@@ -94,21 +94,17 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
    cd nextcloud-music-player
    ```
 
-2. **创建虚拟环境**
+2. **安装依赖并运行**（推荐 [uv](https://docs.astral.sh/uv/)）
+   ```bash
+   uv sync --extra desktop      # 桌面播放需要 pygame
+   uv run python -m nextcloud_music_player
+   ```
+
+   或使用 pip：
    ```bash
    python -m venv .venv
-   source .venv/bin/activate  # Linux/macOS
-   # 或
-   .venv\Scripts\activate     # Windows
-   ```
-
-3. **安装依赖**
-   ```bash
-   pip install -e ".[desktop]"  # 桌面播放需要 pygame
-   ```
-
-4. **运行应用**
-   ```bash
+   source .venv/bin/activate    # Windows: .venv\Scripts\activate
+   pip install -e ".[desktop]"
    python -m nextcloud_music_player
    ```
 
@@ -244,21 +240,37 @@ nextcloud-music-player/
 
 ### 开发环境设置
 
-1. **安装开发依赖**
-   ```bash
-   pip install -e ".[dev]"
-   ```
+推荐使用 [uv](https://docs.astral.sh/uv/) 管理环境（仓库已带 `uv.lock`，锁定全部依赖版本）：
 
-2. **运行测试**
-   ```bash
-   python -m pytest tests/ -v
-   ```
+```bash
+uv sync --extra dev                       # 单元测试 + 格式化 + e2e（含 flet[test]）
+uv sync --extra dev --extra desktop       # 叠加桌面播放（pygame）
 
-3. **代码格式化**
-   ```bash
-   black src/ tests/
-   flake8 src/ tests/
-   ```
+uv run python -m nextcloud_music_player   # 运行应用
+```
+
+没有 uv 时也可以用 pip：
+
+```bash
+pip install -e ".[dev,desktop]"
+```
+
+### 运行测试
+
+```bash
+uv run pytest tests/ -v    # 单元/交互测试（详见下文「测试」一节）
+```
+
+### 代码格式化与检查
+
+```bash
+uv run black src/                          # 格式化（CI 用 --check 做门禁）
+uv run isort src/                          # import 排序（profile=black，见 pyproject.toml）
+
+# CI 同款门禁命令，提交前建议本地跑一遍：
+uv run black --check src/ && uv run isort --check-only src/
+uv run flake8 src/ --select=E9,F63,F7,F82  # 语法/未定义名称检查（阻塞项）
+```
 
 ### 🐞 调试
 
@@ -320,9 +332,11 @@ idevicesyslog                      # 实时系统日志（含崩溃信息）
 
 ## 🧪 测试
 
-无头交互测试：不启动界面、不连真实网络，用替身（FakeNextcloudClient 可模拟慢网络/下载失败/404）驱动真实的视图代码，全自动断言交互行为，**无需截图人工核对**。
+测试分两层，都不需要真实 NextCloud/SMB 服务器，全部可在本地自动运行。
 
-覆盖的交互场景：
+### 1. 无头交互测试（pytest，日常开发首选）
+
+不启动界面、不连真实网络，用替身（FakeNextcloudClient 可模拟慢网络/下载失败/404）驱动真实的视图代码，全自动断言交互行为，**无需截图人工核对**，秒级跑完：
 
 - **播放**：未下载歌曲的"下载中"提示、切歌先停旧歌、连点两首时慢下载不会顶掉最新选择、下载失败/播放失败的状态反馈
 - **连接**：连接中禁用按钮、成功跳转文件列表、凭据错误/网络异常提示、SnackBar 走 `show_dialog`
@@ -330,43 +344,58 @@ idevicesyslog                      # 实时系统日志（含崩溃信息）
 - **文件列表**：同步进度提示、同步失败反馈、同步中重复点击防抖、搜索过滤
 
 ```bash
-# 运行所有测试
-python -m pytest tests/ -v
-
-# 只跑播放交互测试
-python -m pytest tests/test_playback_interactions.py -v
-
-# 生成覆盖率报告
-python -m pytest tests/ --cov=src/nextcloud_music_player --cov-report=html
+uv run pytest tests/ -v                                   # 全部（约 4s）
+uv run pytest tests/test_playback_interactions.py -v      # 只跑播放交互
+uv run pytest tests/ --cov=src/nextcloud_music_player --cov-report=html   # 覆盖率
 ```
+
+### 2. 端到端 UI 测试（flet test，真实 Flutter 渲染管线）
+
+`tests/e2e/` 使用 Flet 官方测试框架（`flet.testing`）：FletTestApp 启动 Python 应用 + 真实 `flutter test` 进程（完整渲染管线，非 fake），Tester 提供 `find_by_text / find_by_key / tap / pump_and_settle` 等交互 API，还能 `take_screenshot` 做 golden 截图对比。目前覆盖：连接页 Nextcloud ⇄ SMB 来源切换（表单挂载与标题联动）。
+
+```bash
+# 方式一：本机桌面平台（默认，首次运行会 provision 测试宿主，较慢）
+uv run flet test --tests-dir tests/e2e
+
+# 方式二：iOS 模拟器（与 CI 完全一致，渲染管线同真机）
+xcrun simctl list devices available | grep iPhone    # 任选一个模拟器 UDID
+uv run flet test ios --device-id <UDID> --tests-dir tests/e2e -v
+```
+
+前置条件：Flutter 3.44.x（与 flet 0.86.5 配套）；依赖已含在 `uv sync --extra dev` 中（`flet[test]` 提供 numpy/pillow/scikit-image，golden 截图对比用）。
+
+> **已知问题**（flet 0.86.5 device 模式）：Python 侧断言可能全部通过（pytest 汇总 `1 passed`），但 Dart 侧 `testWidgets` 收尾阶段以 exit code 1 结束且无异常输出，teardown 因此追加一个 ERROR。这是 flet 上游测试框架的 bug，CI 中该 job 已标记 `continue-on-error`；判断测试是否真的通过，看 pytest 汇总行是否 `passed`。桌面平台模式通常无此问题。
 
 截图验证仅用于发布前的视觉效果检查，交互行为回归全部由上述自动化测试承担。
 
 ## 📦 构建与发布
 
-### 桌面平台
+### 本地构建
 
 ```bash
 # 直接运行
-python -m nextcloud_music_player
+uv run python -m nextcloud_music_player
 
-# 或使用 Flet 构建
-flet build macos  # macOS
-flet build linux  # Linux
-flet build windows  # Windows
+# 或使用 flet build 出各平台包（需 Flutter 3.44.x）
+uv run flet build macos     # macOS（.app）
+uv run flet build linux     # Linux（bundle 目录）
+uv run flet build windows   # Windows（exe 目录）
+uv run flet build apk       # Android APK
 ```
 
-### iOS
+iOS 真机包需签名证书，推荐一键部署脚本（自动检测设备、增量构建、签名并安装；免费开发者账号签名 7 天有效，到期重跑续签）：
 
 ```bash
-bash scripts/deploy_iso.sh  # 自动构建、签名并安装到连接的设备（推荐）
+bash scripts/deploy_iso.sh
 ```
 
-### Android
+### CI 自动化（GitHub Actions）
 
-```bash
-flet build apk
-```
+PR 与 main push 会触发三条工作流（详见 [.github/workflows/README.md](.github/workflows/README.md)）：
+
+- **Code Quality**：flake8 语法门禁 + black/isort 格式检查（阻塞），mypy、bandit/safety（非阻塞）
+- **E2E Tests**：全量 pytest，随后在 macOS runner 的 iOS 模拟器上跑 `flet test`（flet-e2e job 因上文提到的上游收尾 bug 暂时 `continue-on-error`）
+- **Build and Release**：`flet build` 出 5 平台产物（Android APK / iOS 模拟器验证包 / macOS / Linux / Windows），产物上传为 artifact；main push 额外发布 dev release，正式版随 GitHub Release 发布（`release.yml` 在 v* tag 时自动生成 changelog 和 Release）
 
 ## 📄 许可证
 
