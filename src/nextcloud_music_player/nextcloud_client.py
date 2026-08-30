@@ -565,7 +565,11 @@ class NextCloudClient:
             return result
 
     async def download_file(
-        self, file_path: str, file_name: str, local_path: str = None
+        self,
+        file_path: str,
+        file_name: str,
+        local_path: str = None,
+        progress_callback=None,
     ) -> str:
         """Download a file from NextCloud with smart caching and multiple methods."""
         logger.info(f"📥 [NC_DOWNLOAD] download_file被调用: {file_path} -> {file_name}")
@@ -599,7 +603,7 @@ class NextCloudClient:
             for i, method in enumerate(download_methods):
                 try:
                     logger.debug(f"🌐 [NC_DOWNLOAD] 方法 {i+1}: {method.__name__}")
-                    content = await method(file_path, file_name)
+                    content = await method(file_path, file_name, progress_callback)
                     if content:
                         logger.info(
                             f"✅ [NC_DOWNLOAD] 方法 {method.__name__} 成功，内容大小: {len(content)} bytes"
@@ -629,7 +633,9 @@ class NextCloudClient:
             logger.debug(f"🔍 [NC_DOWNLOAD] 异常堆栈:\n{traceback.format_exc()}")
             raise
 
-    async def _download_webdav(self, file_path: str, file_name: str) -> bytes:
+    async def _download_webdav(
+        self, file_path: str, file_name: str, progress_callback=None
+    ) -> bytes:
         """Standard WebDAV download using requests."""
         logger.debug(f"🌐 [WEBDAV] _download_webdav开始: {file_path}")
 
@@ -642,16 +648,22 @@ class NextCloudClient:
                 logger.debug(f"🔐 [WEBDAV] 使用认证: {self.username}")
 
                 logger.debug(f"📡 [WEBDAV] 发送GET请求...")
-                response = requests.get(download_url, auth=auth, timeout=120)
-
-                logger.debug(f"📊 [WEBDAV] 响应状态: {response.status_code}")
-                logger.debug(
-                    f"📏 [WEBDAV] 内容长度: {len(response.content) if response.content else 0} bytes"
+                response = requests.get(
+                    download_url, auth=auth, timeout=120, stream=True
                 )
 
+                logger.debug(f"📊 [WEBDAV] 响应状态: {response.status_code}")
                 if response.status_code == 200:
                     logger.debug(f"✅ [WEBDAV] 下载成功")
-                    return response.content
+                    total = int(response.headers.get("content-length", 0) or 0)
+                    content = bytearray()
+                    for chunk in response.iter_content(chunk_size=128 * 1024):
+                        if not chunk:
+                            continue
+                        content.extend(chunk)
+                        if progress_callback:
+                            progress_callback(len(content), total)
+                    return bytes(content)
                 else:
                     error_msg = (
                         f"WebDAV download failed with status {response.status_code}"
@@ -672,15 +684,19 @@ class NextCloudClient:
             logger.debug(f"✅ [WEBDAV] 线程池执行完成，数据大小: {len(result)} bytes")
             return result
 
-    async def _download_direct_url(self, file_path: str, file_name: str) -> bytes:
+    async def _download_direct_url(
+        self, file_path: str, file_name: str, progress_callback=None
+    ) -> bytes:
         """Direct URL download (fallback method)."""
         # 简化为使用WebDAV方法
-        return await self._download_webdav(file_path, file_name)
+        return await self._download_webdav(file_path, file_name, progress_callback)
 
-    async def _download_shared_link(self, file_path: str, file_name: str) -> bytes:
+    async def _download_shared_link(
+        self, file_path: str, file_name: str, progress_callback=None
+    ) -> bytes:
         """Download via shared link (fallback method)."""
         # 简化为使用WebDAV方法
-        return await self._download_webdav(file_path, file_name)
+        return await self._download_webdav(file_path, file_name, progress_callback)
 
     async def get_file_info(self, file_path: str) -> Optional[Dict]:
         """获取文件详细信息使用requests."""

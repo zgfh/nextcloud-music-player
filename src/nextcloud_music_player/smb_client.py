@@ -354,7 +354,11 @@ class SMBClient:
             raise Exception(error)
 
     async def download_file(
-        self, file_path: str, file_name: str, local_path: str = None
+        self,
+        file_path: str,
+        file_name: str,
+        local_path: str = None,
+        progress_callback=None,
     ) -> str:
         """从 SMB 共享下载文件到本地，返回本地路径；失败抛异常"""
         smb_path = to_smb_path(file_path)
@@ -375,8 +379,26 @@ class SMBClient:
                 with self._smb_lock:
 
                     def _do(conn):
+                        total = 0
+                        try:
+                            total = (
+                                conn.getAttributes(self.share, smb_path).file_size or 0
+                            )
+                        except Exception:
+                            pass
                         with open(tmp_path, "wb") as f:
-                            conn.retrieveFile(self.share, smb_path, f)
+
+                            class ProgressWriter:
+                                def write(self, data):
+                                    written = f.write(data)
+                                    if progress_callback:
+                                        progress_callback(f.tell(), total)
+                                    return written
+
+                                def __getattr__(self, name):
+                                    return getattr(f, name)
+
+                            conn.retrieveFile(self.share, smb_path, ProgressWriter())
 
                     self._call(_do)
                 tmp_path.replace(cached_path)

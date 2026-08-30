@@ -518,6 +518,7 @@ class FileListView:
             self.show_message("选中歌曲均已下载", "info")
             return
 
+        self.music_service.download_progress.enqueue(added)
         self.show_message(f"开始下载 {added} 首歌曲...", "info")
         self._start_download_worker()
 

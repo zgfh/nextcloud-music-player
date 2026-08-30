@@ -4,8 +4,11 @@
 """
 
 import asyncio
+import inspect
 import logging
 from typing import Any, Callable, Dict, List, Optional
+
+from .download_progress import DownloadProgressTracker
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,7 @@ class MusicService:
         self.nextcloud_client = nextcloud_client
         self.config_manager = config_manager
         self.lyrics_service = lyrics_service
+        self.download_progress = DownloadProgressTracker()
 
         # 回调函数
         self._playlist_change_callback: Optional[Callable[[List[str], int], None]] = (
@@ -237,18 +241,34 @@ class MusicService:
 
     async def download_file(self, file_path: str, filename: str) -> bool:
         """下载文件"""
+        progress_token = self.download_progress.start(filename)
         try:
             if self.is_file_cached(filename):
                 logger.info(f"文件已缓存，无需下载: {filename}")
+                self.download_progress.finish(True, "文件已在本地", progress_token)
                 return True
 
             local_path = self.music_library.music_dir / filename
             if not self.nextcloud_client:
                 raise Exception("NextCloud客户端未连接")
 
-            success = await self.nextcloud_client.download_file(
-                file_path, filename, local_path
+            download_method = self.nextcloud_client.download_file
+            parameters = inspect.signature(download_method).parameters.values()
+            supports_progress = any(
+                p.name == "progress_callback" or p.kind == p.VAR_KEYWORD
+                for p in parameters
             )
+            if supports_progress:
+                success = await download_method(
+                    file_path,
+                    filename,
+                    local_path,
+                    progress_callback=lambda downloaded, total=0: self.download_progress.update(
+                        downloaded, total, progress_token
+                    ),
+                )
+            else:
+                success = await download_method(file_path, filename, local_path)
 
             if success:
                 # 低采样率 MP3（32kHz 等）在部分播放链路解码劣化，转码为 44.1kHz
@@ -284,9 +304,11 @@ class MusicService:
                     except Exception as lyrics_error:
                         logger.warning(f"启动歌词下载失败: {lyrics_error}")
 
+            self.download_progress.finish(bool(success), token=progress_token)
             return success
 
         except Exception as e:
+            self.download_progress.finish(False, str(e), progress_token)
             logger.error(f"下载文件失败: {e}")
             raise
 

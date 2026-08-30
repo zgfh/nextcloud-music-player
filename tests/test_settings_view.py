@@ -6,7 +6,6 @@ import logging
 from types import SimpleNamespace
 
 import pytest
-
 from fakes import FakeConfigManager, FakePage, FakeViewManager
 
 
@@ -115,6 +114,45 @@ def test_tail_diff_returns_only_new_lines():
         "three"
     ]
     assert SettingsView._new_log_lines(["old"], ["new"]) is None
+
+
+def test_download_card_renders_live_progress():
+    from nextcloud_music_player.services.download_progress import (
+        DownloadProgressTracker,
+    )
+
+    view, _, _ = make_settings_view()
+    tracker = DownloadProgressTracker()
+    tracker.enqueue(2)
+    token = tracker.start("song.mp3")
+    tracker.update(512 * 1024, 1024 * 1024, token)
+    view.app_context["music_service"] = SimpleNamespace(download_progress=tracker)
+
+    assert view._refresh_download_progress() is True
+    assert view.download_status_text.value == "正在下载"
+    assert view.download_filename_text.value == "song.mp3"
+    assert view.download_progress_bar.value == 0.5
+    assert "512.0 KB / 1.0 MB" in view.download_progress_text.value
+    assert "等待 1" in view.download_queue_text.value
+
+
+def test_stale_download_cannot_overwrite_newer_progress():
+    from nextcloud_music_player.services.download_progress import (
+        DownloadProgressTracker,
+    )
+
+    tracker = DownloadProgressTracker()
+    old_token = tracker.start("old.mp3")
+    new_token = tracker.start("new.mp3")
+    tracker.update(100, 100, old_token)
+    tracker.finish(True, token=old_token)
+
+    state = tracker.snapshot()
+    assert state["filename"] == "new.mp3"
+    assert state["status"] == "downloading"
+    assert state["downloaded_bytes"] == 0
+    tracker.update(50, 100, new_token)
+    assert tracker.snapshot()["downloaded_bytes"] == 50
 
 
 @pytest.mark.asyncio

@@ -81,7 +81,7 @@ class SettingsView:
                             color=Color.TEXT_PRIMARY,
                         ),
                         ft.Text(
-                            "SETTINGS · 诊断与日志",
+                            "SETTINGS · 下载、诊断与日志",
                             size=FontSize.MICRO,
                             color=Color.TEXT_MUTED,
                             style=ft.TextStyle(letter_spacing=2),
@@ -124,6 +124,64 @@ class SettingsView:
             ),
         )
 
+        # === 下载进度 ===
+        self.download_status_text = ft.Text(
+            "暂无下载任务",
+            size=FontSize.BODY + 1,
+            weight=ft.FontWeight.W_500,
+            color=Color.TEXT_PRIMARY,
+        )
+        self.download_filename_text = ft.Text(
+            "从文件页选择歌曲后，可在这里查看实时进度",
+            size=FontSize.CAPTION,
+            color=Color.TEXT_MUTED,
+            max_lines=1,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+        self.download_progress_bar = ft.ProgressBar(
+            value=0,
+            color=Color.PRIMARY,
+            bgcolor=Color.BORDER,
+        )
+        self.download_progress_text = ft.Text(
+            "0 B / 0 B",
+            size=FontSize.CAPTION,
+            color=Color.TEXT_SECONDARY,
+        )
+        self.download_queue_text = ft.Text(
+            "等待 0 · 完成 0 · 失败 0",
+            size=FontSize.CAPTION,
+            color=Color.TEXT_MUTED,
+        )
+        download_card = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(
+                                ft.Icons.DOWNLOAD_ROUNDED,
+                                size=18,
+                                color=Color.PRIMARY,
+                            ),
+                            self.download_status_text,
+                        ],
+                        spacing=Space.SM,
+                    ),
+                    self.download_filename_text,
+                    self.download_progress_bar,
+                    ft.Row(
+                        [self.download_progress_text, self.download_queue_text],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                ],
+                spacing=Space.SM,
+            ),
+            padding=Space.MD,
+            bgcolor=Color.BG_SURFACE,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+        )
+
         # === 应用日志 ===
         self.log_path_text = ft.Text(
             "日志文件: -",
@@ -138,7 +196,7 @@ class SettingsView:
             color=Color.TEXT_SECONDARY,
         )
         self.log_list = ft.ListView(
-            expand=True,
+            height=330,
             spacing=0,
             auto_scroll=True,
             auto_scroll_animation=0,
@@ -284,15 +342,17 @@ class SettingsView:
 
         # 组装
         self._container = ft.Container(
-            content=ft.Column(
+            content=ft.ListView(
                 controls=[
                     title_row,
+                    download_card,
                     ft.Row([self.level_selector], spacing=Space.XS),
                     log_card,
                     info_card,
                 ],
                 spacing=Space.MD,
                 expand=True,
+                padding=0,
             ),
             padding=Space.LG,
             expand=True,
@@ -301,6 +361,7 @@ class SettingsView:
 
         self._built = True
         self._visible_log_limit = _LOG_INITIAL_LINES
+        self._refresh_download_progress()
         self._refresh_logs(limit=self._visible_log_limit)
         return self._container
 
@@ -403,6 +464,63 @@ class SettingsView:
     def _refresh_clicked(self, e):
         self._refresh_logs(limit=self._visible_log_limit)
 
+    @staticmethod
+    def _format_bytes(value: float) -> str:
+        value = max(float(value or 0), 0.0)
+        for unit in ("B", "KB", "MB", "GB"):
+            if value < 1024 or unit == "GB":
+                return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+            value /= 1024
+        return "0 B"
+
+    def _refresh_download_progress(self) -> bool:
+        """从共享 tracker 刷新下载卡片，返回控件是否发生变化。"""
+        music_service = self.app_context.get("music_service")
+        tracker = getattr(music_service, "download_progress", None)
+        if tracker is None or not hasattr(self, "download_status_text"):
+            return False
+        state = tracker.snapshot()
+        status = state["status"]
+        labels = {
+            "idle": "暂无下载任务",
+            "queued": "等待下载",
+            "downloading": "正在下载",
+            "completed": "下载完成",
+            "failed": "下载失败",
+        }
+        downloaded = state["downloaded_bytes"]
+        total = state["total_bytes"]
+        speed = state["speed_bps"]
+        progress = min(downloaded / total, 1.0) if total else None
+        filename = state["filename"] or "从文件页选择歌曲后，可在这里查看实时进度"
+        progress_text = self._format_bytes(downloaded)
+        if total:
+            progress_text += f" / {self._format_bytes(total)}"
+        if status == "downloading" and speed:
+            progress_text += f" · {self._format_bytes(speed)}/s"
+        values = (
+            labels.get(status, state["message"]),
+            filename,
+            progress,
+            progress_text,
+            f"等待 {state['queued']} · 完成 {state['completed']} · 失败 {state['failed']}",
+        )
+        old_values = (
+            self.download_status_text.value,
+            self.download_filename_text.value,
+            self.download_progress_bar.value,
+            self.download_progress_text.value,
+            self.download_queue_text.value,
+        )
+        if values == old_values:
+            return False
+        self.download_status_text.value = values[0]
+        self.download_filename_text.value = values[1]
+        self.download_progress_bar.value = values[2]
+        self.download_progress_text.value = values[3]
+        self.download_queue_text.value = values[4]
+        return True
+
     def _on_log_scroll(self, e):
         """上滑到顶部时按页加载更早日志。"""
         if self._loading_older_logs or self._visible_log_limit >= _LOG_LINE_LIMIT:
@@ -440,12 +558,15 @@ class SettingsView:
             if not self._view_active or not self._built:
                 break
             try:
+                download_changed = self._refresh_download_progress()
                 latest = self._load_log_lines(_LOG_LINE_LIMIT)
                 new_lines = self._new_log_lines(self._log_lines, latest)
                 if new_lines is None:
                     self._refresh_logs(limit=self._visible_log_limit)
                     continue
                 if not new_lines:
+                    if download_changed:
+                        self.page.update()
                     continue
                 self._log_lines.extend(new_lines)
                 if len(self._log_lines) > _LOG_LINE_LIMIT:
@@ -540,6 +661,11 @@ class SettingsView:
     def on_view_activated(self):
         """视图激活后从当前日志尾部开始增量跟随。"""
         self._view_active = True
+        if self._refresh_download_progress():
+            try:
+                self.page.update()
+            except Exception:
+                pass
         if not self._log_tail_task or self._log_tail_task.done():
             self._log_tail_task = asyncio.create_task(self._tail_logs())
 

@@ -8,7 +8,6 @@
 import time
 
 import pytest
-
 from mock_nextcloud import (
     LRC_BYTES,
     LYRICS_PATH,
@@ -53,10 +52,20 @@ async def test_mock_nextcloud_full_client_flow(client, mock_server, tmp_path):
 
     song_path = tmp_path / "downloaded.wav"
     lyrics_path = tmp_path / "downloaded.lrc"
-    assert await client.download_file(SONG_PATH, SONG_NAME, str(song_path))
+    progress = []
+    assert await client.download_file(
+        SONG_PATH,
+        SONG_NAME,
+        str(song_path),
+        progress_callback=lambda downloaded, total: progress.append(
+            (downloaded, total)
+        ),
+    )
     assert await client.download_file(LYRICS_PATH, "test-tone.lrc", str(lyrics_path))
     assert song_path.read_bytes() == WAV_BYTES
     assert lyrics_path.read_bytes() == LRC_BYTES
+    assert progress
+    assert progress[-1] == (len(WAV_BYTES), len(WAV_BYTES))
 
 
 async def test_wrong_password_is_rejected(mock_server):
