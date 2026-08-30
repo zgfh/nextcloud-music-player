@@ -20,8 +20,9 @@ env:
   FLET_VERSION: '0.86.5'
   # Flutter test/VM-service and the in-process WebDAV mock both use loopback.
   # Include IPv6 as Flutter doctor and macOS may resolve localhost to ::1.
+  # 注意：GitHub env 键不区分大小写，NO_PROXY 与 no_proxy 不能同时定义；
+  # Python urllib 会小写化匹配，单一大写键即可覆盖两种读取习惯。
   NO_PROXY: 127.0.0.1,localhost,::1
-  no_proxy: 127.0.0.1,localhost,::1
 
 jobs:
   unit:
