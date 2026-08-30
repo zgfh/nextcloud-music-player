@@ -12,6 +12,7 @@
 """
 
 import flet.testing as ftt
+from helpers import wait_for
 
 
 async def test_integration_switch_source_to_smb(flet_app: ftt.FletTestApp):
@@ -24,7 +25,8 @@ async def test_integration_switch_source_to_smb(flet_app: ftt.FletTestApp):
     await tester.pump_and_settle()
 
     # 默认展示 Nextcloud 表单与标题
-    assert (await tester.find_by_text("NEXTCLOUD")).count == 1
+    title = await wait_for(tester, lambda: tester.find_by_text("NEXTCLOUD"))
+    assert title.count == 1
     assert (await tester.find_by_key("smb_host")).count == 0  # SMB 表单未挂载
 
     # 切换到 SMB 来源
@@ -32,11 +34,14 @@ async def test_integration_switch_source_to_smb(flet_app: ftt.FletTestApp):
     await tester.pump_and_settle()
 
     # 标题切换、SMB 表单出现（向导式：仅一个地址框 + 引导文案）
-    assert (await tester.find_by_text("SMB")).count == 1
-    assert (await tester.find_by_key("smb_host")).count == 1
+    assert (await wait_for(tester, lambda: tester.find_by_text("SMB"))).count == 1
+    host_input = await wait_for(tester, lambda: tester.find_by_key("smb_host"))
+    assert host_input.count == 1
     assert (await tester.find_by_text("访客")).count == 0  # 向导未打开时无认证界面
 
     # 切回 Nextcloud 还原配置与界面
     await tester.tap(await tester.find_by_text("Nextcloud"))
     await tester.pump_and_settle()
-    assert (await tester.find_by_text("NEXTCLOUD")).count == 1
+    assert (
+        await wait_for(tester, lambda: tester.find_by_text("NEXTCLOUD"))
+    ).count == 1

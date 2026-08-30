@@ -1,23 +1,27 @@
 """Full packaged-app E2E against an in-process Mock Nextcloud/WebDAV server."""
 
-import asyncio
-
 import flet.testing as ftt
+from helpers import settle_network, tap_and_wait, wait_for
 
 from mock_nextcloud import PASSWORD, SONG_NAME, USERNAME
 
 
-async def _settle_network(tester, seconds=0.5):
-    await asyncio.sleep(seconds)
-    await tester.pump_and_settle()
-
-
 async def _open_nextcloud_form(tester):
+    """从任意起始视图进入连接页的 Nextcloud 表单，等待 url 输入框挂载。"""
     await tester.tap(await tester.find_by_text("连接"))
     await tester.pump_and_settle()
-    if not (await tester.find_by_key("nextcloud_url")).count:
+
+    url_field = await wait_for(
+        tester, lambda: tester.find_by_key("nextcloud_url"), timeout=3
+    )
+    if not url_field.count:
+        # 上个会话停在 SMB 来源：切回 Nextcloud 再等表单挂载
         await tester.tap(await tester.find_by_text("Nextcloud"))
         await tester.pump_and_settle()
+        url_field = await wait_for(
+            tester, lambda: tester.find_by_key("nextcloud_url")
+        )
+    assert url_field.count >= 1, "连接页应出现 Nextcloud 服务器地址输入框"
 
 
 async def _fill_credentials(tester, url, username, password):
@@ -40,20 +44,29 @@ async def test_nextcloud_sync_download_and_playback(
         tester, mock_nextcloud_server.url, USERNAME, PASSWORD
     )
 
-    await tester.tap(await tester.find_by_text("建立连接"))
-    await _settle_network(tester, 1.0)
-    assert (await tester.find_by_text("同步")).count == 1
+    await tap_and_wait(
+        tester,
+        lambda: tester.find_by_text("建立连接"),
+        lambda: tester.find_by_text("同步"),
+        timeout=15,
+    )
 
-    await tester.tap(await tester.find_by_text("同步"))
-    await _settle_network(tester, 1.0)
-    assert (await tester.find_by_key(f"song:{SONG_NAME}")).count == 1
+    await tap_and_wait(
+        tester,
+        lambda: tester.find_by_text("同步"),
+        lambda: tester.find_by_key(f"song:{SONG_NAME}"),
+        timeout=15,
+    )
 
     await tester.tap(await tester.find_by_key(f"song:{SONG_NAME}"))
     await tester.pump_and_settle()
     await tester.tap(await tester.find_by_text("播放"))
-    await _settle_network(tester, 2.0)
+    await settle_network(tester, 1.0)
 
-    assert (await tester.find_by_text("播放中")).count >= 1
+    playing = await wait_for(
+        tester, lambda: tester.find_by_text("播放中"), timeout=15
+    )
+    assert playing.count >= 1, "播放启动后应显示播放中状态"
     assert (await tester.find_by_text(SONG_NAME)).count >= 1
 
 
@@ -70,19 +83,24 @@ async def test_nextcloud_wrong_password_shows_error_then_recovers(
     )
 
     await tester.tap(await tester.find_by_text("建立连接"))
-    await _settle_network(tester, 1.0)
+    await settle_network(tester, 1.0)
 
-    assert (
-        await tester.find_by_text_containing("连接失败")
-    ).count >= 1, "凭据错误应出现错误提示"
+    error = await wait_for(
+        tester, lambda: tester.find_by_text_containing("连接失败")
+    )
+    assert error.count >= 1, "凭据错误应出现错误提示"
     assert (await tester.find_by_text("同步")).count == 0, "失败后不应进入已连接状态"
 
     # 错误后 UI 仍可用：修正密码重连即成功
-    password_field = await tester.find_by_key("nextcloud_password")
-    await tester.enter_text(password_field, PASSWORD)
-    await tester.tap(await tester.find_by_text("建立连接"))
-    await _settle_network(tester, 1.0)
-    assert (await tester.find_by_text("同步")).count == 1
+    await tester.enter_text(
+        await tester.find_by_key("nextcloud_password"), PASSWORD
+    )
+    await tap_and_wait(
+        tester,
+        lambda: tester.find_by_text("建立连接"),
+        lambda: tester.find_by_text("同步"),
+        timeout=15,
+    )
 
 
 async def test_nextcloud_unreachable_server_shows_error(flet_app: ftt.FletTestApp):
@@ -94,9 +112,10 @@ async def test_nextcloud_unreachable_server_shows_error(flet_app: ftt.FletTestAp
     await _fill_credentials(tester, "http://127.0.0.1:1", USERNAME, PASSWORD)
 
     await tester.tap(await tester.find_by_text("建立连接"))
-    await _settle_network(tester, 2.0)
+    await settle_network(tester, 1.0)
 
-    assert (
-        await tester.find_by_text_containing("连接失败")
-    ).count >= 1, "不可达服务器应出现连接失败提示"
+    error = await wait_for(
+        tester, lambda: tester.find_by_text_containing("连接失败")
+    )
+    assert error.count >= 1, "不可达服务器应出现连接失败提示"
     assert (await tester.find_by_text("同步")).count == 0

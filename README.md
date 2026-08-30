@@ -371,6 +371,10 @@ uv run flet test ios --no-swift-package-manager --device-id <UDID> --tests-dir t
 
 前置条件：Flutter 3.44.x（与 flet 0.86.5 配套）；依赖已含在 `uv sync --extra dev` 中（`flet[test]` 提供 numpy/pillow/scikit-image，golden 截图对比用）。
 
+> **本地跑 iOS e2e 的两个缓存坑**：
+> 1. 切换目标平台（桌面 ⇄ iOS）前先 `flet clean`，否则 `build/flutter-packages` 的路径依赖会让构建失败。
+> 2. iOS 用 CocoaPods 集成（`--no-swift-package-manager`）时，serious-python 打包的应用代码会缓存在 CocoaPods 产物里——`flet clean` 清不掉 `~/Library/Caches/CocoaPods`。改了 Python 源码但模拟器里行为没变时，执行 `pod cache clean --all`（或删除该缓存目录）后重跑。
+
 > **已知问题**（flet 0.86.5 device 模式）：Python 侧断言可能全部通过（pytest 汇总 `1 passed`），但 Dart 侧 `testWidgets` 收尾阶段以 exit code 1 结束且无异常输出，teardown 因此追加一个 ERROR。这是 flet 上游测试框架的 bug，CI 中该 job 已标记 `continue-on-error`；判断测试是否真的通过，看 pytest 汇总行是否 `passed`。桌面平台模式通常无此问题。
 
 截图验证仅用于发布前的视觉效果检查，交互行为回归全部由上述自动化测试承担。
