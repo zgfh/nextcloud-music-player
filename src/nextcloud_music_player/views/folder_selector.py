@@ -4,7 +4,6 @@
 
 import asyncio
 import logging
-from pathlib import Path
 
 import flet as ft
 
@@ -14,12 +13,16 @@ logger = logging.getLogger(__name__)
 
 
 class FolderSelector:
-    """NextCloud 文件夹浏览器对话框"""
+    """远程文件夹浏览器对话框（Nextcloud/SMB/Google Drive 通用）"""
 
     def __init__(self, page: ft.Page, nextcloud_client, initial_path: str = "/"):
         self.page = page
         self.nextcloud_client = nextcloud_client
         self.current_path = initial_path or "/"
+        # 面包屑栈 [(显示名, 路径)]：上级导航与路径展示均基于此。
+        # Google Drive 按文件夹 ID 导航，无法用字符串截断求上级目录；
+        # Nextcloud/SMB 的根路径 '/' 也会被 Drive 客户端归一化为根目录。
+        self._crumbs: list = []
         self.on_path_selected = None
         self._loading = False
 
@@ -28,7 +31,7 @@ class FolderSelector:
         self.on_path_selected = callback
 
         self.path_display = ft.Text(
-            self.current_path or "/",
+            self._display_path(),
             size=13,
             weight=ft.FontWeight.BOLD,
             color=Color.PRIMARY,
@@ -133,6 +136,9 @@ class FolderSelector:
             else:
                 for folder in folders:
                     folder_name = folder.get("name", folder.get("path", ""))
+                    # 优先使用条目自带的完整路径（Google Drive 为文件夹 ID，
+                    # Nextcloud/SMB 为共享/WebDAV 内完整路径）；缺失时由
+                    # _enter_folder 按名称拼接
                     icon = ft.Icons.FOLDER
 
                     self.folder_list.controls.append(
@@ -141,9 +147,9 @@ class FolderSelector:
                             title=ft.Text(
                                 folder_name, size=13, color=Color.TEXT_PRIMARY
                             ),
-                            on_click=lambda e, name=folder_name: self._enter_folder(
-                                name
-                            ),
+                            on_click=lambda e, name=folder_name, path=folder.get(
+                                "path"
+                            ): self._enter_folder(name, path),
                         )
                     )
         except Exception as e:
@@ -152,7 +158,8 @@ class FolderSelector:
             if self.current_path not in ("", "/"):
                 logger.info(f"目录不可访问，回退到根目录: {self.current_path}")
                 self.current_path = "/"
-                self.path_display.value = "/"
+                self._crumbs.clear()
+                self.path_display.value = self._display_path()
                 return await self._load_folders()
             self.folder_list.controls.clear()
             self.folder_list.controls.append(
@@ -163,27 +170,42 @@ class FolderSelector:
             self.loading_text.visible = False
             self.page.update()
 
-    def _enter_folder(self, folder_name):
-        """进入子文件夹"""
-        if self.current_path == "/" or self.current_path == "":
-            self.current_path = f"/{folder_name}"
+    def _display_path(self) -> str:
+        """展示用路径：面包屑名称拼接；栈空时展示原始路径（根为 '/'）"""
+        if not self._crumbs:
+            return self.current_path or "/"
+        return "/" + "/".join(name for name, _ in self._crumbs)
+
+    def _enter_folder(self, folder_name: str, folder_path: str = None):
+        """进入子文件夹；优先使用条目自带路径，否则按名称拼接（Nextcloud/SMB）"""
+        if folder_path:
+            new_path = folder_path
+        elif self.current_path in ("", "/"):
+            new_path = f"/{folder_name}"
         else:
-            self.current_path = f"{self.current_path.rstrip('/')}/{folder_name}"
-        self.path_display.value = self.current_path
+            new_path = f"{self.current_path.rstrip('/')}/{folder_name}"
+        self.current_path = new_path
+        self._crumbs.append((folder_name, new_path))
+        self.path_display.value = self._display_path()
         asyncio.create_task(self._load_folders())
 
     def _go_back(self, e):
-        """返回上级目录"""
-        if self.current_path and self.current_path != "/":
-            parent = str(Path(self.current_path).parent)
-            self.current_path = parent if parent != "." else "/"
-            self.path_display.value = self.current_path
-            asyncio.create_task(self._load_folders())
+        """返回上级目录（面包屑栈出栈；栈空时回根目录）"""
+        if not self._crumbs:
+            return
+        self._crumbs.pop()
+        if self._crumbs:
+            self.current_path = self._crumbs[-1][1]
+        else:
+            self.current_path = "/"
+        self.path_display.value = self._display_path()
+        asyncio.create_task(self._load_folders())
 
     def _go_root(self, e):
         """返回根目录"""
         self.current_path = "/"
-        self.path_display.value = self.current_path
+        self._crumbs.clear()
+        self.path_display.value = self._display_path()
         asyncio.create_task(self._load_folders())
 
     def _refresh(self, e):

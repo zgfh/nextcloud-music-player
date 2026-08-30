@@ -73,7 +73,7 @@ class ConfigManager:
         # 默认配置
         self.default_config = {
             "connection": {
-                # 音乐来源类型：nextcloud | smb
+                # 音乐来源类型：nextcloud | smb | gdrive
                 "source_type": "nextcloud",
                 "server_url": "http://cloud.home.daozzg.com",
                 "username": "guest",
@@ -90,6 +90,15 @@ class ConfigManager:
                     "password": "",
                     "domain": "",
                     "default_sync_folder": "/",
+                },
+                # Google Drive 来源配置（default_sync_folder 为 Drive 文件夹 ID，空为根目录）
+                "gdrive": {
+                    "client_id": "",
+                    "client_secret": "",
+                    "refresh_token": "",
+                    "access_token": "",
+                    "token_expiry": 0,
+                    "default_sync_folder": "",
                 },
             },
             "player": {

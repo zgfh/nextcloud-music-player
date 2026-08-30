@@ -53,6 +53,19 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 - **目录浏览**：与 NextCloud 一致的远程文件夹浏览与同步体验
 - **限制说明**：不支持强制 SMB3 加密的服务器，请在服务端允许 SMB2 访问
 
+### ☁️ Google Drive 来源
+- **来源切换**：连接页支持切换到 Google 云盘，浏览并同步云端音乐
+- **纯 Python 实现**：基于 requests 直连 Drive REST API v3，不依赖 google-api-python-client，iOS 打包友好
+- **OAuth 授权**：填入自建 OAuth 客户端（桌面应用类型）的 Client ID/Secret 后，点击「授权」经系统浏览器登录 Google 账号，localhost 回调自动回收授权码（只读权限 `drive.readonly`）
+- **令牌管理**：access_token 过期自动用 refresh_token 刷新，可随「记住密码」选项持久化
+- **目录浏览**：文件夹选择器按名称展示层级，内部以文件夹 ID 导航；支持共享云端硬盘（Shared Drives）
+
+**准备工作**（一次性，约 5 分钟）：
+1. 打开 [Google Cloud Console](https://console.cloud.google.com/)，创建（或选择）一个项目
+2. 左侧「API 和服务 → 已启用的 API」中启用 **Google Drive API**
+3. 「API 和服务 → 凭据 → 创建凭据 → OAuth 客户端 ID」，应用类型选**桌面应用**
+4. 把生成的 Client ID（`...apps.googleusercontent.com`）和 Client Secret（`GOCSPX-...`）填入应用连接页的 Google 云盘表单，点击「授权」即可
+
 ### 📱 用户界面
 - **底部导航**：连接设置、文件列表、播放控制三个主要视图
 - **Tab 切换**：播放列表与歌词即时切换
@@ -62,6 +75,7 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 
 ### 🔧 高级功能
 - **离线播放**：缓存的音乐可离线播放
+- **iOS 后台下载**：音乐下载经 rubicon-objc 走原生 Background NSURLSession——切后台、锁屏甚至应用被杀（从多任务划掉）都由系统进程继续执行，重启后自动重建会话并落库；传输中断自动断点续传
 - **播放历史**：记录播放次数和最后播放时间
 - **收藏功能**：支持标记喜爱的歌曲
 - **日志系统**：完善的日志记录，便于问题诊断
@@ -192,6 +206,8 @@ nextcloud-music-player/
 │   ├── __main__.py              # 入口 (ft.run)
 │   ├── app.py                   # Flet 主入口
 │   ├── nextcloud_client.py      # NextCloud API 客户端
+│   ├── smb_client.py            # SMB 共享客户端
+│   ├── gdrive_client.py         # Google Drive 客户端（OAuth + Drive API v3）
 │   ├── music_library.py         # 音乐库管理
 │   ├── config_manager.py        # 配置管理
 │   ├── platform_audio.py        # 平台音频抽象
@@ -373,7 +389,9 @@ uv run flet test ios --no-swift-package-manager --device-id <UDID> --tests-dir t
 
 > **本地跑 iOS e2e 的两个缓存坑**：
 > 1. 切换目标平台（桌面 ⇄ iOS）前先 `flet clean`，否则 `build/flutter-packages` 的路径依赖会让构建失败。
-> 2. iOS 用 CocoaPods 集成（`--no-swift-package-manager`）时，serious-python 打包的应用代码会缓存在 CocoaPods 产物里——`flet clean` 清不掉 `~/Library/Caches/CocoaPods`。改了 Python 源码但模拟器里行为没变时，执行 `pod cache clean --all`（或删除该缓存目录）后重跑。
+> 2. iOS 打包时 serious-python 会把应用代码暂存进 pub-cache 包自身
+>    （`~/.pub-cache/hosted/pub.dev/serious_python_darwin-*/darwin/serious_python_darwin/Sources/serious_python_darwin/Resources/app`），
+>    该目录 `flet clean` 与 `pod cache clean` 都清不到。改了 Python 源码但模拟器行为没变时，删掉该 `app` 目录后重跑。
 
 > **已知问题**（flet 0.86.5 device 模式）：Python 侧断言可能全部通过（pytest 汇总 `1 passed`），但 Dart 侧 `testWidgets` 收尾阶段以 exit code 1 结束且无异常输出，teardown 因此追加一个 ERROR。这是 flet 上游测试框架的 bug，CI 中该 job 已标记 `continue-on-error`；判断测试是否真的通过，看 pytest 汇总行是否 `passed`。桌面平台模式通常无此问题。
 

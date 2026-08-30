@@ -98,6 +98,13 @@ async def main(page: ft.Page):
 
     view_manager = ViewManager(page, app_context)
 
+    # iOS：立即重建原生后台下载会话。系统会因后台下载完成而唤醒甚至
+    # 重启应用，每次启动用同一 identifier 重建会话，被杀前已提交的任务
+    # 才能交付结果并落库；非 iOS 平台为 no-op
+    from .ios_background_download import activate
+
+    activate(view_manager.music_service)
+
     # 恢复上次视图
     last_view = config_manager.get("app.last_view", "playback")
     view_manager.switch_to_view(last_view)

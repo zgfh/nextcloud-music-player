@@ -82,6 +82,7 @@ class ConnectionView:
         config_manager = self.app_context["config_manager"]
         config = config_manager.get("connection", {})
         smb_config = config.get("smb", {})
+        gdrive_config = config.get("gdrive", {})
         source_type = config.get("source_type", "nextcloud")
 
         # === Hero 头部：渐变徽标 + 标题 ===
@@ -95,7 +96,7 @@ class ConnectionView:
             shadow=glow(Color.PRIMARY, radius=16, alpha="33"),
         )
         self.title_text = ft.Text(
-            "SMB" if source_type == "smb" else "NEXTCLOUD",
+            {"smb": "SMB", "gdrive": "GOOGLE DRIVE"}.get(source_type, "NEXTCLOUD"),
             size=FontSize.TITLE + 6,
             weight=ft.FontWeight.BOLD,
             color=Color.TEXT_PRIMARY,
@@ -119,7 +120,7 @@ class ConnectionView:
             spacing=Space.MD,
         )
 
-        # === 来源类型切换：Nextcloud / SMB ===
+        # === 来源类型切换：Nextcloud / SMB / Google Drive ===
         # 注意：Flet 0.86 的 selected 类型是 list[str]，
         # 传 set 会在 iOS 首次序列化时崩溃（msgpack 无法打包 set）
         self.source_selector = ft.SegmentedButton(
@@ -135,6 +136,11 @@ class ConnectionView:
                     value="smb",
                     label="SMB 共享",
                     icon=ft.Icons.LAN_OUTLINED,
+                ),
+                ft.Segment(
+                    value="gdrive",
+                    label="Google 云盘",
+                    icon=ft.Icons.ADD_TO_DRIVE,
                 ),
             ],
             allow_multiple_selection=False,
@@ -276,6 +282,98 @@ class ConnectionView:
             color=Color.TEXT_MUTED,
         )
 
+        # === Google Drive 来源：OAuth 授权 + 文件夹选择 ===
+        # Client ID/Secret 来自用户自建的 Google Cloud OAuth 客户端（桌面应用类型），
+        # 「授权」经系统浏览器完成 Google 账号登录（loopback 回调回收授权码），
+        # 结果保存在 _gdrive_settings 并持久化，供自动连接与令牌刷新使用
+        remember_credentials = config.get("remember_credentials", True)
+        self._gdrive_settings = {
+            "client_id": gdrive_config.get("client_id", ""),
+            "client_secret": (
+                gdrive_config.get("client_secret", "") if remember_credentials else ""
+            ),
+            "refresh_token": (
+                gdrive_config.get("refresh_token", "") if remember_credentials else ""
+            ),
+            "access_token": (
+                gdrive_config.get("access_token", "") if remember_credentials else ""
+            ),
+            "token_expiry": gdrive_config.get("token_expiry", 0),
+            "sync_folder": gdrive_config.get("default_sync_folder", ""),
+        }
+
+        self.gdrive_client_id_input = _dark_input(
+            key="gdrive_client_id",
+            label="OAuth Client ID",
+            value=self._gdrive_settings["client_id"],
+            hint_text="形如 1234-abc.apps.googleusercontent.com",
+            prefix_icon=ft.Icons.BADGE_OUTLINED,
+        )
+
+        self.gdrive_client_secret_input = _dark_input(
+            key="gdrive_client_secret",
+            label="OAuth Client Secret",
+            value=self._gdrive_settings["client_secret"],
+            hint_text="形如 GOCSPX-...",
+            password=True,
+            can_reveal_password=True,
+            prefix_icon=ft.Icons.KEY,
+        )
+
+        self.gdrive_auth_status = ft.Text(
+            "已授权 ✓" if self._gdrive_settings["refresh_token"] else "未授权",
+            size=FontSize.CAPTION,
+            color=(
+                Color.SUCCESS_TEXT
+                if self._gdrive_settings["refresh_token"]
+                else Color.TEXT_MUTED
+            ),
+            expand=1,
+        )
+
+        self.gdrive_authorize_button = ft.OutlinedButton(
+            "授权",
+            icon=ft.Icons.LOGIN,
+            on_click=self._on_authorize_gdrive_clicked,
+            style=ft.ButtonStyle(
+                bgcolor=Color.BG_SURFACE,
+                color=Color.TEXT_SECONDARY,
+                icon_color=Color.PRIMARY,
+                side=ft.BorderSide(1, Color.BORDER),
+                shape=ft.RoundedRectangleBorder(radius=Radius.MD),
+            ),
+        )
+
+        self.gdrive_sync_folder_input = _dark_input(
+            key="gdrive_sync_folder",
+            label="同步文件夹",
+            value=self._gdrive_settings["sync_folder"],
+            hint_text="点击「浏览」从 Google Drive 选择，留空表示根目录",
+            prefix_icon=ft.Icons.FOLDER_OUTLINED,
+            expand=1,
+        )
+
+        self.gdrive_browse_button = ft.OutlinedButton(
+            "浏览",
+            icon=ft.Icons.FOLDER_OPEN,
+            on_click=self._browse_folder,
+            style=ft.ButtonStyle(
+                bgcolor=Color.BG_SURFACE,
+                color=Color.TEXT_SECONDARY,
+                icon_color=Color.PRIMARY,
+                side=ft.BorderSide(1, Color.BORDER),
+                shape=ft.RoundedRectangleBorder(radius=Radius.MD),
+            ),
+        )
+
+        gdrive_hint = ft.Text(
+            "在 Google Cloud Console → API 和服务 → 凭据 创建 OAuth 客户端"
+            "（应用类型选「桌面应用」），把 Client ID/Secret 填入上方后点击「授权」"
+            "（仅申请只读权限 drive.readonly）",
+            size=FontSize.CAPTION,
+            color=Color.TEXT_MUTED,
+        )
+
         self.remember_password_switch = ft.Switch(
             label="记住密码",
             value=config.get("remember_credentials", True),
@@ -367,7 +465,7 @@ class ConnectionView:
             border=ft.Border.all(1, Color.BORDER),
             border_radius=Radius.LG,
             padding=Space.LG,
-            visible=(source_type != "smb"),
+            visible=(source_type == "nextcloud"),
         )
 
         self.smb_form_card = ft.Container(
@@ -383,6 +481,30 @@ class ConnectionView:
             border_radius=Radius.LG,
             padding=Space.LG,
             visible=(source_type == "smb"),
+        )
+
+        self.gdrive_form_card = ft.Container(
+            content=ft.Column(
+                [
+                    self.gdrive_client_id_input,
+                    self.gdrive_client_secret_input,
+                    ft.Row(
+                        [self.gdrive_authorize_button, self.gdrive_auth_status],
+                        spacing=Space.SM,
+                    ),
+                    ft.Row(
+                        [self.gdrive_sync_folder_input, self.gdrive_browse_button],
+                        spacing=Space.XS,
+                    ),
+                    gdrive_hint,
+                ],
+                spacing=Space.SM,
+            ),
+            bgcolor=Color.BG_SURFACE,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+            padding=Space.LG,
+            visible=(source_type == "gdrive"),
         )
 
         action_row = ft.Row(
@@ -403,6 +525,7 @@ class ConnectionView:
                             self.status_container,
                             self.nextcloud_form_card,
                             self.smb_form_card,
+                            self.gdrive_form_card,
                             ft.Container(
                                 content=ft.Column(
                                     [
@@ -469,7 +592,7 @@ class ConnectionView:
         await self._connect_to_server(None)
 
     def _current_source_type(self) -> str:
-        """当前选择的来源类型：nextcloud | smb"""
+        """当前选择的来源类型：nextcloud | smb | gdrive"""
         try:
             selected = self.source_selector.selected
             return next(iter(selected)) if selected else "nextcloud"
@@ -479,10 +602,12 @@ class ConnectionView:
     def _on_source_type_changed(self, e):
         """切换来源类型：切换表单与标题，并立即持久化选择"""
         source_type = self._current_source_type()
-        is_smb = source_type == "smb"
-        self.nextcloud_form_card.visible = not is_smb
-        self.smb_form_card.visible = is_smb
-        self.title_text.value = "SMB" if is_smb else "NEXTCLOUD"
+        self.nextcloud_form_card.visible = source_type == "nextcloud"
+        self.smb_form_card.visible = source_type == "smb"
+        self.gdrive_form_card.visible = source_type == "gdrive"
+        self.title_text.value = {"smb": "SMB", "gdrive": "GOOGLE DRIVE"}.get(
+            source_type, "NEXTCLOUD"
+        )
         try:
             self.app_context["config_manager"].set(
                 "connection.source_type", source_type
@@ -498,7 +623,7 @@ class ConnectionView:
             self.page.update()
 
     def _on_connect_clicked(self, e):
-        """连接入口：SMB 走向导（选择身份/共享/目录），Nextcloud 走表单直连"""
+        """连接入口：SMB 走向导（选择身份/共享/目录），Nextcloud/Google Drive 走表单直连"""
         if self._current_source_type() == "smb":
             self._open_smb_wizard()
         else:
@@ -585,6 +710,97 @@ class ConnectionView:
         )
         self.view_manager.switch_to_view("file_list")
 
+    def _on_authorize_gdrive_clicked(self, e):
+        """授权按钮入口：启动浏览器 OAuth 流程"""
+        asyncio.create_task(self._authorize_gdrive())
+
+    async def _authorize_gdrive(self):
+        """Google 账号 OAuth 授权：loopback 接收器 + 系统浏览器换码"""
+        from .. import gdrive_client as gdrive
+
+        client_id = self.gdrive_client_id_input.value.strip()
+        client_secret = self.gdrive_client_secret_input.value or ""
+        if not client_id or not client_secret:
+            self.show_message("请先填写 Client ID 和 Client Secret", "error")
+            return
+
+        self._update_gdrive_auth_state(waiting=True)
+        receiver = gdrive.LoopbackOAuthReceiver()
+        try:
+            receiver.start()
+            auth_url = gdrive.build_authorization_url(client_id, receiver.redirect_uri)
+            await self.page.launch_url(auth_url)
+
+            # 阻塞等待放到线程，避免卡住事件循环（用户最多有 5 分钟完成授权）
+            code = await asyncio.to_thread(receiver.wait_for_code, 300.0)
+
+            def _exchange():
+                return gdrive.exchange_authorization_code(
+                    client_id, client_secret, code, receiver.redirect_uri
+                )
+
+            payload = await asyncio.to_thread(_exchange)
+        except Exception as ex:
+            logger.error(f"Google 授权失败: {ex}")
+            self.show_message(f"授权失败: {ex}", "error")
+            return
+        finally:
+            receiver.close()
+            self._update_gdrive_auth_state(waiting=False)
+
+        try:
+            expires_in = int(payload.get("expires_in", 3600) or 3600)
+        except (TypeError, ValueError):
+            expires_in = 3600
+        self._gdrive_settings.update(
+            {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": payload.get("refresh_token", ""),
+                "access_token": payload.get("access_token", ""),
+                "token_expiry": time.time() + expires_in,
+            }
+        )
+        self._save_config()
+        self._update_gdrive_auth_state()
+        self.show_message("Google 账号授权成功，点击「建立连接」开始使用", "success")
+
+    def _update_gdrive_auth_state(self, waiting: bool = False):
+        """更新授权状态文本与按钮可用性"""
+        if waiting:
+            self.gdrive_auth_status.value = "正在等待浏览器授权..."
+            self.gdrive_auth_status.color = Color.INFO_TEXT
+            self.gdrive_authorize_button.disabled = True
+        elif self._gdrive_settings.get("refresh_token"):
+            self.gdrive_auth_status.value = "已授权 ✓"
+            self.gdrive_auth_status.color = Color.SUCCESS_TEXT
+            self.gdrive_authorize_button.disabled = False
+        else:
+            self.gdrive_auth_status.value = "未授权"
+            self.gdrive_auth_status.color = Color.TEXT_MUTED
+            self.gdrive_authorize_button.disabled = False
+        self.page.update()
+
+    def _persist_gdrive_tokens(self, tokens: dict):
+        """GoogleDriveClient 令牌刷新回调：更新内存并按需持久化"""
+        self._gdrive_settings.update(tokens)
+        if not self.remember_password_switch.value:
+            return
+        try:
+            cm = self.app_context["config_manager"]
+            cm.set("connection.gdrive.access_token", tokens.get("access_token", ""))
+            cm.set("connection.gdrive.refresh_token", tokens.get("refresh_token", ""))
+            try:
+                cm.set(
+                    "connection.gdrive.token_expiry",
+                    float(tokens.get("token_expiry", 0) or 0),
+                )
+            except (TypeError, ValueError):
+                cm.set("connection.gdrive.token_expiry", 0)
+            cm.save_config()
+        except Exception as ex:
+            logger.error(f"持久化 Google Drive 令牌失败: {ex}")
+
     def _build_client_from_form(self):
         """按当前来源类型构造客户端；SMB 优先使用向导保存的完整设置"""
         if self._current_source_type() == "smb":
@@ -607,6 +823,25 @@ class ConnectionView:
                 port=settings.get("port", 445),
                 domain=settings.get("domain", ""),
                 share=settings["share"],
+            )
+
+        if self._current_source_type() == "gdrive":
+            client_id = self.gdrive_client_id_input.value.strip()
+            client_secret = self.gdrive_client_secret_input.value or ""
+            if not client_id or not client_secret:
+                raise ValueError("请填写 Google OAuth Client ID 和 Client Secret")
+            if not self._gdrive_settings.get("refresh_token"):
+                raise ValueError("请先点击「授权」完成 Google 账号授权")
+
+            from ..gdrive_client import GoogleDriveClient
+
+            return GoogleDriveClient(
+                client_id=client_id,
+                client_secret=client_secret,
+                refresh_token=self._gdrive_settings.get("refresh_token", ""),
+                access_token=self._gdrive_settings.get("access_token", ""),
+                token_expiry=self._gdrive_settings.get("token_expiry", 0),
+                on_tokens_updated=self._persist_gdrive_tokens,
             )
 
         server_url = self.url_input.value.strip()
@@ -758,6 +993,37 @@ class ConnectionView:
                 s.get("password", "") or "" if remember else "",
             )
 
+            # Google Drive 字段（Client ID/Secret 来自输入框，令牌来自授权结果）
+            # remember_credentials 关闭时不落盘任何凭据
+            g = self._gdrive_settings
+            cm.set(
+                "connection.gdrive.client_id",
+                self.gdrive_client_id_input.value.strip(),
+            )
+            cm.set(
+                "connection.gdrive.client_secret",
+                self.gdrive_client_secret_input.value or "" if remember else "",
+            )
+            cm.set(
+                "connection.gdrive.refresh_token",
+                g.get("refresh_token", "") if remember else "",
+            )
+            cm.set(
+                "connection.gdrive.access_token",
+                g.get("access_token", "") if remember else "",
+            )
+            try:
+                cm.set(
+                    "connection.gdrive.token_expiry",
+                    float(g.get("token_expiry", 0) or 0),
+                )
+            except (TypeError, ValueError):
+                cm.set("connection.gdrive.token_expiry", 0)
+            cm.set(
+                "connection.gdrive.default_sync_folder",
+                self.gdrive_sync_folder_input.value.strip(),
+            )
+
             cm.save_config()
             logger.info("连接配置已保存")
         except Exception as ex:
@@ -808,13 +1074,17 @@ class ConnectionView:
             self._update_connection_status(False)
 
     def _browse_folder(self, e):
-        """浏览文件夹（Nextcloud 表单的远程目录选择）"""
+        """浏览文件夹（按当前来源选择对应的远程目录输入框与配置键）"""
         if not self.app_context.get("nextcloud_client"):
             self.show_message("请先连接服务器", "error")
             return
 
-        folder_input = self.sync_folder_input
-        config_key = "connection.default_sync_folder"
+        if self._current_source_type() == "gdrive":
+            folder_input = self.gdrive_sync_folder_input
+            config_key = "connection.gdrive.default_sync_folder"
+        else:
+            folder_input = self.sync_folder_input
+            config_key = "connection.default_sync_folder"
 
         from .folder_selector import FolderSelector
 

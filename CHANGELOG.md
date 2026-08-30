@@ -17,10 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - iOS 一键部署脚本 `scripts/deploy_iso.sh`（自动设备检测、增量构建、自动签名、7 天续签提醒）
+- **iOS 原生后台下载**（`ios_background_download.py`）：经 rubicon-objc 创建 Background NSURLSession，音乐下载在切后台、锁屏甚至应用被杀后由系统继续执行；应用重启时重建同名会话，遗留任务自动落库；传输中断用 resumeData 自动续传一次；非 2xx 的 HTTP 响应（如 404 错误页）拦截为失败；SMB 来源与非 iOS 平台自动回退 requests 路径
+- macOS 冒烟脚本 `scripts/test_ios_background_download_macos.py`：在桌面端真实创建后台会话，验证正常下载、404 拦截、进程强杀后恢复三个场景
 
 ### Fixed
 - 播放视图中间区域空白：Flet 0.86 中 `SafeArea` 无 `bottom` 参数，无效属性导致渲染补丁失败
 - 播放/暂停按钮红错：`FilledButton` icon-only 需显式 `content=""`
+- **iOS 原生后台下载被 ATS 拦截（NSURLErrorDomain -1022）**：`[tool.flet.ios.info]` 里的 ATS 例外此前以 TOML 字符串写入 Info.plist，iOS 解析不到合法字典即按默认策略拦截明文 HTTP（家庭服务器 `http://` 地址全部下载失败）；改为 TOML 嵌套表生成真正的 plist 字典。另加运行时保险：检测到 -1022 自动禁用原生路径并回退 requests，plist 配置失效时不再整批失败
 
 ## [0.1.0] - 2025-09-04
 

@@ -1,5 +1,6 @@
 """
-设置视图 - 日志级别切换 / 应用日志查看（iOS 真机排障）/ 应用信息
+设置视图 - 菜单式二级导航：首页为功能菜单列表，点击进入对应子页面
+（下载进度 / 缓存管理 / 应用日志 / 应用信息）
 """
 
 import asyncio
@@ -27,6 +28,9 @@ _LOG_LINE_LIMIT = 300
 _LOG_INITIAL_LINES = 40
 _LOG_PAGE_LINES = 50
 
+# 菜单入口 -> 子页面标识
+_SUB_PAGES = ("download", "cache", "logs", "about")
+
 
 def _package_version(name: str) -> str:
     try:
@@ -36,7 +40,7 @@ def _package_version(name: str) -> str:
 
 
 class SettingsView:
-    """设置视图"""
+    """设置视图（菜单 + 子页面）"""
 
     def __init__(self, page: ft.Page, app_context: dict, view_manager):
         self.page = page
@@ -49,82 +53,305 @@ class SettingsView:
         self._log_tail_task = None
         self._view_active = False
         self._loading_older_logs = False
+        self._cached_songs: list[dict] = []
+        self._selected_cache_names: set[str] = set()
+        # 当前所在页面："menu" 或 _SUB_PAGES 之一
+        self._sub_page = "menu"
+        # 菜单页各入口的副标题控件（每次渲染重建），供轮询刷新
+        self._menu_subtitles: dict[str, ft.Text] = {}
 
     def rebuild(self):
-        """重建视图（Flet 0.86 控件脱离页面后被冻结且不可复用）"""
+        """重建视图（Flet 0.86 控件脱离页面后被冻结且不可复用）。
+
+        保留当前子页面状态：从其它标签页切回设置时，停留 在离开前的页面。
+        """
         self._cancel_log_tail()
         self._built = False
         return self.build()
 
+    # ------------------------------------------------------------------
+    # 页面骨架与导航
+    # ------------------------------------------------------------------
+
     def build(self):
-        """构建并返回视图内容"""
+        """构建并返回视图内容（根据 _sub_page 渲染当前页面）"""
         if self._built and hasattr(self, "_container"):
             return self._container
 
-        # === 标题区 ===
-        title_row = ft.Row(
+        self._container = ft.Container(
+            padding=Space.LG,
+            expand=True,
+            bgcolor=Color.BG_APP,
+        )
+        self._built = True
+        self._render()
+        return self._container
+
+    def _render(self):
+        """把当前子页面的内容（全新控件）填充进根容器"""
+        builders = {
+            "menu": self._build_menu_page,
+            "download": self._build_download_page,
+            "cache": self._build_cache_page,
+            "logs": self._build_logs_page,
+            "about": self._build_about_page,
+        }
+        builder = builders.get(self._sub_page, self._build_menu_page)
+        self._container.content = builder()
+
+    def _open_sub_page(self, name: str):
+        """进入子页面：重建内容并刷新该页数据"""
+        if name not in _SUB_PAGES:
+            return
+        self._sub_page = name
+        self._render()
+        if name == "logs":
+            self._visible_log_limit = _LOG_INITIAL_LINES
+        self._refresh_page_data()
+        self._try_page_update()
+
+    def _back_to_menu(self, e=None):
+        """返回设置菜单页"""
+        self._sub_page = "menu"
+        self._render()
+        self._refresh_page_data()
+        self._try_page_update()
+
+    def _refresh_page_data(self):
+        """刷新当前页面依赖的动态数据（控件存在时才生效）"""
+        if self._sub_page == "menu":
+            self._refresh_menu_subtitles()
+        elif self._sub_page == "download":
+            self._refresh_download_progress()
+        elif self._sub_page == "cache":
+            self._refresh_cache_list()
+        elif self._sub_page == "logs":
+            self._refresh_logs(limit=self._visible_log_limit)
+
+    def _try_page_update(self):
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    def _page_scaffold(self, header: ft.Control, *cards: ft.Control) -> ft.ListView:
+        """子页面骨架：头部（返回 + 标题）+ 内容卡片"""
+        return ft.ListView(
+            controls=[header, *cards],
+            spacing=Space.MD,
+            expand=True,
+            padding=0,
+        )
+
+    def _menu_header(self) -> ft.Row:
+        return self._titled_header(
+            ft.Icons.TUNE, "设置", "SETTINGS · 下载、诊断与日志"
+        )
+
+    def _detail_header(self, title: str, subtitle: str) -> ft.Row:
+        """子页面头部：返回按钮 + 标题"""
+        back = ft.IconButton(
+            icon=ft.Icons.ARROW_BACK_IOS_NEW,
+            icon_color=Color.PRIMARY,
+            icon_size=18,
+            tooltip="返回设置",
+            on_click=self._back_to_menu,
+            style=ft.ButtonStyle(
+                bgcolor=Color.BG_SURFACE,
+                shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
+            ),
+        )
+        return ft.Row(
+            [back, self._title_block(title, subtitle)],
+            spacing=Space.SM,
+        )
+
+    def _titled_header(self, icon: str, title: str, subtitle: str) -> ft.Row:
+        return ft.Row(
             [
                 ft.Container(
-                    content=ft.Icon(ft.Icons.TUNE, color=Color.PRIMARY, size=20),
+                    content=ft.Icon(icon, color=Color.PRIMARY, size=20),
                     width=36,
                     height=36,
                     border_radius=Radius.SM,
                     bgcolor=tint(Color.PRIMARY, "14"),
                     border=ft.Border.all(1, tint(Color.PRIMARY, "33")),
                 ),
-                ft.Column(
-                    [
-                        ft.Text(
-                            "设置",
-                            size=FontSize.TITLE + 4,
-                            weight=ft.FontWeight.BOLD,
-                            color=Color.TEXT_PRIMARY,
-                        ),
-                        ft.Text(
-                            "SETTINGS · 下载、诊断与日志",
-                            size=FontSize.MICRO,
-                            color=Color.TEXT_MUTED,
-                            style=ft.TextStyle(letter_spacing=2),
-                        ),
-                    ],
-                    spacing=0,
-                ),
+                self._title_block(title, subtitle),
             ],
             spacing=Space.MD,
         )
 
-        # === 日志级别 ===
-        current_level = str(
-            self.app_context["config_manager"].get("app.log_level", "INFO")
-        ).upper()
-        if current_level not in ("INFO", "DEBUG"):
-            current_level = "INFO"
-        self.level_selector = ft.SegmentedButton(
-            selected=[current_level],
-            segments=[
-                ft.Segment(value="INFO", label="INFO", icon=ft.Icons.INFO_OUTLINED),
-                ft.Segment(
-                    value="DEBUG", label="DEBUG", icon=ft.Icons.BUG_REPORT_OUTLINED
+    def _title_block(self, title: str, subtitle: str) -> ft.Column:
+        return ft.Column(
+            [
+                ft.Text(
+                    title,
+                    size=FontSize.TITLE + 4,
+                    weight=ft.FontWeight.BOLD,
+                    color=Color.TEXT_PRIMARY,
+                ),
+                ft.Text(
+                    subtitle,
+                    size=FontSize.MICRO,
+                    color=Color.TEXT_MUTED,
+                    style=ft.TextStyle(letter_spacing=2),
                 ),
             ],
-            allow_multiple_selection=False,
-            allow_empty_selection=False,
-            on_change=self._on_log_level_change,
-            style=ft.ButtonStyle(
-                bgcolor={
-                    ft.ControlState.SELECTED: tint(Color.PRIMARY, "26"),
-                    ft.ControlState.DEFAULT: Color.BG_SURFACE_ALT,
-                },
-                color={
-                    ft.ControlState.SELECTED: Color.PRIMARY,
-                    ft.ControlState.DEFAULT: Color.TEXT_SECONDARY,
-                },
-                side=ft.BorderSide(1, Color.BORDER),
-                shape=ft.RoundedRectangleBorder(radius=Radius.MD),
-            ),
+            spacing=0,
         )
 
-        # === 下载进度 ===
+    # ------------------------------------------------------------------
+    # 菜单页
+    # ------------------------------------------------------------------
+
+    def _build_menu_page(self) -> ft.ListView:
+        self._menu_subtitles = {}
+
+        def entry(icon: str, title: str, subtitle: str, page_id: str) -> ft.Control:
+            subtitle_text = ft.Text(
+                subtitle,
+                size=FontSize.CAPTION,
+                color=Color.TEXT_MUTED,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+            )
+            self._menu_subtitles[page_id] = subtitle_text
+            return ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Container(
+                            content=ft.Icon(icon, color=Color.PRIMARY, size=20),
+                            width=36,
+                            height=36,
+                            border_radius=Radius.SM,
+                            bgcolor=tint(Color.PRIMARY, "14"),
+                            border=ft.Border.all(1, tint(Color.PRIMARY, "33")),
+                        ),
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    title,
+                                    size=FontSize.BODY + 1,
+                                    weight=ft.FontWeight.W_500,
+                                    color=Color.TEXT_PRIMARY,
+                                ),
+                                subtitle_text,
+                            ],
+                            spacing=2,
+                            expand=True,
+                        ),
+                        ft.Icon(
+                            ft.Icons.CHEVRON_RIGHT,
+                            color=Color.TEXT_MUTED,
+                            size=18,
+                        ),
+                    ],
+                    spacing=Space.MD,
+                ),
+                padding=Space.MD,
+                bgcolor=Color.BG_SURFACE,
+                border=ft.Border.all(1, Color.BORDER),
+                border_radius=Radius.LG,
+                ink=True,
+                on_click=lambda e, pid=page_id: self._open_sub_page(pid),
+            )
+
+        entries = [
+            entry(
+                ft.Icons.DOWNLOAD_ROUNDED,
+                "下载进度",
+                "暂无下载任务",
+                "download",
+            ),
+            entry(
+                ft.Icons.STORAGE,
+                "缓存管理",
+                self._cache_summary(),
+                "cache",
+            ),
+            entry(
+                ft.Icons.TERMINAL,
+                "应用日志",
+                self._log_summary(),
+                "logs",
+            ),
+            entry(
+                ft.Icons.INFO_OUTLINED,
+                "应用信息",
+                f"v{_package_version('nextcloud-music-player')} · "
+                f"Flet {_package_version('flet')}",
+                "about",
+            ),
+        ]
+
+        return ft.ListView(
+            controls=[self._menu_header(), *entries],
+            spacing=Space.MD,
+            expand=True,
+            padding=0,
+        )
+
+    def _cache_summary(self) -> str:
+        music_service = self.app_context.get("music_service")
+        getter = getattr(music_service, "get_cached_songs", None)
+        if not callable(getter):
+            return "查看已下载到本机的音乐"
+        songs = getter()
+        total = sum(item.get("size", 0) for item in songs)
+        return f"{len(songs)} 首 · {self._format_bytes(total)}"
+
+    def _log_summary(self) -> str:
+        level = str(
+            self.app_context["config_manager"].get("app.log_level", "INFO")
+        ).upper()
+        if level not in ("INFO", "DEBUG"):
+            level = "INFO"
+        return f"级别 {level} · 内存缓冲 {get_buffered_log_count()} 条"
+
+    def _refresh_menu_subtitles(self) -> bool:
+        """刷新菜单页副标题（下载状态实时、其余按需），返回是否有变化"""
+        changed = False
+        subtitle = self._menu_subtitles.get("download")
+        if subtitle is not None:
+            text = self._download_menu_summary()
+            if subtitle.value != text:
+                subtitle.value = text
+                changed = True
+        return changed
+
+    def _download_menu_summary(self) -> str:
+        music_service = self.app_context.get("music_service")
+        tracker = getattr(music_service, "download_progress", None)
+        if tracker is None:
+            return "暂无下载任务"
+        state = tracker.snapshot()
+        status = state["status"]
+        if status == "downloading":
+            total = state["total_bytes"]
+            percent = (
+                f"{state['downloaded_bytes'] / total:.0%}" if total else "…"
+            )
+            text = f"正在下载 {state['filename']} · {percent}"
+        elif status == "queued":
+            text = f"等待下载 {state['queued']} 首"
+        elif status == "completed":
+            text = f"下载完成 {state['completed']} 首"
+        elif status == "failed":
+            text = f"下载失败 {state['failed']} 首"
+        else:
+            text = "暂无下载任务"
+        if state["queued"]:
+            text += f" · 排队 {state['queued']}"
+        return text
+
+    # ------------------------------------------------------------------
+    # 下载进度页
+    # ------------------------------------------------------------------
+
+    def _build_download_page(self) -> ft.ListView:
+        header = self._detail_header("下载进度", "DOWNLOAD · 实时状态")
+
         self.download_status_text = ft.Text(
             "暂无下载任务",
             size=FontSize.BODY + 1,
@@ -182,7 +409,138 @@ class SettingsView:
             border_radius=Radius.LG,
         )
 
-        # === 应用日志 ===
+        hint_card = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(
+                        ft.Icons.CLOUD_DONE_OUTLINED,
+                        size=16,
+                        color=Color.TEXT_MUTED,
+                    ),
+                    ft.Text(
+                        "下载由系统后台执行：切后台、锁屏不影响进行中的任务",
+                        size=FontSize.CAPTION,
+                        color=Color.TEXT_MUTED,
+                    ),
+                ],
+                spacing=Space.SM,
+            ),
+            padding=Space.MD,
+            bgcolor=Color.BG_APP_ALT,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+        )
+
+        return self._page_scaffold(header, download_card, hint_card)
+
+    # ------------------------------------------------------------------
+    # 缓存管理页
+    # ------------------------------------------------------------------
+
+    def _build_cache_page(self) -> ft.ListView:
+        header = self._detail_header("缓存管理", "STORAGE · 已下载音乐")
+
+        self.cache_summary_text = ft.Text(
+            "0 首 · 0 B", size=FontSize.CAPTION, color=Color.TEXT_SECONDARY
+        )
+        self.cache_selection_text = ft.Text(
+            "已选 0 首", size=FontSize.CAPTION, color=Color.TEXT_MUTED
+        )
+        self.cache_list = ft.Column(spacing=Space.XS)
+        self.select_all_cache_checkbox = ft.Checkbox(
+            label="全选", value=False, on_change=self._toggle_all_cache
+        )
+        self.clear_selected_cache_button = ft.OutlinedButton(
+            "清理所选",
+            icon=ft.Icons.DELETE_OUTLINE,
+            disabled=True,
+            on_click=self._clear_selected_cache,
+            style=ft.ButtonStyle(
+                color=Color.DANGER_TEXT,
+                icon_color=Color.DANGER,
+                side=ft.BorderSide(1, tint(Color.DANGER, "40")),
+                shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
+            ),
+        )
+        cache_card = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(ft.Icons.STORAGE, size=18, color=Color.PRIMARY),
+                            ft.Text(
+                                "已下载音乐",
+                                size=FontSize.BODY + 1,
+                                weight=ft.FontWeight.W_500,
+                                color=Color.TEXT_PRIMARY,
+                            ),
+                            self.cache_summary_text,
+                        ],
+                        spacing=Space.SM,
+                    ),
+                    ft.Text(
+                        "查看已下载到本机的音乐，可按需选择清理",
+                        size=FontSize.CAPTION,
+                        color=Color.TEXT_MUTED,
+                    ),
+                    self.cache_list,
+                    ft.Row(
+                        [
+                            self.select_all_cache_checkbox,
+                            self.cache_selection_text,
+                            self.clear_selected_cache_button,
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        wrap=True,
+                    ),
+                ],
+                spacing=Space.SM,
+            ),
+            padding=Space.MD,
+            bgcolor=Color.BG_SURFACE,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+        )
+
+        return self._page_scaffold(header, cache_card)
+
+    # ------------------------------------------------------------------
+    # 应用日志页
+    # ------------------------------------------------------------------
+
+    def _build_logs_page(self) -> ft.ListView:
+        header = self._detail_header("应用日志", "LOGS · 级别与实时输出")
+
+        current_level = str(
+            self.app_context["config_manager"].get("app.log_level", "INFO")
+        ).upper()
+        if current_level not in ("INFO", "DEBUG"):
+            current_level = "INFO"
+        self.level_selector = ft.SegmentedButton(
+            selected=[current_level],
+            segments=[
+                ft.Segment(value="INFO", label="INFO", icon=ft.Icons.INFO_OUTLINED),
+                ft.Segment(
+                    value="DEBUG", label="DEBUG", icon=ft.Icons.BUG_REPORT_OUTLINED
+                ),
+            ],
+            allow_multiple_selection=False,
+            allow_empty_selection=False,
+            on_change=self._on_log_level_change,
+            style=ft.ButtonStyle(
+                bgcolor={
+                    ft.ControlState.SELECTED: tint(Color.PRIMARY, "26"),
+                    ft.ControlState.DEFAULT: Color.BG_SURFACE_ALT,
+                },
+                color={
+                    ft.ControlState.SELECTED: Color.PRIMARY,
+                    ft.ControlState.DEFAULT: Color.TEXT_SECONDARY,
+                },
+                side=ft.BorderSide(1, Color.BORDER),
+                shape=ft.RoundedRectangleBorder(radius=Radius.MD),
+            ),
+        )
+
         self.log_path_text = ft.Text(
             "日志文件: -",
             size=FontSize.CAPTION,
@@ -261,7 +619,7 @@ class SettingsView:
                                 color=Color.SUCCESS,
                             ),
                             ft.Text(
-                                "应用日志",
+                                "运行日志",
                                 size=FontSize.BODY + 1,
                                 weight=ft.FontWeight.W_500,
                                 color=Color.TEXT_PRIMARY,
@@ -269,6 +627,7 @@ class SettingsView:
                         ],
                         spacing=Space.SM,
                     ),
+                    ft.Row([self.level_selector], spacing=Space.XS),
                     self.log_path_text,
                     ft.Container(
                         content=self.log_list,
@@ -299,7 +658,15 @@ class SettingsView:
             expand=True,
         )
 
-        # === 应用信息 ===
+        return self._page_scaffold(header, log_card)
+
+    # ------------------------------------------------------------------
+    # 应用信息页
+    # ------------------------------------------------------------------
+
+    def _build_about_page(self) -> ft.ListView:
+        header = self._detail_header("应用信息", "ABOUT · 版本与环境")
+
         platform_name = str(getattr(self.page, "platform", "") or sys.platform)
         info_rows = ft.Column(
             [
@@ -322,7 +689,7 @@ class SettingsView:
                                 color=Color.PRIMARY,
                             ),
                             ft.Text(
-                                "应用信息",
+                                "版本信息",
                                 size=FontSize.BODY + 1,
                                 weight=ft.FontWeight.W_500,
                                 color=Color.TEXT_PRIMARY,
@@ -340,30 +707,7 @@ class SettingsView:
             border_radius=Radius.LG,
         )
 
-        # 组装
-        self._container = ft.Container(
-            content=ft.ListView(
-                controls=[
-                    title_row,
-                    download_card,
-                    ft.Row([self.level_selector], spacing=Space.XS),
-                    log_card,
-                    info_card,
-                ],
-                spacing=Space.MD,
-                expand=True,
-                padding=0,
-            ),
-            padding=Space.LG,
-            expand=True,
-            bgcolor=Color.BG_APP,
-        )
-
-        self._built = True
-        self._visible_log_limit = _LOG_INITIAL_LINES
-        self._refresh_download_progress()
-        self._refresh_logs(limit=self._visible_log_limit)
-        return self._container
+        return self._page_scaffold(header, info_card)
 
     @staticmethod
     def _info_row(key: str, value: str) -> ft.Row:
@@ -385,6 +729,10 @@ class SettingsView:
             ],
             spacing=Space.SM,
         )
+
+    # ------------------------------------------------------------------
+    # 日志数据与操作
+    # ------------------------------------------------------------------
 
     def _log_file_path(self) -> Path | None:
         try:
@@ -442,10 +790,12 @@ class SettingsView:
         )
 
     def _refresh_logs(self, limit: int | None = None):
-        """重新加载日志内容到列表"""
+        """重新加载日志内容到列表（仅日志页控件存在时刷新 UI）"""
         if limit is None:
             limit = self._visible_log_limit
         self._log_lines = self._load_log_lines(limit)
+        if not hasattr(self, "log_list"):
+            return
 
         self.log_list.controls.clear()
         for line in self._log_lines:
@@ -456,10 +806,7 @@ class SettingsView:
         else:
             self.log_path_text.value = "日志文件不可用，显示内存缓冲（当前会话）"
         self.log_meta_text.value = f"显示最近 {len(self._log_lines)} 行 · 内存缓冲 {get_buffered_log_count()} 条"
-        try:
-            self.page.update()
-        except Exception:
-            pass
+        self._try_page_update()
 
     def _refresh_clicked(self, e):
         self._refresh_logs(limit=self._visible_log_limit)
@@ -473,12 +820,19 @@ class SettingsView:
             value /= 1024
         return "0 B"
 
+    # ------------------------------------------------------------------
+    # 下载进度刷新
+    # ------------------------------------------------------------------
+
     def _refresh_download_progress(self) -> bool:
-        """从共享 tracker 刷新下载卡片，返回控件是否发生变化。"""
+        """从共享 tracker 刷新下载卡片/菜单副标题，返回控件是否发生变化。"""
         music_service = self.app_context.get("music_service")
         tracker = getattr(music_service, "download_progress", None)
-        if tracker is None or not hasattr(self, "download_status_text"):
+        if tracker is None:
             return False
+        changed = self._refresh_menu_subtitles()
+        if not hasattr(self, "download_status_text"):
+            return changed
         state = tracker.snapshot()
         status = state["status"]
         labels = {
@@ -513,13 +867,100 @@ class SettingsView:
             self.download_queue_text.value,
         )
         if values == old_values:
-            return False
+            return changed
         self.download_status_text.value = values[0]
         self.download_filename_text.value = values[1]
         self.download_progress_bar.value = values[2]
         self.download_progress_text.value = values[3]
         self.download_queue_text.value = values[4]
         return True
+
+    # ------------------------------------------------------------------
+    # 缓存管理操作
+    # ------------------------------------------------------------------
+
+    def _refresh_cache_list(self):
+        if not hasattr(self, "cache_summary_text"):
+            return
+        music_service = self.app_context.get("music_service")
+        getter = getattr(music_service, "get_cached_songs", None)
+        self._cached_songs = getter() if callable(getter) else []
+        available = {item["name"] for item in self._cached_songs}
+        self._selected_cache_names.intersection_update(available)
+        total_size = sum(item.get("size", 0) for item in self._cached_songs)
+        self.cache_summary_text.value = (
+            f"{len(self._cached_songs)} 首 · {self._format_bytes(total_size)}"
+        )
+        self.cache_list.controls.clear()
+        if not self._cached_songs:
+            self.cache_list.controls.append(
+                ft.Text("暂无已下载音乐", size=FontSize.CAPTION,
+                        color=Color.TEXT_MUTED)
+            )
+        for item in self._cached_songs:
+            name = item["name"]
+            subtitle = self._format_bytes(item.get("size", 0))
+            if item.get("download_time"):
+                subtitle += f" · {str(item['download_time']).replace('T', ' ')[:16]}"
+            checkbox = ft.Checkbox(
+                label=name,
+                value=name in self._selected_cache_names,
+                data=name,
+                on_change=self._toggle_cache_item,
+                expand=True,
+            )
+            self.cache_list.controls.append(
+                ft.Row([checkbox, ft.Text(subtitle, size=FontSize.CAPTION,
+                                          color=Color.TEXT_MUTED)],
+                       alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+            )
+        self._update_cache_selection_controls()
+
+    def _update_cache_selection_controls(self):
+        count = len(self._selected_cache_names)
+        total = len(self._cached_songs)
+        self.cache_selection_text.value = f"已选 {count} 首"
+        self.clear_selected_cache_button.disabled = count == 0
+        self.select_all_cache_checkbox.disabled = total == 0
+        self.select_all_cache_checkbox.value = total > 0 and count == total
+
+    def _toggle_cache_item(self, e):
+        name = e.control.data
+        if e.control.value:
+            self._selected_cache_names.add(name)
+        else:
+            self._selected_cache_names.discard(name)
+        self._update_cache_selection_controls()
+        self.page.update()
+
+    def _toggle_all_cache(self, e):
+        self._selected_cache_names = (
+            {item["name"] for item in self._cached_songs}
+            if e.control.value else set()
+        )
+        self._refresh_cache_list()
+        self.page.update()
+
+    def _clear_selected_cache(self, e):
+        music_service = self.app_context.get("music_service")
+        remover = getattr(music_service, "remove_cached_songs", None)
+        if not callable(remover) or not self._selected_cache_names:
+            return
+        try:
+            deleted, freed = remover(sorted(self._selected_cache_names))
+            self._selected_cache_names.clear()
+            self._refresh_cache_list()
+            self.page.update()
+            self.show_message(
+                f"已清理 {deleted} 首，释放 {self._format_bytes(freed)}", "success"
+            )
+        except Exception as ex:
+            logger.error(f"清理音乐缓存失败: {ex}")
+            self.show_message(f"清理失败: {ex}", "error")
+
+    # ------------------------------------------------------------------
+    # 日志滚动 / 级别 / 增量跟随
+    # ------------------------------------------------------------------
 
     def _on_log_scroll(self, e):
         """上滑到顶部时按页加载更早日志。"""
@@ -552,13 +993,17 @@ class SettingsView:
         return None
 
     async def _tail_logs(self):
-        """设置页可见时增量追加日志，行为类似 tail -f。"""
+        """设置页可见期间轮询：下载状态常刷，日志仅在其页面打开时增量追加。"""
         while self._view_active:
             await asyncio.sleep(1.0)
             if not self._view_active or not self._built:
                 break
             try:
                 download_changed = self._refresh_download_progress()
+                if self._sub_page != "logs":
+                    if download_changed:
+                        self._try_page_update()
+                    continue
                 latest = self._load_log_lines(_LOG_LINE_LIMIT)
                 new_lines = self._new_log_lines(self._log_lines, latest)
                 if new_lines is None:
@@ -566,7 +1011,7 @@ class SettingsView:
                     continue
                 if not new_lines:
                     if download_changed:
-                        self.page.update()
+                        self._try_page_update()
                     continue
                 self._log_lines.extend(new_lines)
                 if len(self._log_lines) > _LOG_LINE_LIMIT:
@@ -580,7 +1025,7 @@ class SettingsView:
                     f"显示最近 {len(self._log_lines)} 行 · "
                     f"内存缓冲 {get_buffered_log_count()} 条"
                 )
-                self.page.update()
+                self._try_page_update()
             except asyncio.CancelledError:
                 raise
             except Exception as ex:
@@ -659,16 +1104,13 @@ class SettingsView:
         show_snack_bar(self.page, message, message_type)
 
     def on_view_activated(self):
-        """视图激活后从当前日志尾部开始增量跟随。"""
+        """视图激活后刷新当前页面并启动轮询。"""
         self._view_active = True
-        if self._refresh_download_progress():
-            try:
-                self.page.update()
-            except Exception:
-                pass
+        self._refresh_page_data()
+        self._try_page_update()
         if not self._log_tail_task or self._log_tail_task.done():
             self._log_tail_task = asyncio.create_task(self._tail_logs())
 
     def on_view_deactivated(self):
-        """离开设置页后停止日志轮询。"""
+        """离开设置页后停止轮询。"""
         self._cancel_log_tail()

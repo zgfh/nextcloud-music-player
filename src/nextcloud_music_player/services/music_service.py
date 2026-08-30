@@ -4,9 +4,10 @@
 """
 
 import asyncio
+import base64
 import inspect
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .download_progress import DownloadProgressTracker
 
@@ -91,10 +92,13 @@ class MusicService:
             return False
 
     def get_default_sync_folder(self) -> str:
-        """获取当前来源类型（nextcloud/smb）的默认同步文件夹"""
+        """获取当前来源类型（nextcloud/smb/gdrive）的默认同步文件夹"""
         source_type = self.config_manager.get("connection.source_type", "nextcloud")
         if source_type == "smb":
             return self.config_manager.get("connection.smb.default_sync_folder", "/")
+        if source_type == "gdrive":
+            # Google Drive 的同步文件夹为 Drive 文件夹 ID，空表示根目录
+            return self.config_manager.get("connection.gdrive.default_sync_folder", "")
         return self.config_manager.get("connection.default_sync_folder", "")
 
     async def sync_music_files(self, sync_folder: str = "") -> List[Dict[str, Any]]:
@@ -252,23 +256,29 @@ class MusicService:
             if not self.nextcloud_client:
                 raise Exception("NextCloud客户端未连接")
 
-            download_method = self.nextcloud_client.download_file
-            parameters = inspect.signature(download_method).parameters.values()
-            supports_progress = any(
-                p.name == "progress_callback" or p.kind == p.VAR_KEYWORD
-                for p in parameters
+            native_result = await self._download_native(
+                file_path, filename, local_path, progress_token
             )
-            if supports_progress:
-                success = await download_method(
-                    file_path,
-                    filename,
-                    local_path,
-                    progress_callback=lambda downloaded, total=0: self.download_progress.update(
-                        downloaded, total, progress_token
-                    ),
-                )
+            if native_result is not None:
+                success, _final_path, _error = native_result
             else:
-                success = await download_method(file_path, filename, local_path)
+                download_method = self.nextcloud_client.download_file
+                parameters = inspect.signature(download_method).parameters.values()
+                supports_progress = any(
+                    p.name == "progress_callback" or p.kind == p.VAR_KEYWORD
+                    for p in parameters
+                )
+                if supports_progress:
+                    success = await download_method(
+                        file_path,
+                        filename,
+                        local_path,
+                        progress_callback=lambda downloaded, total=0: self.download_progress.update(
+                            downloaded, total, progress_token
+                        ),
+                    )
+                else:
+                    success = await download_method(file_path, filename, local_path)
 
             if success:
                 # 低采样率 MP3（32kHz 等）在部分播放链路解码劣化，转码为 44.1kHz
@@ -312,6 +322,70 @@ class MusicService:
             logger.error(f"下载文件失败: {e}")
             raise
 
+    async def _download_native(
+        self, file_path: str, filename: str, local_path, progress_token: int
+    ) -> Optional[Tuple[bool, Optional[str], Optional[str]]]:
+        """iOS 优先走原生后台 NSURLSession（切后台/锁屏/被杀均不中断）。
+
+        仅支持带 HTTP 凭据的 NextCloud 来源；SMB 等其它来源、非 iOS
+        平台或会话不可用返回 None，调用方回退 requests 路径。已提交
+        但传输失败以 (False, path, error) 表达，不再回退——例外是
+        ATS 拦截（-1022）这类确定性配置错误，禁用原生路径并回退。
+        """
+        from .. import ios_background_download as native
+
+        if not native.is_available():
+            return None
+
+        client = self.nextcloud_client
+        username = getattr(client, "username", None)
+        password = getattr(client, "password", None)
+        url = native.build_webdav_url(getattr(client, "server_url", ""), file_path)
+        if not (url and username is not None and password is not None):
+            return None
+
+        credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+        headers = {"Authorization": f"Basic {credentials}"}
+
+        def _on_progress(downloaded: int, total: int = 0):
+            self.download_progress.update(downloaded, total, progress_token)
+
+        try:
+            success, final_path, error = await native.download(
+                url, headers, local_path, key=filename, on_progress=_on_progress
+            )
+        except Exception as e:
+            logger.warning(f"原生后台下载不可用，回退应用内下载: {e}")
+            return None
+
+        if not success:
+            logger.error(f"原生后台下载失败 {filename}: {error}")
+            if error and "-1022" in error:
+                # ATS 拦截明文 HTTP：Info.plist 例外未生效，重试不会好转，
+                # 禁用原生路径，本文件及后续下载回退 requests
+                native.disable(f"ATS 拦截明文 HTTP (-1022): {error}")
+                return None
+        return success, final_path, error
+
+    def handle_orphan_native_download(
+        self, key: str, success: bool, final_path: Optional[str], error: str = None
+    ) -> None:
+        """原生后台任务在应用重启后完成时的落库回调（主事件循环线程执行）。
+
+        应用被杀时 nsurlsessiond 继续已提交的任务，系统重启应用交付
+        结果；此时原等待协程已不存在，由此处统一落库。
+        """
+        if success and final_path:
+            try:
+                self.music_library.mark_song_downloaded(key, final_path)
+                logger.info(f"后台遗留下载已落库: {key}")
+            except Exception as e:
+                logger.error(f"后台遗留下载落库失败 {key}: {e}")
+        else:
+            logger.error(f"后台遗留下载失败 {key}: {error or '未知原因'}")
+        message = (error or "后台下载失败") if not success else ""
+        self.download_progress.finish(bool(success), message)
+
     def has_nextcloud_client(self) -> bool:
         """检查是否有NextCloud客户端连接"""
         return self.nextcloud_client is not None
@@ -326,6 +400,20 @@ class MusicService:
         except Exception as e:
             logger.error(f"清除缓存失败: {e}")
             raise
+
+    def get_cached_songs(self) -> List[Dict[str, Any]]:
+        """获取可在设置页管理的已下载音乐。"""
+        if not self.music_library:
+            return []
+        return self.music_library.get_cached_songs()
+
+    def remove_cached_songs(self, song_names: List[str]) -> tuple[int, int]:
+        """选择性删除音乐缓存，保留远端音乐索引。"""
+        if not self.music_library:
+            return 0, 0
+        result = self.music_library.remove_cached_songs(song_names)
+        logger.info(f"已清理 {result[0]} 首音乐缓存，释放 {result[1]} 字节")
+        return result
 
     def get_connection_config(self) -> dict:
         """获取连接配置"""

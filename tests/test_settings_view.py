@@ -136,6 +136,36 @@ def test_download_card_renders_live_progress():
     assert "等待 1" in view.download_queue_text.value
 
 
+def test_cache_manager_lists_and_selectively_clears_downloads():
+    cached = [
+        {"name": "a.mp3", "size": 1024, "download_time": "2026-08-30T10:20:00"},
+        {"name": "b.mp3", "size": 2048, "download_time": ""},
+    ]
+
+    class CacheService:
+        def get_cached_songs(self):
+            return list(cached)
+
+        def remove_cached_songs(self, names):
+            removed = [item for item in cached if item["name"] in names]
+            cached[:] = [item for item in cached if item["name"] not in names]
+            return len(removed), sum(item["size"] for item in removed)
+
+    view, page, _ = make_settings_view()
+    view.app_context["music_service"] = CacheService()
+    view._refresh_cache_list()
+
+    assert view.cache_summary_text.value == "2 首 · 3.0 KB"
+    first_checkbox = view.cache_list.controls[0].controls[0]
+    first_checkbox.value = True
+    view._toggle_cache_item(SimpleNamespace(control=first_checkbox))
+    view._clear_selected_cache(None)
+
+    assert [item["name"] for item in cached] == ["b.mp3"]
+    assert view.cache_summary_text.value == "1 首 · 2.0 KB"
+    assert page.update_calls > 0
+
+
 def test_stale_download_cannot_overwrite_newer_progress():
     from nextcloud_music_player.services.download_progress import (
         DownloadProgressTracker,

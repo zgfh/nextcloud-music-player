@@ -258,6 +258,70 @@ class MusicLibrary:
             except Exception as e:
                 logger.error(f"Failed to delete music list file: {e}")
 
+    def get_cached_songs(self) -> List[Dict]:
+        """Return downloaded files that currently exist on disk."""
+        cached = []
+        for song_name, song_info in self.songs.items():
+            if not song_info.get("is_downloaded", False):
+                continue
+            filepath = song_info.get("filepath")
+            if not filepath:
+                continue
+            path = Path(filepath)
+            try:
+                if not path.is_file():
+                    continue
+                size = path.stat().st_size
+            except OSError:
+                continue
+            cached.append(
+                {
+                    "name": song_name,
+                    "filepath": str(path),
+                    "size": size,
+                    "download_time": song_info.get("download_time", ""),
+                }
+            )
+        return sorted(cached, key=lambda item: item["name"].lower())
+
+    def remove_cached_songs(self, song_names: List[str]) -> tuple[int, int]:
+        """Delete selected downloaded files while keeping their remote metadata.
+
+        Returns ``(deleted_count, freed_bytes)``. Paths outside the managed music
+        directory are never removed, which protects against a corrupted index.
+        """
+        music_root = self.music_dir.resolve()
+        deleted_count = 0
+        freed_bytes = 0
+        changed = False
+        for song_name in dict.fromkeys(song_names):
+            song_info = self.songs.get(song_name)
+            if not song_info or not song_info.get("is_downloaded", False):
+                continue
+            filepath = song_info.get("filepath")
+            if not filepath:
+                continue
+            path = Path(filepath)
+            try:
+                resolved = path.resolve()
+                if not resolved.is_relative_to(music_root):
+                    logger.warning(f"拒绝删除音乐缓存目录外的文件: {path}")
+                    continue
+                size = resolved.stat().st_size if resolved.is_file() else 0
+                if resolved.exists():
+                    resolved.unlink()
+                freed_bytes += size
+                deleted_count += 1
+                song_info["is_downloaded"] = False
+                song_info["filepath"] = None
+                song_info.pop("download_time", None)
+                changed = True
+            except OSError as ex:
+                logger.error(f"删除缓存文件失败 {path}: {ex}")
+        if changed:
+            self.save_music_list()
+        return deleted_count, freed_bytes
+
     def get_songs_count(self) -> int:
         """Get the number of songs in the library."""
         return len(self.songs)
