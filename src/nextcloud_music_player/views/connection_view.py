@@ -385,36 +385,50 @@ class ConnectionView:
             visible=(source_type == "smb"),
         )
 
+        action_row = ft.Row(
+            [
+                self.connect_button,
+                self.disconnect_button,
+                self.test_button,
+            ],
+            spacing=Space.SM,
+        )
         self._container = ft.Container(
-            content=ft.ListView(
-                controls=[
-                    hero,
-                    self.source_selector,
-                    self.status_container,
-                    self.nextcloud_form_card,
-                    self.smb_form_card,
-                    ft.Container(
-                        content=ft.Column(
-                            [
-                                self.remember_password_switch,
-                                self.auto_connect_switch,
-                            ],
-                            spacing=Space.XS,
-                        ),
-                        padding=ft.Padding(
-                            left=Space.XS, top=Space.XS, bottom=Space.XS, right=Space.XS
-                        ),
-                    ),
-                    ft.Row(
-                        [
-                            self.connect_button,
-                            self.disconnect_button,
-                            self.test_button,
+            content=ft.Column(
+                [
+                    ft.ListView(
+                        controls=[
+                            hero,
+                            self.source_selector,
+                            self.status_container,
+                            self.nextcloud_form_card,
+                            self.smb_form_card,
+                            ft.Container(
+                                content=ft.Column(
+                                    [
+                                        self.remember_password_switch,
+                                        self.auto_connect_switch,
+                                    ],
+                                    spacing=Space.XS,
+                                ),
+                                padding=ft.Padding(
+                                    left=Space.XS,
+                                    top=Space.XS,
+                                    bottom=Space.XS,
+                                    right=Space.XS,
+                                ),
+                            ),
                         ],
-                        spacing=Space.SM,
+                        spacing=Space.MD,
+                        expand=True,
+                    ),
+                    ft.Container(
+                        content=action_row,
+                        padding=ft.Padding(top=Space.SM, left=0, right=0, bottom=0),
+                        bgcolor=Color.BG_APP,
                     ),
                 ],
-                spacing=Space.MD,
+                spacing=0,
                 expand=True,
             ),
             padding=Space.LG,
@@ -476,7 +490,12 @@ class ConnectionView:
             self.app_context["config_manager"].save_config()
         except Exception as ex:
             logger.error(f"保存来源类型失败: {ex}")
-        self.page.update()
+        # iOS/Flet 对初始 hidden 表单使用 Offstage；仅切 visible 时测试 key
+        # 偶尔不会重新挂载。当前视图完整重建可确保新来源表单可交互。
+        if getattr(self.view_manager, "current_view", None) is self:
+            self.view_manager.switch_to_view("connection")
+        else:
+            self.page.update()
 
     def _on_connect_clicked(self, e):
         """连接入口：SMB 走向导（选择身份/共享/目录），Nextcloud 走表单直连"""

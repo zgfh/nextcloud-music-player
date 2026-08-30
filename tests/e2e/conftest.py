@@ -15,7 +15,7 @@ import pytest
 from mock_nextcloud import MockNextcloudServer
 
 # 类级常量缺省为 256KB 行裁剪 2048 字节；放宽到足够容纳异常与堆栈。
-_fta.FletTestApp._FletTestApp__flutter_output_limit = 200 * 1024 * 1024
+_fta.FletTestApp._FletTestApp__flutter_output_limit = 8 * 1024 * 1024
 _fta.FletTestApp._FletTestApp__flutter_output_line_limit = 512 * 1024
 
 

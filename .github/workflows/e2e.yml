@@ -123,12 +123,17 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      # build/ 目录数百 MB，仅在失败时需要它定位问题；成功时只留日志
-      - name: Upload build tree on failure
+      # 完整 build/ 超过 500 MB，上传慢且通常无诊断价值；只保留构建清单。
+      - name: Upload build diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: flet-e2e-build-${{ github.run_id }}
-          path: build/
+          name: flet-e2e-build-diagnostics-${{ github.run_id }}
+          path: |
+            build/**/pubspec.yaml
+            build/**/pubspec.lock
+            build/**/Podfile
+            build/**/Podfile.lock
+            build/**/project.pbxproj
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 3
