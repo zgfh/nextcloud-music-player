@@ -66,6 +66,10 @@ class AudioPlayerProtocol(Protocol):
         """跳转到指定位置（秒）"""
         ...
 
+    async def play_async(self) -> bool:
+        """异步开始播放（支持需要等待原生播放器就绪的平台）"""
+        ...
+
 
 class PygameAudioPlayer:
     """基于pygame的音频播放器（桌面平台）"""
@@ -394,14 +398,29 @@ class FletAudioPlayer:
         self._duration = 0.0
         self._position_ms = 0
         self._position_ts = 0.0
+        self._loaded = asyncio.Event()
+        self._tasks = set()
 
     def _run(self, coro):
         """在事件循环中调度协程（协议方法本身是同步的）"""
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(coro)
+            task = loop.create_task(coro)
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+            task.add_done_callback(self._log_task_error)
         except RuntimeError:
             asyncio.run(coro)
+
+    @staticmethod
+    def _log_task_error(task):
+        """记录后台音频命令异常，避免静默误报成功。"""
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Flet音频后台命令执行失败")
 
     def _to_src(self, file_path: str) -> str:
         """转换为音频源地址。
@@ -425,12 +444,19 @@ class FletAudioPlayer:
                 src=src,
                 volume=self._volume,
                 release_mode=self._fta.ReleaseMode.STOP,
+                on_loaded=self._on_loaded,
                 on_duration_change=self._on_duration_change,
                 on_state_change=self._on_state_change,
                 on_position_change=self._on_position_change,
             )
-            self._page.services.append(self._audio)
-            self._page.update()
+            # Flet 0.86 的 Service 构造时会自动注册。仅为测试桩或不自动注册
+            # 的兼容运行时补注册，避免同一个 Audio 在 registry 中出现两次。
+            if self._audio not in self._page.services:
+                self._page.services.append(self._audio)
+                self._page.update()
+
+    def _on_loaded(self, _e):
+        self._loaded.set()
 
     def _on_duration_change(self, e):
         try:
@@ -453,6 +479,20 @@ class FletAudioPlayer:
         except Exception:
             pass
 
+    def dispose(self):
+        """移除失效的 Flet service，并取消尚未完成的原生命令。"""
+        for task in tuple(self._tasks):
+            task.cancel()
+        self._tasks.clear()
+        if self._audio is not None:
+            try:
+                self._page.services.remove(self._audio)
+                self._page.update()
+            except (ValueError, AttributeError):
+                pass
+        self._audio = None
+        self._loaded.clear()
+
     def load(self, file_path: str) -> bool:
         try:
             file_path_str = (
@@ -465,9 +505,13 @@ class FletAudioPlayer:
                 return False
 
             src = self._to_src(file_path_str)
+            source_changed = self._audio is None or self._audio.src != src
+            if source_changed:
+                self._loaded.clear()
             self._ensure_audio(src)
             if self._audio.src != src:
                 self._audio.src = src
+                self._page.update()
             self._current_file = file_path_str
             self._state = self._AudioState.STOPPED
             self._duration = 0.0
@@ -489,6 +533,21 @@ class FletAudioPlayer:
             logger.error(f"Flet播放失败: {e}")
             return False
 
+    async def play_async(self) -> bool:
+        """等待 service 注册提交后播放，并确认原生命令完成。"""
+        if not self._audio:
+            return False
+        try:
+            # iOS audioplayers 对本地 DeviceFileSource 不保证触发 on_loaded；
+            # page.update 已提交 service 后让出一轮循环即可发送 play。
+            await asyncio.sleep(0)
+            await self._audio.play()
+            logger.info("Flet开始播放音频（已确认命令完成）")
+            return True
+        except Exception:
+            logger.exception("Flet播放失败")
+            return False
+
     def pause(self) -> bool:
         try:
             if not self._audio:
@@ -504,13 +563,24 @@ class FletAudioPlayer:
         try:
             if not self._audio:
                 return False
-            self._run(self._audio.pause())
-            self._run(self._audio.seek(self._ft.Duration(seconds=0)))
-            self._state = self._AudioState.STOPPED
-            self._position_ms = 0
+            self._run(self.stop_async())
             return True
         except Exception as e:
             logger.error(f"Flet停止失败: {e}")
+            return False
+
+    async def stop_async(self) -> bool:
+        """顺序完成暂停和归零，避免旧命令在新歌播放后才抵达。"""
+        if not self._audio:
+            return False
+        try:
+            await self._audio.pause()
+            await self._audio.seek(self._ft.Duration(seconds=0))
+            self._state = self._AudioState.STOPPED
+            self._position_ms = 0
+            return True
+        except Exception:
+            logger.exception("Flet停止音频失败")
             return False
 
     def is_playing(self) -> bool:
@@ -531,11 +601,8 @@ class FletAudioPlayer:
 
     def get_duration(self) -> float:
         try:
-            if self._duration > 0:
-                return self._duration
-            if self._audio:
-                # 事件尚未到达时主动查询一次（结果经事件回调缓存）
-                self._run(self._audio.get_duration())
+            # Audio 会通过 on_duration_change 主动上报。UI 定时刷新中反复调用
+            # invoke_method(get_duration) 会在 iOS listener 忙时堆积并超时。
             return self._duration
         except Exception:
             return 0.0
@@ -950,10 +1017,16 @@ def create_audio_player(page=None) -> AudioPlayerProtocol:
     """创建适合当前运行环境的音频播放器
 
     Args:
-        page: Flet Page 实例。提供时优先使用 Flet 原生 Audio 播放器，
-              这是 iOS/Android 上唯一可靠的方案（pygame 和 rubicon
-              都不在 Flet 移动端的打包范围内）。
+        page: Flet Page 实例。非 iOS 的 Flet 运行时使用 Audio service。
+              iOS 优先使用 AVFoundation，保持界面重构前已验证的播放路径。
     """
+
+    if is_ios():
+        logger.info("检测到iOS平台，优先创建AVFoundation音频播放器")
+        player = iOSAudioPlayer()
+        if hasattr(player, "AVAudioPlayer"):
+            return player
+        logger.warning("iOS AVFoundation初始化失败，尝试Flet Audio播放器")
 
     if page is not None:
         try:
@@ -964,15 +1037,8 @@ def create_audio_player(page=None) -> AudioPlayerProtocol:
             logger.warning(f"Flet Audio播放器创建失败: {e}，尝试其他播放器")
 
     if is_ios():
-        logger.info("检测到iOS平台，创建iOS音频播放器")
-        player = iOSAudioPlayer()
-
-        # 验证iOS播放器是否正常工作
-        if hasattr(player, "AVAudioPlayer"):
-            return player
-        else:
-            logger.warning("iOS音频播放器初始化失败，使用备用播放器")
-            return FallbackAudioPlayer()
+        logger.warning("iOS播放器初始化失败，使用备用播放器")
+        return FallbackAudioPlayer()
 
     else:
         # 桌面平台尝试使用pygame

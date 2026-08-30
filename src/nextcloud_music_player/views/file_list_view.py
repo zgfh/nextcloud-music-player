@@ -8,12 +8,12 @@ from typing import Any, Dict, List
 
 import flet as ft
 
+from ..utils.notify import show_snack_bar
 from ..utils.theme import (
     Color,
     FontSize,
     Radius,
     Space,
-    get_message_style,
     glow,
     tint,
 )
@@ -34,6 +34,10 @@ class FileListView:
         self.last_selected_name = None  # 最后点选的歌曲，播放时从它开始
         self.is_syncing = False
         self._built = False
+        # 下载队列：iOS 切后台进程挂起会中断下载协程，
+        # 未完成项留在 pending，回前台（on_app_resumed）自动续传
+        self._pending_downloads: list[tuple[str, str]] = []
+        self._download_task: asyncio.Task | None = None
 
     def rebuild(self):
         """重建视图（Flet 0.86 控件脱离页面后被冻结且不可复用）"""
@@ -230,9 +234,6 @@ class FileListView:
             ),
         )
 
-        # 消息区
-        self.message_container = ft.Container(visible=False)
-
         # 组装
         self._container = ft.Container(
             content=ft.Column(
@@ -280,7 +281,6 @@ class FileListView:
                         [self.download_button, self.clear_cache_button],
                         spacing=Space.SM,
                     ),
-                    self.message_container,
                 ],
                 spacing=Space.MD,
                 expand=True,
@@ -318,6 +318,7 @@ class FileListView:
         )
 
         return ft.Container(
+            key=f"song:{name}",
             content=ft.Row(
                 [
                     check_icon,
@@ -497,29 +498,86 @@ class FileListView:
             self.view_manager.switch_to_view("playback")
 
     async def _download_selected(self, e):
-        """下载选中的文件"""
+        """把选中的文件排入下载队列，由后台 worker 逐首处理"""
         if not self.selected_files:
             return
-        self.download_button.disabled = True
-        self.show_message(f"开始下载 {len(self.selected_files)} 首歌曲...", "info")
-        self.page.update()
 
-        success_count = 0
+        added = 0
         for name in list(self.selected_files):
             song = next((s for s in self.music_files if s.get("name") == name), None)
             if song and not song.get("is_downloaded", False):
                 remote_path = song.get("remote_path", "")
                 if remote_path:
-                    try:
-                        ok = await self.music_service.download_file(remote_path, name)
-                        if ok:
-                            success_count += 1
-                    except Exception as ex:
-                        logger.error(f"下载 {name} 失败: {ex}")
+                    self._pending_downloads.append((name, remote_path))
+                    added += 1
 
         self.selected_files.clear()
         self.reload_music_list()
-        self.show_message(f"下载完成，成功 {success_count} 首", "success")
+
+        if not added:
+            self.show_message("选中歌曲均已下载", "info")
+            return
+
+        self.show_message(f"开始下载 {added} 首歌曲...", "info")
+        self._start_download_worker()
+
+    def _start_download_worker(self):
+        """启动下载 worker；已在运行时不重复启动（新排队项由现有 worker 继续消化）"""
+        if self._download_task and not self._download_task.done():
+            return
+        self._download_task = asyncio.create_task(self._download_worker())
+
+    async def _download_worker(self):
+        """逐首处理下载队列。
+
+        iOS 切后台进程挂起可能中断协程：未完成项留在 _pending_downloads，
+        回前台由 on_app_resumed() 重新拉起 worker 续传。
+        """
+        from ..ios_background_task import begin_background_task, end_background_task
+
+        # 申请约 30s 的 iOS 后台宽限，尽量让当前批次在切后台后跑完
+        bg_token = begin_background_task("music-download")
+        success_count = 0
+        failed_count = 0
+        try:
+            while self._pending_downloads:
+                name, remote_path = self._pending_downloads.pop(0)
+                try:
+                    ok = await self.music_service.download_file(remote_path, name)
+                    if ok:
+                        success_count += 1
+                    else:
+                        failed_count += 1
+                except asyncio.CancelledError:
+                    # 取消时把当前项放回队首，续传时从这里继续
+                    self._pending_downloads.insert(0, (name, remote_path))
+                    raise
+                except Exception as ex:
+                    failed_count += 1
+                    logger.error(f"下载 {name} 失败: {ex}")
+                self.reload_music_list(keep_scroll=True)
+        finally:
+            end_background_task(bg_token)
+
+        if success_count or failed_count:
+            message = f"下载完成，成功 {success_count} 首"
+            message_type = "success"
+            if failed_count:
+                message += f"，失败 {failed_count} 首"
+                message_type = "warning"
+            self.show_message(message, message_type)
+            self.reload_music_list()
+
+    def on_app_resumed(self):
+        """应用回到前台：下载队列有剩余且 worker 已死时自动续传"""
+        if not self._pending_downloads:
+            return
+        if self._download_task and not self._download_task.done():
+            return
+        remaining = len(self._pending_downloads)
+        logger.info(f"应用回到前台，续传下载剩余 {remaining} 首")
+        self.show_message(f"继续下载剩余 {remaining} 首...", "info")
+        self._start_download_worker()
 
     def _clear_cache(self, e):
         """清除缓存"""
@@ -529,22 +587,8 @@ class FileListView:
         self.show_message("缓存已清除", "info")
 
     def show_message(self, message: str, message_type: str = "info"):
-        """显示消息（霓虹芯片风）"""
-        bg_color, text_color, icon = get_message_style(message_type)
-        self.message_container.content = ft.Row(
-            [
-                ft.Icon(ft.Icons.INFO_OUTLINE, color=text_color, size=18),
-                ft.Text(message, color=text_color, size=FontSize.BODY),
-            ],
-            spacing=Space.XS,
-        )
-        self.message_container.bgcolor = bg_color
-        self.message_container.padding = Space.SM
-        self.message_container.border = ft.Border.all(1, bg_color)
-        self.message_container.border_radius = Radius.CIRCLE
-        self.message_container.visible = True
-        self.page.update()
-        logger.info(f"[{message_type.upper()}] {message}")
+        """在页面顶部显示消息。"""
+        show_snack_bar(self.page, message, message_type)
 
     def on_view_activated(self):
         """视图激活时刷新列表"""

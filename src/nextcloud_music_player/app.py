@@ -2,38 +2,47 @@
 NextCloud Music Player - Flet 主入口
 """
 
-import asyncio
 import logging
-from typing import Optional
 
 import flet as ft
 
 from .config_manager import ConfigManager
 from .music_library import MusicLibrary
+from .utils.log_buffer import (
+    LOG_FILE_NAME,
+    LOG_FORMAT,
+    RingBufferHandler,
+    install_exception_hooks,
+)
 from .utils.theme import Color
 
 logger = logging.getLogger(__name__)
 
 
 def setup_logging():
-    """设置日志系统"""
+    """设置日志系统（控制台 + 文件 + 内存环形缓冲，未捕获异常也落日志）"""
     try:
         config_manager = ConfigManager()
         log_dir = config_manager.get_log_directory()
-        log_file = log_dir / "nextcloud_music_player.log"
+        log_file = log_dir / LOG_FILE_NAME
 
-        handlers = [logging.StreamHandler()]
+        level_name = str(config_manager.get("app.log_level", "INFO")).upper()
+        level = getattr(logging, level_name, logging.INFO)
+
+        handlers: list[logging.Handler] = [logging.StreamHandler()]
         try:
             handlers.append(logging.FileHandler(str(log_file)))
         except (PermissionError, OSError):
             pass
+        handlers.append(RingBufferHandler())
 
         logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            level=level,
+            format=LOG_FORMAT,
             handlers=handlers,
         )
-        logger.info("日志系统初始化完成")
+        install_exception_hooks()
+        logger.info(f"日志系统初始化完成 (level={level_name})")
     except Exception as e:
         logging.basicConfig(level=logging.INFO)
         logger.error(f"设置日志系统失败: {e}")

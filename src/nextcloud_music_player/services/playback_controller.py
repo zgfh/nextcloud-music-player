@@ -66,11 +66,12 @@ class PlaybackController:
                 if self.ui_update_callback:
                     self.ui_update_callback(False)
             else:
-                await self.resume_music()
-                logger.info("播放已恢复")
-                # 通知UI更新按钮状态
-                if self.ui_update_callback:
-                    self.ui_update_callback(True)
+                resumed = await self.resume_music()
+                if resumed:
+                    logger.info("播放已恢复")
+                    # 通知UI更新按钮状态
+                    if self.ui_update_callback:
+                        self.ui_update_callback(True)
         except Exception as e:
             logger.error(f"切换播放状态失败: {e}")
             raise
@@ -87,11 +88,17 @@ class PlaybackController:
                     hasattr(self.playback_service, "audio_player")
                     and self.playback_service.audio_player
                 ):
-                    if self.playback_service.audio_player.play():
+                    play = getattr(self.playback_service, "_play_audio_player", None)
+                    resumed = (
+                        await play()
+                        if play is not None
+                        else self.playback_service.audio_player.play()
+                    )
+                    if resumed:
                         self.playback_service.current_song_state["is_paused"] = False
                         self.playback_service.current_song_state["is_playing"] = True
                         logger.info("音乐已恢复播放")
-                        return
+                        return True
                     else:
                         logger.error("音频播放器恢复播放失败")
 
@@ -116,9 +123,13 @@ class PlaybackController:
                 and self.playback_service.current_song
             ):
                 await self.playback_service.play_music()
-                logger.info("重新开始播放当前歌曲")
+                resumed = self.playback_service.is_playing()
+                if resumed:
+                    logger.info("重新开始播放当前歌曲")
+                return resumed
             else:
                 logger.warning("没有可恢复的音乐")
+                return False
 
         except Exception as e:
             logger.error(f"恢复音乐播放失败: {e}")

@@ -13,12 +13,12 @@ import flet as ft
 from ..services.playback_controller import PlaybackController, PlayMode
 from ..services.playback_service import PlaybackService
 from ..services.playlist_manager import PlaylistManager
+from ..utils.notify import show_snack_bar
 from ..utils.theme import (
     Color,
     FontSize,
     Radius,
     Space,
-    get_message_style,
     glow,
     glow_soft,
     tint,
@@ -148,6 +148,11 @@ class PlaybackView:
             self._ui_task.cancel()
         self._ui_task = None
 
+    @staticmethod
+    def _is_destroyed_session_error(error: Exception) -> bool:
+        """判断 Flet 客户端是否已经销毁当前会话。"""
+        return "destroyed session" in str(error).lower()
+
     def build(self):
         """构建并返回视图"""
         if self._built and hasattr(self, "_container"):
@@ -256,9 +261,6 @@ class PlaybackView:
             content=lyrics_view, expand=True, visible=False
         )
 
-        # 消息区
-        self.message_container = ft.Container(visible=False)
-
         # 播放控制
         controls = self.playback_control_component.build()
 
@@ -270,7 +272,6 @@ class PlaybackView:
                     self.tab_selector,
                     self.playlist_panel,
                     self.lyrics_panel,
-                    self.message_container,
                     controls,
                 ],
                 spacing=Space.SM,
@@ -446,9 +447,16 @@ class PlaybackView:
 
             self.playback_service.set_current_song(file_path)
             try:
-                await asyncio.wait_for(self.playback_service.play_music(), timeout=5.0)
+                played = await asyncio.wait_for(
+                    self.playback_service.play_music(), timeout=15.0
+                )
             except asyncio.TimeoutError:
                 logger.error("播放音乐超时")
+                self._set_status("播放失败", Color.DANGER_TEXT)
+                self.page.update()
+                return False
+
+            if not played:
                 self._set_status("播放失败", Color.DANGER_TEXT)
                 self.page.update()
                 return False
@@ -482,9 +490,21 @@ class PlaybackView:
             await asyncio.sleep(update_interval)
             if not self._view_active or not self._built:
                 continue
+            if getattr(self.view_manager, "app_backgrounded", False):
+                # 应用在后台：Flet websocket 可能已被系统冻结，
+                # page.update 会阻塞事件循环并拖慢下载协程
+                continue
             try:
                 self._update_progress_only()
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
+                if self._is_destroyed_session_error(e):
+                    # 客户端关闭或热重载会直接销毁 Flet session，不一定触发
+                    # 视图切出回调；此时结束永久刷新任务，避免持续访问失效页面。
+                    self._view_active = False
+                    logger.info("Flet会话已销毁，停止播放页UI刷新")
+                    break
                 logger.error(f"UI更新失败: {e}")
 
     def _update_progress_only(self):
@@ -538,6 +558,9 @@ class PlaybackView:
                 self._set_status("停止", Color.STATUS_STOPPED)
                 self.playback_control_component.update_play_pause_button(False)
         except Exception as e:
+            if self._is_destroyed_session_error(e):
+                # 交给定时任务终止循环，不把正常的会话关闭误报为播放故障。
+                raise
             logger.error(f"更新播放进度失败: {e}")
 
     async def _auto_play_next_song(self):
@@ -616,21 +639,8 @@ class PlaybackView:
             return None
 
     def show_message(self, message: str, message_type: str = "info"):
-        """显示消息"""
-        bg_color, text_color, icon = get_message_style(message_type)
-        self.message_container.content = ft.Row(
-            [
-                ft.Icon(ft.Icons.INFO_OUTLINE, color=text_color, size=18),
-                ft.Text(message, color=text_color, size=FontSize.BODY),
-            ],
-            spacing=Space.XS,
-        )
-        self.message_container.bgcolor = bg_color
-        self.message_container.border = ft.Border.all(1, bg_color)
-        self.message_container.padding = Space.SM
-        self.message_container.border_radius = Radius.CIRCLE
-        self.message_container.visible = True
-        self.page.update()
+        """在页面顶部显示消息。"""
+        show_snack_bar(self.page, message, message_type)
 
     def handle_play_selected(
         self, music_files: List[Dict[str, Any]], start_index: int = 0

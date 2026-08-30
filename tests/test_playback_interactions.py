@@ -22,6 +22,7 @@ async def test_play_downloaded_song_skips_download(playback_env):
     assert ok is True
     assert playback_env.client.download_calls == []
     assert playback_env.player.loaded_files[-1].endswith("local.mp3")
+    assert playback_env.player.stopped_count == 0
     assert playback_env.view.status_label.value == "播放中"
 
 

@@ -1,9 +1,14 @@
 """
 SMB 音乐来源客户端 - 通过 pysmb 访问 SMB 共享中的音乐文件。
 
+协议支持：SMB1 / SMB 2.002 / SMB 2.1 / SMB 3.0（未加密）——
+由 smb_dialects 扩展 pysmb 的协商方言实现，iOS 上同样可用；
+SMB 3.1.1 与强制签名/加密的服务器暂不支持（见 smb_dialects.py）。
+
 接口与 NextCloudClient 保持鸭子类型兼容（MusicService/FolderSelector/LyricsService
 均按此事实接口调用，无需改动）：
 - test_connection() -> bool
+- list_shares() -> [{'name','comment','type'}]（连接向导列举服务器共享）
 - list_music_files(folder_path) -> [{'name','path','size','modified','type'}]
 - list_directories(folder_path) -> [{'name','path','modified','type'}]
 - download_file(file_path, file_name, local_path) -> str（本地路径，失败抛异常）
@@ -109,15 +114,29 @@ class SMBClient:
     # === 连接管理 ===
 
     def _get_conn(self):
-        """获取或建立 SMB 连接（必须在持有 _smb_lock 时调用）"""
+        """获取或建立 SMB 连接（必须在持有 _smb_lock 时调用）
+
+        share 可为空：空 share 表示"只连接服务器"（用于列举共享的向导阶段），
+        具体共享在 listPath/retrieveFile 等调用时才需要。
+        """
         if self._conn is not None:
             return self._conn
 
         if not self.host:
             raise ConnectionError("未配置 SMB 主机地址")
-        if not self.share:
-            raise ConnectionError("未配置 SMB 共享名称")
 
+        from . import smb_dialects
+
+        # 协商支持 SMB1 / SMB 2.002 / SMB 2.1 / SMB 3.0（见 smb_dialects.py）
+        smb_dialects.enable_modern_negotiation()
+        conn = self._connect_once()
+
+        self._conn = conn
+        logger.info(f"✅ SMB 连接已建立: {self.host}:{self.port} 共享 '{self.share}'")
+        return self._conn
+
+    def _connect_once(self):
+        """以当前方言列表建立一条新的 SMB 连接"""
         from smb.SMBConnection import SMBConnection
 
         try:
@@ -125,7 +144,8 @@ class SMBClient:
         except Exception:
             my_name = "music-player"
 
-        # 445 端口为 SMB 直连 TCP；139 为传统 NetBIOS
+        # 直连 TCP 帧格式适用于除 139（传统 NetBIOS）外的所有端口，
+        # 不能按"端口==445"判断：非 445 的直连端口同样不需要 NBT 会话头
         conn = SMBConnection(
             self.username,
             self.password,
@@ -133,17 +153,16 @@ class SMBClient:
             remote_name=self.host.upper(),
             domain=self.domain,
             use_ntlm_v2=True,
-            is_direct_tcp=(self.port == 445),
+            is_direct_tcp=(self.port != 139),
         )
         if not conn.connect(self.host, self.port, timeout=10):
             conn.close()
             raise ConnectionError(
                 f"无法连接到 SMB 服务器 {self.host}:{self.port}"
-                f"（认证失败或服务器强制 SMB3 加密协议，当前实现支持 SMB1/SMB2）"
+                f"（认证失败或服务器要求 SMB 3.1.1/强制加密协议，"
+                f"当前实现支持 SMB1/SMB2/SMB3.0-未加密）"
             )
-        self._conn = conn
-        logger.info(f"✅ SMB 连接已建立: {self.host}:{self.port} 共享 '{self.share}'")
-        return self._conn
+        return conn
 
     def _reset_conn(self):
         """丢弃当前连接（必须在持有 _smb_lock 时调用）"""
@@ -174,6 +193,17 @@ class SMBClient:
         msg = str(exc)
         text = f"{name}: {msg}" if msg else name
 
+        # 服务器只接受 pysmb 无法协商的协议（SMB 3.1.1 / 强制签名或加密）
+        if (
+            "does not support any of the" in msg
+            or ("ProtocolError" in name and "dialect" in msg.lower())
+        ):
+            return (
+                f"服务器 {self.host} 要求 SMB 3.1.1 或强制签名/加密，"
+                f"当前实现最高支持 SMB 3.0（未加密）。可在服务器端放宽协议要求"
+                f"（Samba: server min protocol = SMB2，并关闭强制加密），"
+                f"或改用支持 SMB 2/3 的共享主机"
+            )
         if (
             "NtlmError" in name
             or "LOGON" in msg.upper()
@@ -201,15 +231,52 @@ class SMBClient:
 
     # === 事实接口实现 ===
 
+    async def list_shares(self) -> List[Dict]:
+        """列出服务器上可访问的共享（连接向导用），返回 [{'name','comment','type'}]"""
+        logger.info(f"🔍 [SMB_SHARES] 列出服务器共享: {self.host}:{self.port}")
+
+        def _sync():
+            with self._smb_lock:
+                shares = self._call(lambda conn: conn.listShares())
+
+            result = []
+            for share in shares:
+                if share.isSpecial:
+                    # IPC$ / ADMIN$ 等管理共享对音乐播放无意义
+                    continue
+                result.append(
+                    {
+                        "name": share.name,
+                        "comment": getattr(share, "comments", "") or "",
+                        "type": "share",
+                    }
+                )
+            logger.info(f"✅ [SMB_SHARES] 找到 {len(result)} 个共享")
+            return result
+
+        try:
+            return await self._run_in_executor(_sync)
+        except Exception as e:
+            error = self._friendly_error(e)
+            logger.error(f"❌ [SMB_SHARES] {error}")
+            raise Exception(error)
+
     async def test_connection(self) -> bool:
-        """测试连接：建立 SMB 连接并列出共享根目录验证凭据与共享可访问性"""
+        """测试连接：验证认证可用的前提下，列出共享根目录（或共享列表）"""
 
         def _sync():
             with self._smb_lock:
                 try:
                     conn = self._get_conn()
-                    conn.listPath(self.share, "/")
-                    logger.info(f"✅ SMB 连接测试成功: {self.host} 共享 '{self.share}'")
+                    if self.share:
+                        conn.listPath(self.share, "/")
+                        logger.info(
+                            f"✅ SMB 连接测试成功: {self.host} 共享 '{self.share}'"
+                        )
+                    else:
+                        # 未指定共享（向导第一阶段）：能列出共享即认证通过
+                        conn.listShares()
+                        logger.info(f"✅ SMB 连接测试成功: {self.host}（未指定共享）")
                     return True
                 except Exception as e:
                     self._reset_conn()

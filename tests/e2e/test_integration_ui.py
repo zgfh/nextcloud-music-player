@@ -31,10 +31,10 @@ async def test_integration_switch_source_to_smb(flet_app: ftt.FletTestApp):
     await tester.tap(await tester.find_by_text("SMB 共享"))
     await tester.pump_and_settle()
 
-    # 标题切换、SMB 表单出现
+    # 标题切换、SMB 表单出现（向导式：仅一个地址框 + 引导文案）
     assert (await tester.find_by_text("SMB")).count == 1
     assert (await tester.find_by_key("smb_host")).count == 1
-    assert (await tester.find_by_key("smb_share")).count == 1
+    assert (await tester.find_by_text("访客")).count == 0  # 向导未打开时无认证界面
 
     # 切回 Nextcloud 还原配置与界面
     await tester.tap(await tester.find_by_text("Nextcloud"))

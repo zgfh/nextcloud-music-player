@@ -6,7 +6,7 @@ import asyncio
 
 from fakes import (
     FakeConfigManager, FakeMusicLibrary, FakeNextcloudClient, FakePage,
-    FakeViewManager, make_music_service,
+    FakeViewManager, add_remote_song, last_notification_text, make_music_service,
 )
 
 
@@ -40,7 +40,7 @@ async def test_sync_shows_progress_and_reloads(tmp_path, monkeypatch):
     await asyncio.sleep(0.05)
 
     assert view.sync_button.disabled is True
-    assert "正在同步" in view.message_container.content.controls[1].value
+    assert "正在同步" in last_notification_text(page)
 
     await task
     assert view.sync_button.disabled is False           # 按钮恢复
@@ -58,7 +58,7 @@ async def test_sync_failure_shows_error_and_reenables(tmp_path, monkeypatch):
     await view._sync_music_list(None)
 
     assert view.sync_button.disabled is False
-    assert "同步失败" in view.message_container.content.controls[1].value
+    assert "同步失败" in last_notification_text(page)
 
 
 async def test_sync_reentry_ignored_while_running(tmp_path, monkeypatch):
@@ -91,3 +91,82 @@ async def test_search_filters_list(tmp_path, monkeypatch):
     view._search_music(None)
 
     assert len(view.file_list.controls) == 1
+
+
+async def test_download_selected_queues_and_drains(tmp_path, monkeypatch):
+    """批量下载入队后由 worker 逐首处理，完成后队列清空并提示结果"""
+    page = FakePage()
+    client = FakeNextcloudClient()
+    config = FakeConfigManager()
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("a.mp3", "/music/a.mp3")
+    library.add_remote_song("b.mp3", "/music/b.mp3")
+    view, _ = make_file_list_view(page, client, library, config, monkeypatch)
+
+    view.selected_files = {"a.mp3", "b.mp3"}
+    await view._download_selected(None)
+
+    assert view._download_task is not None
+    await view._download_task
+
+    assert {name for _, name in client.download_calls} == {"a.mp3", "b.mp3"}
+    assert view._pending_downloads == []
+    assert "下载完成" in last_notification_text(page)
+    assert library.get_song_info("a.mp3")["is_downloaded"] is True
+
+
+async def test_download_selected_skips_already_downloaded(tmp_path, monkeypatch):
+    """选中歌曲均已下载时不启动 worker，直接提示"""
+    page = FakePage()
+    client = FakeNextcloudClient()
+    config = FakeConfigManager()
+    library = FakeMusicLibrary(tmp_path)
+    add_remote_song(library, "a.mp3", downloaded=True)
+    view, _ = make_file_list_view(page, client, library, config, monkeypatch)
+
+    view.selected_files = {"a.mp3"}
+    await view._download_selected(None)
+
+    assert view._download_task is None
+    assert client.download_calls == []
+    assert "均已下载" in last_notification_text(page)
+
+
+async def test_app_resumed_restarts_dead_download_worker(tmp_path, monkeypatch):
+    """队列有剩余且 worker 已死（iOS 后台挂起后）：回前台自动续传"""
+    page = FakePage()
+    client = FakeNextcloudClient()
+    config = FakeConfigManager()
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("a.mp3", "/music/a.mp3")
+    view, _ = make_file_list_view(page, client, library, config, monkeypatch)
+
+    view._pending_downloads = [("a.mp3", "/music/a.mp3")]
+    view._download_task = None
+
+    view.on_app_resumed()
+    assert view._download_task is not None
+    await view._download_task
+
+    assert client.download_calls == [("/music/a.mp3", "a.mp3")]
+    assert view._pending_downloads == []
+
+
+async def test_app_resumed_does_not_duplicate_running_worker(tmp_path, monkeypatch):
+    """worker 存活时回前台不重复拉起"""
+    page = FakePage()
+    client = FakeNextcloudClient()
+    config = FakeConfigManager()
+    library = FakeMusicLibrary(tmp_path)
+    view, _ = make_file_list_view(page, client, library, config, monkeypatch)
+
+    view._pending_downloads = [("a.mp3", "/music/a.mp3")]
+    running = asyncio.create_task(asyncio.sleep(10))
+    view._download_task = running
+
+    try:
+        view.on_app_resumed()
+        assert view._download_task is running
+    finally:
+        running.cancel()
+        view._pending_downloads.clear()

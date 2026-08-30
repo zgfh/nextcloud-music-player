@@ -1,5 +1,6 @@
 """
-视图管理器 - 基于 Flet NavigationBar 管理三个主要界面的切换
+视图管理器 - 基于 Flet NavigationBar 管理四个主要界面的切换，
+并统一处理应用前后台生命周期（后台冻结 UI 刷新、回前台续传下载）
 """
 
 import logging
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class ViewManager:
-    """管理应用的三个主要视图：连接、文件列表、播放"""
+    """管理应用的主要视图：连接、文件列表、播放、设置"""
 
     def __init__(self, page: ft.Page, app_context: dict):
         self.page = page
@@ -53,10 +54,17 @@ class ViewManager:
         from .connection_view import ConnectionView
         from .file_list_view import FileListView
         from .playback_view import PlaybackView
+        from .settings_view import SettingsView
 
         self.connection_view = ConnectionView(page, app_context, self)
         self.file_list_view = FileListView(page, app_context, self)
         self.playback_view = PlaybackView(page, app_context, self)
+        self.settings_view = SettingsView(page, app_context, self)
+
+        # 应用前后台状态：后台时暂停周期性 page.update（websocket 可能已冻结，
+        # 调用会阻塞事件循环），回前台时续传下载队列
+        self.app_backgrounded = False
+        page.on_app_lifecycle_state_change = self._on_app_lifecycle_state_change
 
         # 内容区域
         self.content_area = ft.Container(
@@ -86,6 +94,11 @@ class ViewManager:
                     selected_icon=ft.Icons.MUSIC_NOTE,
                     label="播放",
                 ),
+                ft.NavigationBarDestination(
+                    icon=ft.Icons.SETTINGS_OUTLINED,
+                    selected_icon=ft.Icons.SETTINGS,
+                    label="设置",
+                ),
             ],
         )
 
@@ -110,8 +123,27 @@ class ViewManager:
     def _on_nav_change(self, e):
         """导航栏切换事件"""
         index = e.control.selected_index
-        view_map = {0: "connection", 1: "file_list", 2: "playback"}
+        view_map = {0: "connection", 1: "file_list", 2: "playback", 3: "settings"}
         self.switch_to_view(view_map.get(index, "playback"))
+
+    def _on_app_lifecycle_state_change(self, e):
+        """应用生命周期变化：后台时标记冻结，回前台时续传下载队列"""
+        state = e.state
+        logger.info(f"应用生命周期变化: {state}")
+        if state in (
+            ft.AppLifecycleState.PAUSE,
+            ft.AppLifecycleState.HIDE,
+            ft.AppLifecycleState.INACTIVE,
+        ):
+            self.app_backgrounded = True
+        elif state in (ft.AppLifecycleState.RESUME, ft.AppLifecycleState.SHOW):
+            was_backgrounded = self.app_backgrounded
+            self.app_backgrounded = False
+            if was_backgrounded and hasattr(self.file_list_view, "on_app_resumed"):
+                try:
+                    self.file_list_view.on_app_resumed()
+                except Exception as ex:
+                    logger.error(f"回前台恢复下载失败: {ex}")
 
     def _handle_playlist_change(self, playlist: list, start_index: int):
         """处理播放列表变化"""
@@ -129,6 +161,7 @@ class ViewManager:
             "connection": (self.connection_view, 0),
             "file_list": (self.file_list_view, 1),
             "playback": (self.playback_view, 2),
+            "settings": (self.settings_view, 3),
         }
 
         view, nav_index = view_map.get(view_name, (self.playback_view, 2))
@@ -173,4 +206,6 @@ class ViewManager:
             return self.file_list_view
         elif view_name == "playback":
             return self.playback_view
+        elif view_name == "settings":
+            return self.settings_view
         return None

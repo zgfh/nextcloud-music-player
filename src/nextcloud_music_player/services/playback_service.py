@@ -81,6 +81,7 @@ class PlaybackService:
 
         # Flet Page（用于创建 Flet Audio 播放器）
         self._page = page
+        self._play_lock = asyncio.Lock()
 
     def _init_audio_system(self):
         """初始化音频系统"""
@@ -191,6 +192,13 @@ class PlaybackService:
         else:
             self.current_song = str(song_path)
 
+    async def _play_audio_player(self) -> bool:
+        """播放并等待原生命令完成（Flet/iOS 不可使用 fire-and-forget）。"""
+        play_async = getattr(self.audio_player, "play_async", None)
+        if play_async is not None:
+            return await play_async()
+        return self.audio_player.play()
+
     def get_current_song(self) -> Optional[str]:
         """获取当前播放歌曲路径"""
         return self.current_song
@@ -202,11 +210,16 @@ class PlaybackService:
         return None
 
     async def play_music(self):
+        """串行执行播放请求，避免多个请求互相销毁播放器。"""
+        async with self._play_lock:
+            return await self._play_music_locked()
+
+    async def _play_music_locked(self) -> bool:
         """播放音乐"""
         try:
             if not self.current_song or not os.path.exists(self.current_song):
                 logger.error(f"当前歌曲文件不存在: {self.current_song}")
-                return
+                return False
 
             # 使用新的平台音频播放器
             if self.audio_player:
@@ -225,13 +238,14 @@ class PlaybackService:
                 # 特别是在播放完成后需要重新开始的情况下
                 try:
                     # 先停止当前播放（如果有的话）
-                    if (
-                        self.current_song_state["is_playing"]
-                        or not self.audio_player.is_playing()
-                    ):
+                    if self.current_song_state["is_playing"] or self.current_song_state["is_paused"]:
                         logger.info("停止当前播放，准备重新开始")
-                        self.audio_player.stop()
-                        await asyncio.sleep(0.1)  # 短暂等待确保停止完成
+                        stop_async = getattr(self.audio_player, "stop_async", None)
+                        if stop_async is not None:
+                            await stop_async()
+                        else:
+                            self.audio_player.stop()
+                            await asyncio.sleep(0.1)
                         # 重置播放状态
                         self.current_song_state["is_playing"] = False
                         self.current_song_state["is_paused"] = False
@@ -244,7 +258,7 @@ class PlaybackService:
                     if load_success:
                         # 开始播放
                         logger.info("开始播放音频")
-                        play_success = self.audio_player.play()
+                        play_success = await self._play_audio_player()
                         logger.info(f"音频播放结果: {play_success}")
 
                         if play_success:
@@ -274,7 +288,7 @@ class PlaybackService:
                             logger.info(
                                 f"开始播放: {os.path.basename(self.current_song)}"
                             )
-                            return
+                            return True
                         else:
                             logger.error("音频播放器播放失败")
                     else:
@@ -287,19 +301,27 @@ class PlaybackService:
                 try:
                     from ..platform_audio import create_audio_player
 
+                    old_player = self.audio_player
+                    dispose = getattr(old_player, "dispose", None)
+                    if dispose is not None:
+                        dispose()
                     self.audio_player = create_audio_player(page=self._page)
 
                     if self.audio_player and self.audio_player.load(self.current_song):
-                        if self.audio_player.play():
+                        if await self._play_audio_player():
                             self.current_song_state["is_playing"] = True
                             self.current_song_state["is_paused"] = False
                             self.current_song_state["last_played"] = (
                                 datetime.now().isoformat()
                             )
                             logger.info("重新初始化播放器后播放成功")
-                            return
+                            return True
                 except Exception as reinit_error:
                     logger.error(f"重新初始化播放器失败: {reinit_error}")
+
+                # Flet 是移动端唯一播放器，失败后不能落入 pygame 分支。
+                if is_mobile():
+                    return False
 
             # 备用方案：使用pygame（向后兼容）
             if not self._ensure_audio_system():
@@ -325,6 +347,7 @@ class PlaybackService:
             self.current_song_state["last_played"] = datetime.now().isoformat()
 
             logger.info(f"开始播放: {os.path.basename(self.current_song)}")
+            return True
 
         except Exception as e:
             logger.error(f"播放音乐失败: {e}")
@@ -334,6 +357,7 @@ class PlaybackService:
                     await self._play_music_callback()
                 except Exception as callback_error:
                     logger.error(f"回调播放也失败: {callback_error}")
+            return False
 
     def add_background_task(self, task):
         """添加后台任务"""
@@ -542,7 +566,13 @@ class PlaybackService:
                 self.current_song_state["is_playing"]
                 or self.current_song_state["is_paused"]
             ):
-                if self.audio_player.stop():
+                stop_async = getattr(self.audio_player, "stop_async", None)
+                stopped = (
+                    await stop_async()
+                    if stop_async is not None
+                    else self.audio_player.stop()
+                )
+                if stopped:
                     self.current_song_state["is_playing"] = False
                     self.current_song_state["is_paused"] = False
                     self.current_song_state["position"] = 0

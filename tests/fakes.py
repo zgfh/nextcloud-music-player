@@ -29,11 +29,18 @@ class FakePage:
         self.update_calls += 1
 
     def show_dialog(self, dialog):
+        dialog.open = True  # 与真实 Page.show_dialog 一致
         self.dialogs.append(dialog)
 
     def pop_dialog(self):
         self.popped_dialogs += 1
         return self.dialogs.pop() if self.dialogs else None
+
+
+def last_notification_text(page) -> str:
+    """Return the message from the latest top-overlay notification."""
+    notification = page.overlay[-1]
+    return notification.content.content.controls[1].value
 
 
 class FakeAudioPlayer:

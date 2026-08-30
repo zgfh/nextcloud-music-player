@@ -48,6 +48,9 @@ dev = [
     "flake8",
     "isort",
     "mypy",
+    # run_web.py（Web 模式 / 公网隧道测试）所需
+    "uvicorn",
+    "fastapi",
     # e2e（flet test）所需：flet.testing 依赖 numpy/pillow/scikit-image
     # （golden 截图 SSIM 对比），pytest 插件与 pytest-asyncio 已在上文
     "flet[test]>=0.86.0",

@@ -9,13 +9,13 @@ import time
 
 import flet as ft
 
+from ..utils.notify import show_snack_bar
 from ..utils.theme import (
     Color,
     FontSize,
     Gradient,
     Radius,
     Space,
-    get_message_style,
     glow,
     tint,
 )
@@ -181,6 +181,7 @@ class ConnectionView:
 
         # === 表单字段（暗色填充风格） ===
         self.url_input = _dark_input(
+            key="nextcloud_url",
             label="服务器地址",
             value=config.get("server_url", "http://cloud.home.daozzg.com"),
             hint_text="https://your-nextcloud.com",
@@ -188,6 +189,7 @@ class ConnectionView:
         )
 
         self.username_input = _dark_input(
+            key="nextcloud_username",
             label="用户名",
             value=config.get("username", "guest"),
             hint_text="输入用户名",
@@ -195,6 +197,7 @@ class ConnectionView:
         )
 
         self.password_input = _dark_input(
+            key="nextcloud_password",
             label="密码",
             value=(
                 config.get("password", "")
@@ -208,6 +211,7 @@ class ConnectionView:
         )
 
         self.sync_folder_input = _dark_input(
+            key="nextcloud_sync_folder",
             label="同步文件夹路径",
             value=config.get(
                 "default_sync_folder", "/mp3/音乐/当月抖音热播流行歌曲484首/"
@@ -231,87 +235,39 @@ class ConnectionView:
             ),
         )
 
-        # === SMB 来源表单字段 ===
-        self.smb_host_input = _dark_input(
-            key="smb_host",
-            label="主机地址 / IP",
-            value=smb_config.get("host", ""),
-            hint_text="如 192.168.1.100 或 nas.local",
-            prefix_icon=ft.Icons.LAN_OUTLINED,
-            expand=True,
-        )
-
-        # 固定窄宽：端口仅数字，Row 内不设宽度会在窄屏上把输入框挤出屏幕
-        self.smb_port_input = _dark_input(
-            label="端口",
-            value=str(smb_config.get("port", 445)),
-            hint_text="445",
-            prefix_icon=ft.Icons.NUMBERS,
-            keyboard_type=ft.KeyboardType.NUMBER,
-            width=110,
-        )
-
-        self.smb_share_input = _dark_input(
-            key="smb_share",
-            label="共享名称",
-            value=smb_config.get("share", ""),
-            hint_text="如 music",
-            prefix_icon=ft.Icons.FOLDER_SHARED_OUTLINED,
-        )
-
-        self.smb_username_input = _dark_input(
-            label="用户名",
-            value=(
+        # === SMB 来源：向导式连接 ===
+        # 只暴露一个地址框，其余参数（凭据/共享/目录）由向导引导选择，
+        # 结果保存在 _smb_settings 并持久化，供自动连接与测试使用
+        self._smb_settings = {
+            "host": smb_config.get("host", ""),
+            "port": smb_config.get("port", 445),
+            "domain": smb_config.get("domain", ""),
+            "username": (
                 smb_config.get("username", "")
                 if config.get("remember_credentials", True)
                 else ""
             ),
-            hint_text="guest 访问可留空",
-            prefix_icon=ft.Icons.PERSON_OUTLINE,
-            expand=1,
-        )
-
-        self.smb_domain_input = _dark_input(
-            label="域（可选）",
-            value=smb_config.get("domain", ""),
-            hint_text="默认 WORKGROUP",
-            prefix_icon=ft.Icons.PUBLIC,
-            expand=1,
-        )
-
-        self.smb_password_input = _dark_input(
-            label="密码",
-            value=(
+            "password": (
                 smb_config.get("password", "")
                 if config.get("remember_credentials", True)
                 else ""
             ),
-            hint_text="guest 访问可留空",
-            password=True,
-            can_reveal_password=True,
-            prefix_icon=ft.Icons.KEY,
+            "share": smb_config.get("share", ""),
+            "sync_folder": smb_config.get("default_sync_folder", "/"),
+        }
+
+        self.smb_host_input = _dark_input(
+            key="smb_host",
+            label="服务器地址",
+            value=self._smb_settings["host"],
+            hint_text="如 192.168.1.100 或 nas.local",
+            prefix_icon=ft.Icons.LAN_OUTLINED,
         )
 
-        self.smb_sync_folder_input = _dark_input(
-            label="同步文件夹路径（共享内）",
-            value=smb_config.get("default_sync_folder", "/"),
-            hint_text="/ 表示共享根目录",
-            prefix_icon=ft.Icons.FOLDER_OUTLINED,
-            on_change=self._on_sync_folder_changed,
-            expand=1,
-        )
-
-        self.smb_browse_button = ft.OutlinedButton(
-            "浏览",
-            icon=ft.Icons.FOLDER_OPEN,
-            on_click=self._browse_folder,
-            style=ft.ButtonStyle(
-                bgcolor=Color.BG_SURFACE,
-                color=Color.TEXT_SECONDARY,
-                icon_color=Color.PRIMARY,
-                side=ft.BorderSide(1, Color.BORDER),
-                shape=ft.RoundedRectangleBorder(radius=Radius.MD),
-            ),
+        smb_hint = ft.Text(
+            "点击「建立连接」后，将引导你选择身份（访客/用户）、共享与文件夹",
+            size=FontSize.CAPTION,
+            color=Color.TEXT_MUTED,
         )
 
         self.remember_password_switch = ft.Switch(
@@ -334,7 +290,7 @@ class ConnectionView:
         self.connect_button = ft.FilledButton(
             "建立连接",
             icon=ft.Icons.BOLT,
-            on_click=self._connect_to_server,
+            on_click=self._on_connect_clicked,
             expand=2,
             style=ft.ButtonStyle(
                 bgcolor={
@@ -388,16 +344,6 @@ class ConnectionView:
             ),
         )
 
-        # 消息 Banner（置顶显示，替代原底部消息条）
-        self.message_banner = ft.Banner(
-            visible=False,
-            leading=ft.Icon(ft.Icons.INFO_OUTLINE),
-            content=ft.Text(""),
-            actions=[ft.TextButton("知道了", on_click=self._dismiss_banner)],
-            content_padding=Space.SM,
-            bgcolor=Color.BG_SURFACE,
-        )
-
         # === 组装：表单卡片（按来源类型显示其一） ===
         self.nextcloud_form_card = ft.Container(
             content=ft.Column(
@@ -421,19 +367,8 @@ class ConnectionView:
         self.smb_form_card = ft.Container(
             content=ft.Column(
                 [
-                    ft.Row(
-                        [self.smb_host_input, self.smb_port_input], spacing=Space.XS
-                    ),
-                    self.smb_share_input,
-                    ft.Row(
-                        [self.smb_username_input, self.smb_domain_input],
-                        spacing=Space.XS,
-                    ),
-                    self.smb_password_input,
-                    ft.Row(
-                        [self.smb_sync_folder_input, self.smb_browse_button],
-                        spacing=Space.XS,
-                    ),
+                    self.smb_host_input,
+                    smb_hint,
                 ],
                 spacing=Space.SM,
             ),
@@ -445,11 +380,10 @@ class ConnectionView:
         )
 
         self._container = ft.Container(
-            content=ft.Column(
+            content=ft.ListView(
                 controls=[
                     hero,
                     self.source_selector,
-                    self.message_banner,
                     self.status_container,
                     self.nextcloud_form_card,
                     self.smb_form_card,
@@ -474,7 +408,6 @@ class ConnectionView:
                         spacing=Space.SM,
                     ),
                 ],
-                scroll=ft.ScrollMode.AUTO,
                 spacing=Space.MD,
                 expand=True,
             ),
@@ -493,11 +426,8 @@ class ConnectionView:
         return self._container
 
     def _on_sync_folder_changed(self, e):
-        """同步文件夹变化时自动保存（带防抖，按来源写入对应配置键）"""
-        if e.control is self.smb_sync_folder_input:
-            config_key = "connection.smb.default_sync_folder"
-        else:
-            config_key = "connection.default_sync_folder"
+        """同步文件夹变化时自动保存（带防抖，Nextcloud 表单专用）"""
+        config_key = "connection.default_sync_folder"
         if self._save_timer:
             self._save_timer.cancel()
 
@@ -542,26 +472,116 @@ class ConnectionView:
             logger.error(f"保存来源类型失败: {ex}")
         self.page.update()
 
-    def _build_client_from_form(self):
-        """按当前来源类型从表单构造客户端；表单不完整时抛出带提示的异常"""
+    def _on_connect_clicked(self, e):
+        """连接入口：SMB 走向导（选择身份/共享/目录），Nextcloud 走表单直连"""
         if self._current_source_type() == "smb":
-            host = self.smb_host_input.value.strip()
-            share = self.smb_share_input.value.strip()
-            if not host or not share:
-                raise ValueError("请填写 SMB 主机地址和共享名称")
+            self._open_smb_wizard()
+        else:
+            asyncio.create_task(self._connect_to_server(e))
+
+    def _parse_smb_address(self) -> str:
+        """读取地址框，支持 host 或 host:port，返回规范化 host（端口写入设置）"""
+        raw = (self.smb_host_input.value or "").strip()
+        if not raw:
+            raise ValueError("请先输入 SMB 服务器地址")
+        host = raw
+        if raw.count(":") == 1:
+            host, _, port_part = raw.partition(":")
+            if port_part.strip().isdigit():
+                self._smb_settings["port"] = int(port_part.strip())
+            else:
+                raise ValueError("地址格式不正确，应为 主机名 或 主机名:端口")
+        return host.strip()
+
+    def _open_smb_wizard(self):
+        """打开 SMB 三步连接向导（地址 → 身份 → 共享 → 文件夹）"""
+        from .components.smb_connect_wizard import SMBConnectWizard
+
+        try:
+            host = self._parse_smb_address()
+        except ValueError as ex:
+            self.show_message(str(ex), "error")
+            return
+
+        self._smb_settings["host"] = host
+
+        def on_complete(result):
+            self._on_smb_wizard_complete(result)
+
+        def on_error(message):
+            self.show_message(message, "info")
+
+        wizard = SMBConnectWizard(self.page, defaults=self._smb_settings)
+        wizard.show(on_complete, on_error)
+
+    def _on_smb_wizard_complete(self, result):
+        """向导完成：写入配置、接管客户端并进入文件列表"""
+        self._smb_settings = {
+            "host": result.host,
+            "port": result.port,
+            "domain": result.domain,
+            "username": result.username,
+            "password": result.password,
+            "share": result.share,
+            "sync_folder": result.sync_folder,
+        }
+        self.smb_host_input.value = result.host
+
+        # remember_credentials 关闭时仍保存结构信息，但不落盘明文密码
+        remember = self.remember_password_switch.value
+        cm = self.app_context["config_manager"]
+        try:
+            cm.set("connection.source_type", "smb")
+            cm.set("connection.smb.host", result.host)
+            cm.set("connection.smb.port", result.port)
+            cm.set("connection.smb.domain", result.domain)
+            cm.set("connection.smb.share", result.share)
+            cm.set("connection.smb.default_sync_folder", result.sync_folder or "/")
+            cm.set("connection.smb.username", result.username if remember else "")
+            cm.set("connection.smb.password", result.password if remember else "")
+            cm.set("connection.remember_credentials", remember)
+            cm.save_config()
+        except Exception as ex:
+            logger.error(f"保存 SMB 配置失败: {ex}")
+
+        self.app_context["nextcloud_client"] = result.client
+        if self.app_context.get("music_service"):
+            self.app_context["music_service"].update_nextcloud_client(result.client)
+        if self.app_context.get("lyrics_service"):
+            self.app_context["lyrics_service"].update_clients(
+                nextcloud_client=result.client
+            )
+
+        self.is_connected = True
+        self._update_connection_status(True)
+        self.show_message(
+            f"连接成功！共享 '{result.share}'，目录 {result.sync_folder or '/'}",
+            "success",
+        )
+        self.view_manager.switch_to_view("file_list")
+
+    def _build_client_from_form(self):
+        """按当前来源类型构造客户端；SMB 优先使用向导保存的完整设置"""
+        if self._current_source_type() == "smb":
             try:
-                port = int(self.smb_port_input.value.strip() or 445)
+                host = self._parse_smb_address()
             except ValueError:
-                raise ValueError("SMB 端口必须是数字")
+                host = self._smb_settings.get("host", "")
+            settings = self._smb_settings
+            if not host:
+                raise ValueError("请先输入 SMB 服务器地址")
+            if not settings.get("share"):
+                raise ValueError("请点击「建立连接」，通过向导选择共享和文件夹")
+
             from ..smb_client import SMBClient
 
             return SMBClient(
                 host=host,
-                username=self.smb_username_input.value.strip(),
-                password=self.smb_password_input.value or "",
-                port=port,
-                domain=self.smb_domain_input.value.strip(),
-                share=share,
+                username=settings.get("username", ""),
+                password=settings.get("password", ""),
+                port=settings.get("port", 445),
+                domain=settings.get("domain", ""),
+                share=settings["share"],
             )
 
         server_url = self.url_input.value.strip()
@@ -581,6 +601,11 @@ class ConnectionView:
             client = self._build_client_from_form()
         except ValueError as ex:
             self.show_message(str(ex), "error")
+            return
+        except Exception as ex:
+            # 构造失败（如缓存目录不可写）也必须给出反馈，否则表现为点击无响应
+            logger.error(f"构造客户端失败: {ex}", exc_info=True)
+            self.show_message(f"初始化连接失败: {ex}", "error")
             return
 
         self.show_message("正在连接...", "info")
@@ -606,7 +631,6 @@ class ConnectionView:
                 self.is_connected = True
                 self._update_connection_status(True)
                 self.show_message("连接成功！", "success")
-                self._toast("连接成功", "success")
                 logger.info(
                     f"✅ 连接成功，点击到完成总耗时 {time.monotonic() - t_start:.1f}s"
                 )
@@ -614,13 +638,11 @@ class ConnectionView:
                 self.view_manager.switch_to_view("file_list")
             else:
                 self.show_message("连接失败，请检查服务器地址和凭据", "error")
-                self._toast("连接失败，请检查服务器地址和凭据", "error")
                 self._update_connection_status(False)
                 logger.info(f"❌ 连接失败，总耗时 {time.monotonic() - t_start:.1f}s")
         except Exception as ex:
             logger.error(f"连接失败 (总耗时 {time.monotonic() - t_start:.1f}s): {ex}")
             self.show_message(f"连接错误: {str(ex)}", "error")
-            self._toast(f"连接错误: {str(ex)[:60]}", "error")
             self._update_connection_status(False)
         finally:
             self.connect_button.disabled = False
@@ -644,6 +666,10 @@ class ConnectionView:
         except ValueError as ex:
             self.show_message(str(ex), "error")
             return
+        except Exception as ex:
+            logger.error(f"构造客户端失败: {ex}", exc_info=True)
+            self.show_message(f"初始化连接失败: {ex}", "error")
+            return
 
         self.show_message("正在测试连接...", "info")
         self._set_connecting_state(True)
@@ -654,13 +680,10 @@ class ConnectionView:
             success = await temp_client.test_connection()
             if success:
                 self.show_message("连接测试成功！", "success")
-                self._toast("连接测试成功！", "success")
             else:
                 self.show_message("连接测试失败", "error")
-                self._toast("连接测试失败", "error")
         except Exception as ex:
             self.show_message(f"测试错误: {str(ex)}", "error")
-            self._toast(f"测试错误: {str(ex)[:60]}", "error")
         finally:
             self.test_button.disabled = False
             self._update_connection_status(self.is_connected)
@@ -688,24 +711,26 @@ class ConnectionView:
                 self.password_input.value or "" if remember else "",
             )
 
-            # SMB 字段
-            cm.set("connection.smb.host", self.smb_host_input.value.strip())
-            cm.set("connection.smb.share", self.smb_share_input.value.strip())
+            # SMB 字段（来自向导结果 _smb_settings）
+            s = self._smb_settings
+            cm.set(
+                "connection.smb.host",
+                self.smb_host_input.value.strip() or s.get("host", ""),
+            )
+            cm.set("connection.smb.share", s.get("share", ""))
             cm.set(
                 "connection.smb.default_sync_folder",
-                self.smb_sync_folder_input.value.strip() or "/",
+                s.get("sync_folder", "/") or "/",
             )
-            cm.set("connection.smb.username", self.smb_username_input.value.strip())
-            cm.set("connection.smb.domain", self.smb_domain_input.value.strip())
+            cm.set("connection.smb.username", s.get("username", ""))
+            cm.set("connection.smb.domain", s.get("domain", ""))
             try:
-                cm.set(
-                    "connection.smb.port", int(self.smb_port_input.value.strip() or 445)
-                )
-            except ValueError:
+                cm.set("connection.smb.port", int(s.get("port", 445) or 445))
+            except (TypeError, ValueError):
                 cm.set("connection.smb.port", 445)
             cm.set(
                 "connection.smb.password",
-                self.smb_password_input.value or "" if remember else "",
+                s.get("password", "") or "" if remember else "",
             )
 
             cm.save_config()
@@ -746,42 +771,9 @@ class ConnectionView:
             self.status_container.border = ft.Border.all(1, tint(Color.INFO, "40"))
         self.page.update()
 
-    def _toast(self, message: str, message_type: str = "info"):
-        """底部悬浮提示，无需滚动即可看到连接结果"""
-        bg_color, text_color, _ = get_message_style(message_type)
-        try:
-            self.page.show_dialog(
-                ft.SnackBar(
-                    ft.Text(message, color=text_color),
-                    bgcolor=bg_color,
-                    duration=3000,
-                )
-            )
-        except Exception as e:
-            logger.debug(f"SnackBar 显示失败: {e}")
-
-    def _dismiss_banner(self, e=None):
-        """关闭消息 Banner"""
-        self.message_banner.visible = False
-        self.page.update()
-
     def show_message(self, message: str, message_type: str = "info"):
-        """以顶部 Banner 显示消息（限高 3 行，超长报错不再把页面撑长）"""
-        bg_color, text_color, icon = get_message_style(message_type)
-        self.message_banner.leading = ft.Icon(
-            ft.Icons.INFO_OUTLINE, color=text_color, size=22
-        )
-        self.message_banner.content = ft.Text(
-            message,
-            color=text_color,
-            size=FontSize.BODY,
-            max_lines=3,
-            overflow=ft.TextOverflow.ELLIPSIS,
-        )
-        self.message_banner.bgcolor = bg_color
-        self.message_banner.visible = True
-        self.page.update()
-        logger.info(f"[{message_type.upper()}] {message}")
+        """在页面顶部显示消息。"""
+        show_snack_bar(self.page, message, message_type)
 
     def on_view_activated(self):
         """视图激活时检查连接状态"""
@@ -791,17 +783,13 @@ class ConnectionView:
             self._update_connection_status(False)
 
     def _browse_folder(self, e):
-        """浏览文件夹（当前来源的远程目录）"""
+        """浏览文件夹（Nextcloud 表单的远程目录选择）"""
         if not self.app_context.get("nextcloud_client"):
             self.show_message("请先连接服务器", "error")
             return
 
-        if self._current_source_type() == "smb":
-            folder_input = self.smb_sync_folder_input
-            config_key = "connection.smb.default_sync_folder"
-        else:
-            folder_input = self.sync_folder_input
-            config_key = "connection.default_sync_folder"
+        folder_input = self.sync_folder_input
+        config_key = "connection.default_sync_folder"
 
         from .folder_selector import FolderSelector
 
