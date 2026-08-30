@@ -127,13 +127,11 @@ class ConnectionView:
             selected=[source_type],
             segments=[
                 ft.Segment(
-                    key="source_nextcloud",
                     value="nextcloud",
                     label="Nextcloud",
                     icon=ft.Icons.CLOUD_OUTLINED,
                 ),
                 ft.Segment(
-                    key="source_smb",
                     value="smb",
                     label="SMB 共享",
                     icon=ft.Icons.LAN_OUTLINED,

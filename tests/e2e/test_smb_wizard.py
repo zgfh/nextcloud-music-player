@@ -12,14 +12,14 @@ from helpers import wait_for
 
 
 async def _goto_smb(tester):
-    await tester.tap(await tester.find_by_key("nav_connection"))
+    await tester.tap(await tester.find_by_text("连接"))
     await tester.pump_and_settle()
 
     host_input = await wait_for(
         tester, lambda: tester.find_by_key("smb_host"), timeout=3
     )
     if not host_input.count:
-        await tester.tap(await tester.find_by_key("source_smb"))
+        await tester.tap(await tester.find_by_text("SMB 共享"))
         await tester.pump_and_settle()
         host_input = await wait_for(
             tester, lambda: tester.find_by_key("smb_host"), timeout=15
@@ -58,9 +58,7 @@ async def test_smb_address_opens_wizard_dialog(flet_app: ftt.FletTestApp):
     await tester.tap(await tester.find_by_key("connect_button"))
 
     # 向导第一步：身份选择 + 连接按钮
-    guest = await wait_for(
-        tester, lambda: tester.find_by_key("smb_auth_guest"), timeout=15
-    )
+    guest = await wait_for(tester, lambda: tester.find_by_text("访客"), timeout=15)
     assert guest.count == 1, "向导弹窗应出现访客身份选项"
     assert (await tester.find_by_text("用户登录")).count == 1
 

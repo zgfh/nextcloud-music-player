@@ -8,7 +8,7 @@ from mock_nextcloud import PASSWORD, SONG_NAME, USERNAME
 
 async def _open_nextcloud_form(tester):
     """从任意起始视图进入连接页的 Nextcloud 表单，等待 url 输入框挂载。"""
-    await tester.tap(await tester.find_by_key("nav_connection"))
+    await tester.tap(await tester.find_by_text("连接"))
     await tester.pump_and_settle()
 
     url_field = await wait_for(
@@ -16,7 +16,7 @@ async def _open_nextcloud_form(tester):
     )
     if not url_field.count:
         # 上个会话停在 SMB 来源：切回 Nextcloud 再等表单挂载
-        await tester.tap(await tester.find_by_key("source_nextcloud"))
+        await tester.tap(await tester.find_by_text("Nextcloud"))
         await tester.pump_and_settle()
         url_field = await wait_for(
             tester, lambda: tester.find_by_key("nextcloud_url")

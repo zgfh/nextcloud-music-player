@@ -75,13 +75,11 @@ class SMBConnectWizard:
             selected=["guest" if is_guest else "user"],
             segments=[
                 ft.Segment(
-                    key="smb_auth_guest",
                     value="guest",
                     label="访客",
                     icon=ft.Icons.PERSON_OFF_OUTLINED,
                 ),
                 ft.Segment(
-                    key="smb_auth_user",
                     value="user", label="用户登录", icon=ft.Icons.PERSON_OUTLINED
                 ),
             ],
