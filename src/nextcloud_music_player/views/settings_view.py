@@ -144,9 +144,7 @@ class SettingsView:
         )
 
     def _menu_header(self) -> ft.Row:
-        return self._titled_header(
-            ft.Icons.TUNE, "设置", "SETTINGS · 下载、诊断与日志"
-        )
+        return self._titled_header(ft.Icons.TUNE, "设置", "SETTINGS · 下载、诊断与日志")
 
     def _detail_header(self, title: str, subtitle: str) -> ft.Row:
         """子页面头部：返回按钮 + 标题"""
@@ -329,9 +327,7 @@ class SettingsView:
         status = state["status"]
         if status == "downloading":
             total = state["total_bytes"]
-            percent = (
-                f"{state['downloaded_bytes'] / total:.0%}" if total else "…"
-            )
+            percent = f"{state['downloaded_bytes'] / total:.0%}" if total else "…"
             text = f"正在下载 {state['filename']} · {percent}"
         elif status == "queued":
             text = f"等待下载 {state['queued']} 首"
@@ -894,8 +890,7 @@ class SettingsView:
         self.cache_list.controls.clear()
         if not self._cached_songs:
             self.cache_list.controls.append(
-                ft.Text("暂无已下载音乐", size=FontSize.CAPTION,
-                        color=Color.TEXT_MUTED)
+                ft.Text("暂无已下载音乐", size=FontSize.CAPTION, color=Color.TEXT_MUTED)
             )
         for item in self._cached_songs:
             name = item["name"]
@@ -910,9 +905,15 @@ class SettingsView:
                 expand=True,
             )
             self.cache_list.controls.append(
-                ft.Row([checkbox, ft.Text(subtitle, size=FontSize.CAPTION,
-                                          color=Color.TEXT_MUTED)],
-                       alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+                ft.Row(
+                    [
+                        checkbox,
+                        ft.Text(
+                            subtitle, size=FontSize.CAPTION, color=Color.TEXT_MUTED
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                )
             )
         self._update_cache_selection_controls()
 
@@ -935,8 +936,7 @@ class SettingsView:
 
     def _toggle_all_cache(self, e):
         self._selected_cache_names = (
-            {item["name"] for item in self._cached_songs}
-            if e.control.value else set()
+            {item["name"] for item in self._cached_songs} if e.control.value else set()
         )
         self._refresh_cache_list()
         self.page.update()
