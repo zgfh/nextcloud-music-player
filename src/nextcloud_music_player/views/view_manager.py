@@ -80,21 +80,25 @@ class ViewManager:
             indicator_color="#0F2A3A",
             destinations=[
                 ft.NavigationBarDestination(
+                    key="nav_connection",
                     icon=ft.Icons.LINK_OUTLINED,
                     selected_icon=ft.Icons.LINK,
                     label="连接",
                 ),
                 ft.NavigationBarDestination(
+                    key="nav_files",
                     icon=ft.Icons.LIST_OUTLINED,
                     selected_icon=ft.Icons.LIST,
                     label="文件",
                 ),
                 ft.NavigationBarDestination(
+                    key="nav_playback",
                     icon=ft.Icons.MUSIC_NOTE_OUTLINED,
                     selected_icon=ft.Icons.MUSIC_NOTE,
                     label="播放",
                 ),
                 ft.NavigationBarDestination(
+                    key="nav_settings",
                     icon=ft.Icons.SETTINGS_OUTLINED,
                     selected_icon=ft.Icons.SETTINGS,
                     label="设置",

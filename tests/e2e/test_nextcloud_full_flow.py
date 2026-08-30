@@ -8,7 +8,7 @@ from mock_nextcloud import PASSWORD, SONG_NAME, USERNAME
 
 async def _open_nextcloud_form(tester):
     """从任意起始视图进入连接页的 Nextcloud 表单，等待 url 输入框挂载。"""
-    await tester.tap(await tester.find_by_text("连接"))
+    await tester.tap(await tester.find_by_key("nav_connection"))
     await tester.pump_and_settle()
 
     url_field = await wait_for(
@@ -16,7 +16,7 @@ async def _open_nextcloud_form(tester):
     )
     if not url_field.count:
         # 上个会话停在 SMB 来源：切回 Nextcloud 再等表单挂载
-        await tester.tap(await tester.find_by_text("Nextcloud"))
+        await tester.tap(await tester.find_by_key("source_nextcloud"))
         await tester.pump_and_settle()
         url_field = await wait_for(
             tester, lambda: tester.find_by_key("nextcloud_url")
@@ -31,6 +31,9 @@ async def _fill_credentials(tester, url, username, password):
     await tester.enter_text(
         await tester.find_by_key("nextcloud_sync_folder"), "/music"
     )
+    # enter_text 更新需先往返到 Python 端；否则紧接的 click
+    # 可能读到上一个会话持久化的表单值。
+    await tester.pump_and_settle()
 
 
 async def test_nextcloud_sync_download_and_playback(
@@ -46,7 +49,7 @@ async def test_nextcloud_sync_download_and_playback(
 
     await tap_and_wait(
         tester,
-        lambda: tester.find_by_text("建立连接"),
+        lambda: tester.find_by_key("connect_button"),
         lambda: tester.find_by_text("同步"),
         timeout=15,
     )
@@ -82,7 +85,7 @@ async def test_nextcloud_wrong_password_shows_error_then_recovers(
         tester, mock_nextcloud_server.url, USERNAME, "not-the-password"
     )
 
-    await tester.tap(await tester.find_by_text("建立连接"))
+    await tester.tap(await tester.find_by_key("connect_button"))
     await settle_network(tester, 1.0)
 
     error = await wait_for(
@@ -97,7 +100,7 @@ async def test_nextcloud_wrong_password_shows_error_then_recovers(
     )
     await tap_and_wait(
         tester,
-        lambda: tester.find_by_text("建立连接"),
+        lambda: tester.find_by_key("connect_button"),
         lambda: tester.find_by_text("同步"),
         timeout=15,
     )
@@ -111,7 +114,7 @@ async def test_nextcloud_unreachable_server_shows_error(flet_app: ftt.FletTestAp
     await _open_nextcloud_form(tester)
     await _fill_credentials(tester, "http://127.0.0.1:1", USERNAME, PASSWORD)
 
-    await tester.tap(await tester.find_by_text("建立连接"))
+    await tester.tap(await tester.find_by_key("connect_button"))
     await settle_network(tester, 1.0)
 
     error = await wait_for(

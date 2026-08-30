@@ -127,9 +127,17 @@ class ConnectionView:
             selected=[source_type],
             segments=[
                 ft.Segment(
-                    value="nextcloud", label="Nextcloud", icon=ft.Icons.CLOUD_OUTLINED
+                    key="source_nextcloud",
+                    value="nextcloud",
+                    label="Nextcloud",
+                    icon=ft.Icons.CLOUD_OUTLINED,
                 ),
-                ft.Segment(value="smb", label="SMB 共享", icon=ft.Icons.LAN_OUTLINED),
+                ft.Segment(
+                    key="source_smb",
+                    value="smb",
+                    label="SMB 共享",
+                    icon=ft.Icons.LAN_OUTLINED,
+                ),
             ],
             allow_multiple_selection=False,
             allow_empty_selection=False,
@@ -289,6 +297,7 @@ class ConnectionView:
         # === 主按钮：霓虹发光 ===
         self.connect_button = ft.FilledButton(
             "建立连接",
+            key="connect_button",
             icon=ft.Icons.BOLT,
             on_click=self._on_connect_clicked,
             expand=2,
