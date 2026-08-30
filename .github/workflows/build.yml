@@ -11,6 +11,10 @@ on:
     types: [published]
   workflow_dispatch:
 
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   FLUTTER_VERSION: '3.44.8'
   FLET_VERSION: '0.86.5'

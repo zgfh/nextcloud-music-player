@@ -351,15 +351,22 @@ uv run pytest tests/ --cov=src/nextcloud_music_player --cov-report=html   # 覆�
 
 ### 2. 端到端 UI 测试（flet test，真实 Flutter 渲染管线）
 
-`tests/e2e/` 使用 Flet 官方测试框架（`flet.testing`）：FletTestApp 启动 Python 应用 + 真实 `flutter test` 进程（完整渲染管线，非 fake），Tester 提供 `find_by_text / find_by_key / tap / pump_and_settle` 等交互 API，还能 `take_screenshot` 做 golden 截图对比。目前覆盖：连接页 Nextcloud ⇄ SMB 来源切换（表单挂载与标题联动）。
+`tests/e2e/` 使用 Flet 官方测试框架（`flet.testing`）：FletTestApp 启动 Python 应用 + 真实 `flutter test` 进程（完整渲染管线，非 fake），Tester 提供 `find_by_text / find_by_key / tap / pump_and_settle` 等交互 API，还能 `take_screenshot` 做 golden 截图对比。目前覆盖：
+
+- 连接页 Nextcloud ⇄ SMB 来源切换（表单挂载与标题联动）、SMB 向导弹窗
+- **Nextcloud 全链路**（`test_nextcloud_full_flow.py`）：内置 Mock Nextcloud/WebDAV 服务器（`tests/mock_nextcloud.py`），跑通 建立连接 → 同步 → 下载 → 选择歌曲 → AVFoundation 播放
+- **错误路径**：密码错误出 SnackBar 提示且可立即重连恢复、服务器不可达立即反馈
+
+Mock 服务器支持 Basic Auth（校验真实登录流程）与故障注入（`server.set_fault(status=401)` / `drop=True` / `delay_seconds=…`，模拟 404、断线、慢响应），客户端层的异常分支由 `tests/test_nextcloud_mock_integration.py` 覆盖。模拟器与 Mac 共享 127.0.0.1，应用直接连测试进程内的 mock 服务，无需任何外部依赖。
 
 ```bash
-# 方式一：本机桌面平台（默认，首次运行会 provision 测试宿主，较慢）
+# 方式一：本机桌面平台（默认，首次运行会 provision 测试宿主，较慢；
+# 注意切换平台前先 flet clean，避免旧 flutter-packages 路径依赖残留）
 uv run flet test --tests-dir tests/e2e
 
 # 方式二：iOS 模拟器（与 CI 完全一致，渲染管线同真机）
 xcrun simctl list devices available | grep iPhone    # 任选一个模拟器 UDID
-uv run flet test ios --device-id <UDID> --tests-dir tests/e2e -v
+uv run flet test ios --no-swift-package-manager --device-id <UDID> --tests-dir tests/e2e -v
 ```
 
 前置条件：Flutter 3.44.x（与 flet 0.86.5 配套）；依赖已含在 `uv sync --extra dev` 中（`flet[test]` 提供 numpy/pillow/scikit-image，golden 截图对比用）。

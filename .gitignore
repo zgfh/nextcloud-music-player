@@ -9,3 +9,8 @@ logs/
 dist/
 .pytest_cache/
 .mypy_cache/
+.debug/
+
+# 本地调试产物
+*.log
+flet-e2e.log

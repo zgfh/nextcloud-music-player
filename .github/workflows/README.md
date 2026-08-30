@@ -25,10 +25,20 @@ uv run flake8 src/ --select=E9,F63,F7,F82
 **触发:** push 到 main、PR 到 main、手动
 
 **功能:**
-- `unit` job：全量 pytest（无头交互测试，51 个用例）
-- `flet-e2e` job：macOS runner 启动 iOS 模拟器跑 `flet test ios --tests-dir tests/e2e`（真实 Flutter 渲染管线）
+- `unit` job：全量 pytest（tests/e2e 由 `norecursedirs` 排除），含 Mock Nextcloud 的真实 HTTP 流程——登录、WebDAV 同步、歌曲/歌词下载，以及故障注入场景（401/404/断线/慢响应）
+- `flet-e2e` job：macOS runner 启动 iOS 模拟器跑完整 `flet test ios --tests-dir tests/e2e`（真实 Flutter 渲染管线）
+  - E2E 内置本地 Mock Nextcloud，不需要 CI secrets 或公网 Nextcloud
+  - 覆盖连接、同步、下载、选择歌曲和 AVFoundation 播放流程，密码错误/服务器不可达的错误反馈，以及现有 SMB/UI 场景
+  - localhost/IPv6 loopback 显式绕过 runner 代理，避免 Flutter VM WebSocket 被代理拦截
+  - 测试失败会阻塞 CI；日志（Flet 输出、模拟器日志、应用日志）始终上传，数百 MB 的 build/ 仅失败时上传
   - 首次 provision 较慢（下载 embedded Python + 编译测试宿主），整个 job 约 10 分钟
-  - **已知问题**：flet 0.86.5 device 模式下 Dart 侧 testWidgets 收尾以 exit 1 结束（无异常输出），teardown 误报 ERROR；Python 断言通过即算通过，job 已标 `continue-on-error`，等上游修复后移除
+
+**本地对应命令:**
+```bash
+NO_PROXY=127.0.0.1,localhost,::1 no_proxy=127.0.0.1,localhost,::1 \
+  flet test ios --no-swift-package-manager --device-id <SIMULATOR_UDID> \
+  --tests-dir tests/e2e -vv
+```
 
 ### 3. Build and Release (`build.yml`)
 
