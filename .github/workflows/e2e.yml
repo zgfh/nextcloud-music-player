@@ -85,6 +85,15 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          # editable install / local imports can leave CPython bytecode below src/.
+          # Serious Python packages the whole source tree; stale 3.14 pyc can then
+          # shadow the checked-out .py and make CI execute an older UI implementation.
+          find src tests/e2e -type d -name __pycache__ -prune -exec rm -rf {} +
+          find src tests/e2e -type f -name '*.pyc' -delete
+          if find src tests/e2e \( -type d -name __pycache__ -o -type f -name '*.pyc' \) | grep -q .; then
+            echo "Python bytecode cleanup failed"
+            exit 1
+          fi
           # Avoid stale generated pubspec path dependencies between cached runs.
           flet clean
           flet test ios --no-swift-package-manager --device-id "$UDID" \

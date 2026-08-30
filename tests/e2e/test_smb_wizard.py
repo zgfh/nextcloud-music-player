@@ -15,15 +15,15 @@ async def _goto_smb(tester):
     await tester.tap(await tester.find_by_text("连接"))
     await tester.pump_and_settle()
 
+    # 强制经历 Nextcloud -> SMB，确保即使模拟器保留了上个测试的来源，
+    # 也会触发一次确定的来源变更事件。
+    await tester.tap(await tester.find_by_text("Nextcloud"))
+    await tester.pump_and_settle()
+    await tester.tap(await tester.find_by_text("SMB 共享"))
+    await tester.pump_and_settle()
     host_input = await wait_for(
-        tester, lambda: tester.find_by_key("smb_host"), timeout=3
+        tester, lambda: tester.find_by_key("smb_host"), timeout=5
     )
-    if not host_input.count:
-        await tester.tap(await tester.find_by_text("SMB 共享"))
-        await tester.pump_and_settle()
-        host_input = await wait_for(
-            tester, lambda: tester.find_by_key("smb_host"), timeout=15
-        )
     assert host_input.count >= 1, "连接页应出现 SMB 服务器地址输入框"
 
 
@@ -37,7 +37,7 @@ async def test_smb_empty_address_shows_feedback(flet_app: ftt.FletTestApp):
     await tester.enter_text(host_input, "")
     await tester.pump_and_settle()
 
-    await tester.tap(await tester.find_by_key("connect_button"))
+    await tester.tap(await tester.find_by_text("建立连接"))
 
     feedback = await wait_for(
         tester, lambda: tester.find_by_text_containing("请先输入 SMB 服务器地址")
@@ -55,7 +55,7 @@ async def test_smb_address_opens_wizard_dialog(flet_app: ftt.FletTestApp):
     await tester.enter_text(host_input, "192.0.2.1")
     await tester.pump_and_settle()
 
-    await tester.tap(await tester.find_by_key("connect_button"))
+    await tester.tap(await tester.find_by_text("建立连接"))
 
     # 向导第一步：身份选择 + 连接按钮
     guest = await wait_for(tester, lambda: tester.find_by_text("访客"), timeout=15)

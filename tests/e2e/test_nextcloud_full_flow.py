@@ -11,16 +11,15 @@ async def _open_nextcloud_form(tester):
     await tester.tap(await tester.find_by_text("连接"))
     await tester.pump_and_settle()
 
+    # 每个 flet_app 会话共享模拟器应用数据。先切到另一来源再切回来，
+    # 强制触发 SegmentedButton 的 change 回调，避免点击已选项不产生事件。
+    await tester.tap(await tester.find_by_text("SMB 共享"))
+    await tester.pump_and_settle()
+    await tester.tap(await tester.find_by_text("Nextcloud"))
+    await tester.pump_and_settle()
     url_field = await wait_for(
-        tester, lambda: tester.find_by_key("nextcloud_url"), timeout=3
+        tester, lambda: tester.find_by_key("nextcloud_url"), timeout=5
     )
-    if not url_field.count:
-        # 上个会话停在 SMB 来源：切回 Nextcloud 再等表单挂载
-        await tester.tap(await tester.find_by_text("Nextcloud"))
-        await tester.pump_and_settle()
-        url_field = await wait_for(
-            tester, lambda: tester.find_by_key("nextcloud_url")
-        )
     assert url_field.count >= 1, "连接页应出现 Nextcloud 服务器地址输入框"
 
 
@@ -49,7 +48,7 @@ async def test_nextcloud_sync_download_and_playback(
 
     await tap_and_wait(
         tester,
-        lambda: tester.find_by_key("connect_button"),
+        lambda: tester.find_by_text("建立连接"),
         lambda: tester.find_by_text("同步"),
         timeout=15,
     )
@@ -85,7 +84,7 @@ async def test_nextcloud_wrong_password_shows_error_then_recovers(
         tester, mock_nextcloud_server.url, USERNAME, "not-the-password"
     )
 
-    await tester.tap(await tester.find_by_key("connect_button"))
+    await tester.tap(await tester.find_by_text("建立连接"))
     await settle_network(tester, 1.0)
 
     error = await wait_for(
@@ -100,7 +99,7 @@ async def test_nextcloud_wrong_password_shows_error_then_recovers(
     )
     await tap_and_wait(
         tester,
-        lambda: tester.find_by_key("connect_button"),
+        lambda: tester.find_by_text("建立连接"),
         lambda: tester.find_by_text("同步"),
         timeout=15,
     )
@@ -114,7 +113,7 @@ async def test_nextcloud_unreachable_server_shows_error(flet_app: ftt.FletTestAp
     await _open_nextcloud_form(tester)
     await _fill_credentials(tester, "http://127.0.0.1:1", USERNAME, PASSWORD)
 
-    await tester.tap(await tester.find_by_key("connect_button"))
+    await tester.tap(await tester.find_by_text("建立连接"))
     await settle_network(tester, 1.0)
 
     error = await wait_for(
