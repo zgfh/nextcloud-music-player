@@ -3,12 +3,26 @@ name: E2E Tests
 # Flet 集成测试（flet test）：在真实 Flutter 渲染进程中驱动打包形态的 app。
 # 首次 provision 较慢（下载 embedded Python + 克隆 flet 仓库 + 编译测试宿主），
 # 因此只在 PR / main push / 手动触发时运行，不随 feature 分支每次 push 跑。
+# 例外：feature/flet-migration 迭代期间临时对本分支 push 也触发，便于 CI 定位问题。
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "feature/flet-migration" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.44.8'
+  FLET_VERSION: '0.86.5'
+  # Flutter test/VM-service and the in-process WebDAV mock both use loopback.
+  # Include IPv6 as Flutter doctor and macOS may resolve localhost to ::1.
+  # 注意：GitHub env 键不区分大小写，NO_PROXY 与 no_proxy 不能同时定义；
+  # Python urllib 会小写化匹配，单一大写键即可覆盖两种读取习惯。
+  NO_PROXY: 127.0.0.1,localhost,::1
 
 jobs:
   unit:
@@ -20,6 +34,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
@@ -27,35 +43,32 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run unit tests
-        run: python -m pytest tests/ -v
+        run: python -m pytest tests/ -v --durations=20
 
   flet-e2e:
     needs: unit
     runs-on: macos-latest
     timeout-minutes: 45
-    # 已知问题（flet 0.86.5 device-mode 测试框架）：Python 侧断言全部通过
-    # （1 passed），但 Dart 侧 testWidgets 在收尾阶段以 exit code 1 结束且无
-    # 异常输出，teardown 因此报 ERROR。e2e 已实际抓出并修复 4 个真实渲染
-    # bug，断言本身是有效的；收尾误报等 flet 上游修复后移除此标记。
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       # 与本地开发保持同一 Flutter 版本，避免渲染/构建差异
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.8'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]" "flet[test]==0.86.5"
+          pip install -e ".[dev]" "flet[test]==${FLET_VERSION}"
 
       # macOS 无头 flutter_tester 宿主的滚动视口约束与真实设备不同，
       # 播放页布局在真机正常但在该宿主触发 performLayout 断言；
@@ -65,15 +78,62 @@ jobs:
           UDID=$(xcrun simctl list devices available | grep -E "iPhone" | head -1 | sed -E 's/.*\(([A-F0-9-]{36})\).*/\1/')
           if [ -z "$UDID" ]; then echo "No iPhone simulator found"; exit 1; fi
           echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" 2>/dev/null || true
           xcrun simctl bootstatus "$UDID" -b
 
-      - name: Run Flet E2E tests (iOS simulator)
-        run: flet test ios --device-id "$UDID" --tests-dir tests/e2e -v
+      - name: Run full Flet E2E suite (iOS simulator + Mock Nextcloud)
+        shell: bash
+        run: |
+          set -o pipefail
+          # editable install / local imports can leave CPython bytecode below src/.
+          # Serious Python packages the whole source tree; stale 3.14 pyc can then
+          # shadow the checked-out .py and make CI execute an older UI implementation.
+          find src tests/e2e -type d -name __pycache__ -prune -exec rm -rf {} +
+          find src tests/e2e -type f -name '*.pyc' -delete
+          if find src tests/e2e \( -type d -name __pycache__ -o -type f -name '*.pyc' \) | grep -q .; then
+            echo "Python bytecode cleanup failed"
+            exit 1
+          fi
+          # Avoid stale generated pubspec path dependencies between cached runs.
+          flet clean
+          flet test ios --no-swift-package-manager --device-id "$UDID" \
+            --tests-dir tests/e2e -vv 2>&1 | tee flet-e2e.log
 
-      - name: Upload build artifacts on failure
+      - name: Collect simulator application logs
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p test-artifacts/app-logs
+          CONTAINER=$(xcrun simctl get_app_container "$UDID" com.daozzg.nextcloud-music-player data 2>/dev/null || true)
+          if [ -n "$CONTAINER" ]; then
+            find "$CONTAINER" -type f \( -name '*.log' -o -name 'config.json' \) -exec cp {} test-artifacts/app-logs/ \;
+          fi
+          xcrun simctl spawn "$UDID" log show --last 10m --style compact \
+            --predicate 'process == "nextcloud-music-player"' \
+            > test-artifacts/simulator.log 2>&1 || true
+
+      - name: Upload E2E logs and artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flet-e2e-${{ github.run_id }}
+          path: |
+            flet-e2e.log
+            test-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # 完整 build/ 超过 500 MB，上传慢且通常无诊断价值；只保留构建清单。
+      - name: Upload build diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: flet-test-build
-          path: build/
+          name: flet-e2e-build-diagnostics-${{ github.run_id }}
+          path: |
+            build/**/pubspec.yaml
+            build/**/pubspec.lock
+            build/**/Podfile
+            build/**/Podfile.lock
+            build/**/project.pbxproj
           if-no-files-found: ignore
+          retention-days: 3

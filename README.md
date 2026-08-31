@@ -53,8 +53,29 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 - **目录浏览**：与 NextCloud 一致的远程文件夹浏览与同步体验
 - **限制说明**：不支持强制 SMB3 加密的服务器，请在服务端允许 SMB2 访问
 
+### ☁️ Google Drive 来源
+- **来源切换**：连接页支持切换到 Google 云盘，浏览并同步云端音乐
+- **纯 Python 实现**：基于 requests 直连 Drive REST API v3，不依赖 google-api-python-client，iOS 打包友好
+- **OAuth 授权**：填入自建 OAuth 客户端（桌面应用类型）的 Client ID/Secret 后，点击「授权」经系统浏览器登录 Google 账号，localhost 回调自动回收授权码（只读权限 `drive.readonly`）
+- **令牌管理**：access_token 过期自动用 refresh_token 刷新，可随「记住密码」选项持久化
+- **目录浏览**：文件夹选择器按名称展示层级，内部以文件夹 ID 导航；支持共享云端硬盘（Shared Drives）
+
+### 🎼 多来源音乐库
+- **统一音乐库**：Nextcloud、SMB 和 Google Drive 中配置的音乐统一汇总展示，无需在来源之间反复切换
+- **多目录同步**：每个来源可配置多个同步目录，一次同步即可更新全部目录
+- **同步进度摘要**：音乐库直接显示“同步状态：已同步歌曲数/歌曲总数”（如 `300/300`）
+- **逐目录详情**：点击“查看详情”可查看每个来源的目录路径、歌曲数量、同步完成/等待/失败状态及失败原因
+- **来源标识**：歌曲列表会标注所属来源以及本地下载状态，方便判断离线可用性
+
+**准备工作**（一次性，约 5 分钟）：
+1. 打开 [Google Cloud Console](https://console.cloud.google.com/)，创建（或选择）一个项目
+2. 左侧「API 和服务 → 已启用的 API」中启用 **Google Drive API**
+3. 「API 和服务 → 凭据 → 创建凭据 → OAuth 客户端 ID」，应用类型选**桌面应用**
+4. 把生成的 Client ID（`...apps.googleusercontent.com`）和 Client Secret（`GOCSPX-...`）填入应用连接页的 Google 云盘表单，点击「授权」即可
+
 ### 📱 用户界面
-- **底部导航**：连接设置、文件列表、播放控制三个主要视图
+- **底部导航**：连接、音乐库、播放、设置四个主要视图
+- **设置二级导航**：设置首页为功能菜单列表，点击进入下载进度、缓存管理、应用日志、应用信息子页面
 - **Tab 切换**：播放列表与歌词即时切换
 - **进度显示**：实时显示播放进度和时间
 - **响应式设计**：适配不同屏幕尺寸，支持 iOS SafeArea
@@ -62,6 +83,7 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 
 ### 🔧 高级功能
 - **离线播放**：缓存的音乐可离线播放
+- **iOS 后台下载**：音乐下载经 rubicon-objc 走原生 Background NSURLSession——切后台、锁屏甚至应用被杀（从多任务划掉）都由系统进程继续执行，重启后自动重建会话并落库；传输中断自动断点续传
 - **播放历史**：记录播放次数和最后播放时间
 - **收藏功能**：支持标记喜爱的歌曲
 - **日志系统**：完善的日志记录，便于问题诊断
@@ -76,8 +98,8 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
 ### 连接设置视图
 ![连接设置视图](docs/screenshots/connection_view.png)
 
-### 文件列表视图
-![文件列表视图](docs/screenshots/files_view.png)
+### 音乐库视图
+![音乐库视图：同步状态与多来源目录详情入口](docs/screenshots/music_library_view.png)
 
 ### 歌词视图
 ![歌词视图](docs/screenshots/lyrics_view.png)
@@ -94,21 +116,17 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，专为喜
    cd nextcloud-music-player
    ```
 
-2. **创建虚拟环境**
+2. **安装依赖并运行**（推荐 [uv](https://docs.astral.sh/uv/)）
+   ```bash
+   uv sync --extra desktop      # 桌面播放需要 pygame
+   uv run python -m nextcloud_music_player
+   ```
+
+   或使用 pip：
    ```bash
    python -m venv .venv
-   source .venv/bin/activate  # Linux/macOS
-   # 或
-   .venv\Scripts\activate     # Windows
-   ```
-
-3. **安装依赖**
-   ```bash
-   pip install -e ".[desktop]"  # 桌面播放需要 pygame
-   ```
-
-4. **运行应用**
-   ```bash
+   source .venv/bin/activate    # Windows: .venv\Scripts\activate
+   pip install -e ".[desktop]"
    python -m nextcloud_music_player
    ```
 
@@ -166,14 +184,16 @@ flet build apk
 
 ### 音乐同步
 
-1. **点击同步**：在"文件"标签页点击"同步音乐文件"
-2. **查看文件**：同步完成后，音乐文件将显示在列表中
-3. **下载状态**：绿色图标表示已下载，红色表示仅在云端
+1. **点击同步**：在“音乐库”标签页点击“同步”，应用会依次同步所有已连接来源的全部配置目录
+2. **查看进度**：页面显示“同步状态：已同步歌曲数/歌曲总数”，例如 `300/300`
+3. **查看目录详情**：点击“查看详情”，可按来源查看目录路径、歌曲数量、同步状态及失败原因
+4. **查看歌曲**：同步完成后，各来源的音乐会统一显示在音乐库列表中
+5. **下载状态**：歌曲副标题与图标会标明所属来源，以及“已下载”或“需联网”状态
 
 ### 音乐播放
 
 1. **添加到播放列表**：
-   - 在文件列表中选择音乐文件，点击"添加到播放列表"
+   - 在音乐库中选择歌曲，点击“添加”
    - 或直接点击文件进行播放
 2. **播放控制**：
    - 使用 ▶ ⏸ 按钮控制播放/暂停
@@ -196,6 +216,8 @@ nextcloud-music-player/
 │   ├── __main__.py              # 入口 (ft.run)
 │   ├── app.py                   # Flet 主入口
 │   ├── nextcloud_client.py      # NextCloud API 客户端
+│   ├── smb_client.py            # SMB 共享客户端
+│   ├── gdrive_client.py         # Google Drive 客户端（OAuth + Drive API v3）
 │   ├── music_library.py         # 音乐库管理
 │   ├── config_manager.py        # 配置管理
 │   ├── platform_audio.py        # 平台音频抽象
@@ -208,7 +230,7 @@ nextcloud-music-player/
 │   ├── views/                   # Flet UI 视图
 │   │   ├── view_manager.py      # 视图管理器 (NavigationBar)
 │   │   ├── connection_view.py   # 连接设置视图
-│   │   ├── file_list_view.py    # 文件列表视图
+│   │   ├── file_list_view.py    # 音乐库与同步状态视图
 │   │   ├── playback_view.py     # 播放控制视图
 │   │   ├── folder_selector.py   # 文件夹选择器
 │   │   └── components/          # 可复用组件
@@ -244,21 +266,37 @@ nextcloud-music-player/
 
 ### 开发环境设置
 
-1. **安装开发依赖**
-   ```bash
-   pip install -e ".[dev]"
-   ```
+推荐使用 [uv](https://docs.astral.sh/uv/) 管理环境（仓库已带 `uv.lock`，锁定全部依赖版本）：
 
-2. **运行测试**
-   ```bash
-   python -m pytest tests/ -v
-   ```
+```bash
+uv sync --extra dev                       # 单元测试 + 格式化 + e2e（含 flet[test]）
+uv sync --extra dev --extra desktop       # 叠加桌面播放（pygame）
 
-3. **代码格式化**
-   ```bash
-   black src/ tests/
-   flake8 src/ tests/
-   ```
+uv run python -m nextcloud_music_player   # 运行应用
+```
+
+没有 uv 时也可以用 pip：
+
+```bash
+pip install -e ".[dev,desktop]"
+```
+
+### 运行测试
+
+```bash
+uv run pytest tests/ -v    # 单元/交互测试（详见下文「测试」一节）
+```
+
+### 代码格式化与检查
+
+```bash
+uv run black src/                          # 格式化（CI 用 --check 做门禁）
+uv run isort src/                          # import 排序（profile=black，见 pyproject.toml）
+
+# CI 同款门禁命令，提交前建议本地跑一遍：
+uv run black --check src/ && uv run isort --check-only src/
+uv run flake8 src/ --select=E9,F63,F7,F82  # 语法/未定义名称检查（阻塞项）
+```
 
 ### 🐞 调试
 
@@ -320,9 +358,11 @@ idevicesyslog                      # 实时系统日志（含崩溃信息）
 
 ## 🧪 测试
 
-无头交互测试：不启动界面、不连真实网络，用替身（FakeNextcloudClient 可模拟慢网络/下载失败/404）驱动真实的视图代码，全自动断言交互行为，**无需截图人工核对**。
+测试分两层，都不需要真实 NextCloud/SMB 服务器，全部可在本地自动运行。
 
-覆盖的交互场景：
+### 1. 无头交互测试（pytest，日常开发首选）
+
+不启动界面、不连真实网络，用替身（FakeNextcloudClient 可模拟慢网络/下载失败/404）驱动真实的视图代码，全自动断言交互行为，**无需截图人工核对**，秒级跑完：
 
 - **播放**：未下载歌曲的"下载中"提示、切歌先停旧歌、连点两首时慢下载不会顶掉最新选择、下载失败/播放失败的状态反馈
 - **连接**：连接中禁用按钮、成功跳转文件列表、凭据错误/网络异常提示、SnackBar 走 `show_dialog`
@@ -330,43 +370,71 @@ idevicesyslog                      # 实时系统日志（含崩溃信息）
 - **文件列表**：同步进度提示、同步失败反馈、同步中重复点击防抖、搜索过滤
 
 ```bash
-# 运行所有测试
-python -m pytest tests/ -v
-
-# 只跑播放交互测试
-python -m pytest tests/test_playback_interactions.py -v
-
-# 生成覆盖率报告
-python -m pytest tests/ --cov=src/nextcloud_music_player --cov-report=html
+uv run pytest tests/ -v                                   # 全部（约 4s）
+uv run pytest tests/test_playback_interactions.py -v      # 只跑播放交互
+uv run pytest tests/ --cov=src/nextcloud_music_player --cov-report=html   # 覆盖率
 ```
+
+### 2. 端到端 UI 测试（flet test，真实 Flutter 渲染管线）
+
+`tests/e2e/` 使用 Flet 官方测试框架（`flet.testing`）：FletTestApp 启动 Python 应用 + 真实 `flutter test` 进程（完整渲染管线，非 fake），Tester 提供 `find_by_text / find_by_key / tap / pump_and_settle` 等交互 API，还能 `take_screenshot` 做 golden 截图对比。目前覆盖：
+
+- 连接页 Nextcloud ⇄ SMB 来源切换（表单挂载与标题联动）、SMB 向导弹窗
+- **Nextcloud 全链路**（`test_nextcloud_full_flow.py`）：内置 Mock Nextcloud/WebDAV 服务器（`tests/mock_nextcloud.py`），跑通 建立连接 → 同步 → 下载 → 选择歌曲 → AVFoundation 播放
+- **错误路径**：密码错误出 SnackBar 提示且可立即重连恢复、服务器不可达立即反馈
+
+Mock 服务器支持 Basic Auth（校验真实登录流程）与故障注入（`server.set_fault(status=401)` / `drop=True` / `delay_seconds=…`，模拟 404、断线、慢响应），客户端层的异常分支由 `tests/test_nextcloud_mock_integration.py` 覆盖。模拟器与 Mac 共享 127.0.0.1，应用直接连测试进程内的 mock 服务，无需任何外部依赖。
+
+```bash
+# 方式一：本机桌面平台（默认，首次运行会 provision 测试宿主，较慢；
+# 注意切换平台前先 flet clean，避免旧 flutter-packages 路径依赖残留）
+uv run flet test --tests-dir tests/e2e
+
+# 方式二：iOS 模拟器（与 CI 完全一致，渲染管线同真机）
+xcrun simctl list devices available | grep iPhone    # 任选一个模拟器 UDID
+uv run flet test ios --no-swift-package-manager --device-id <UDID> --tests-dir tests/e2e -v
+```
+
+前置条件：Flutter 3.44.x（与 flet 0.86.5 配套）；依赖已含在 `uv sync --extra dev` 中（`flet[test]` 提供 numpy/pillow/scikit-image，golden 截图对比用）。
+
+> **本地跑 iOS e2e 的两个缓存坑**：
+> 1. 切换目标平台（桌面 ⇄ iOS）前先 `flet clean`，否则 `build/flutter-packages` 的路径依赖会让构建失败。
+> 2. iOS 打包时 serious-python 会把应用代码暂存进 pub-cache 包自身
+>    （`~/.pub-cache/hosted/pub.dev/serious_python_darwin-*/darwin/serious_python_darwin/Sources/serious_python_darwin/Resources/app`），
+>    该目录 `flet clean` 与 `pod cache clean` 都清不到。改了 Python 源码但模拟器行为没变时，删掉该 `app` 目录后重跑。
+
+> **已知问题**（flet 0.86.5 device 模式）：Python 侧断言可能全部通过（pytest 汇总 `1 passed`），但 Dart 侧 `testWidgets` 收尾阶段以 exit code 1 结束且无异常输出，teardown 因此追加一个 ERROR。这是 flet 上游测试框架的 bug，CI 中该 job 已标记 `continue-on-error`；判断测试是否真的通过，看 pytest 汇总行是否 `passed`。桌面平台模式通常无此问题。
 
 截图验证仅用于发布前的视觉效果检查，交互行为回归全部由上述自动化测试承担。
 
 ## 📦 构建与发布
 
-### 桌面平台
+### 本地构建
 
 ```bash
 # 直接运行
-python -m nextcloud_music_player
+uv run python -m nextcloud_music_player
 
-# 或使用 Flet 构建
-flet build macos  # macOS
-flet build linux  # Linux
-flet build windows  # Windows
+# 或使用 flet build 出各平台包（需 Flutter 3.44.x）
+uv run flet build macos     # macOS（.app）
+uv run flet build linux     # Linux（bundle 目录）
+uv run flet build windows   # Windows（exe 目录）
+uv run flet build apk       # Android APK
 ```
 
-### iOS
+iOS 真机包需签名证书，推荐一键部署脚本（自动检测设备、增量构建、签名并安装；免费开发者账号签名 7 天有效，到期重跑续签）：
 
 ```bash
-bash scripts/deploy_iso.sh  # 自动构建、签名并安装到连接的设备（推荐）
+bash scripts/deploy_iso.sh
 ```
 
-### Android
+### CI 自动化（GitHub Actions）
 
-```bash
-flet build apk
-```
+PR 与 main push 会触发三条工作流（详见 [.github/workflows/README.md](.github/workflows/README.md)）：
+
+- **Code Quality**：flake8 语法门禁 + black/isort 格式检查（阻塞），mypy、bandit/safety（非阻塞）
+- **E2E Tests**：全量 pytest，随后在 macOS runner 的 iOS 模拟器上跑 `flet test`（flet-e2e job 因上文提到的上游收尾 bug 暂时 `continue-on-error`）
+- **Build and Release**：`flet build` 出 5 平台产物（Android APK / iOS 模拟器验证包 / macOS / Linux / Windows），产物上传为 artifact；main push 额外发布 dev release，正式版随 GitHub Release 发布（`release.yml` 在 v* tag 时自动生成 changelog 和 Release）
 
 ## 📄 许可证
 

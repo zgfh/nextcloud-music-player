@@ -48,6 +48,12 @@ dev = [
     "flake8",
     "isort",
     "mypy",
+    # run_web.py（Web 模式 / 公网隧道测试）所需
+    "uvicorn",
+    "fastapi",
+    # e2e（flet test）所需：flet.testing 依赖 numpy/pillow/scikit-image
+    # （golden 截图 SSIM 对比），pytest 插件与 pytest-asyncio 已在上文
+    "flet[test]>=0.86.0",
 ]
 desktop = [
     "pygame>=2.0.0",
@@ -100,7 +106,13 @@ bundle_id = "com.daozzg.nextcloud-music-player"
 
 [tool.flet.ios.info]
 UIBackgroundModes = ["audio"]
-NSAppTransportSecurity = "{NSAllowsArbitraryLoads = true, NSAllowsLocalNetworking = true}"
+
+# ATS 例外必须是 plist 字典（TOML 嵌套表）——写成字符串时 flet 会原样
+# 写入 Info.plist，iOS 解析不到合法字典即按默认策略拦截所有明文 HTTP
+# （NSURLErrorDomain -1022），家庭服务器 http:// 地址全部下载失败。
+[tool.flet.ios.info.NSAppTransportSecurity]
+NSAllowsArbitraryLoads = true
+NSAllowsLocalNetworking = true
 
 [tool.flet.android]
 permissions = ["INTERNET", "WAKE_LOCK", "FOREGROUND_SERVICE"]

@@ -13,12 +13,12 @@ import flet as ft
 from ..services.playback_controller import PlaybackController, PlayMode
 from ..services.playback_service import PlaybackService
 from ..services.playlist_manager import PlaylistManager
+from ..utils.notify import show_snack_bar
 from ..utils.theme import (
     Color,
     FontSize,
     Radius,
     Space,
-    get_message_style,
     glow,
     glow_soft,
     tint,
@@ -107,8 +107,16 @@ class PlaybackView:
             set_play_mode_callback=None,
         )
 
-        self.playback_controller.set_play_mode(PlayMode.REPEAT_ONE)
-        self.playback_service.set_play_mode_by_string("repeat_one")
+        configured_mode = config_manager.get("player.play_mode", "repeat_one")
+        configured_enum = {
+            "normal": PlayMode.NORMAL,
+            "repeat_one": PlayMode.REPEAT_ONE,
+            "repeat_all": PlayMode.REPEAT_ALL,
+            "shuffle": PlayMode.SHUFFLE,
+        }.get(configured_mode, PlayMode.REPEAT_ONE)
+        self.play_mode = configured_enum
+        self.playback_controller.set_play_mode(configured_enum)
+        self.playback_service.set_play_mode(configured_enum)
 
         # 状态
         self.current_song_info = None
@@ -147,6 +155,11 @@ class PlaybackView:
         if self._ui_task and not self._ui_task.done():
             self._ui_task.cancel()
         self._ui_task = None
+
+    @staticmethod
+    def _is_destroyed_session_error(error: Exception) -> bool:
+        """判断 Flet 客户端是否已经销毁当前会话。"""
+        return "destroyed session" in str(error).lower()
 
     def build(self):
         """构建并返回视图"""
@@ -256,9 +269,6 @@ class PlaybackView:
             content=lyrics_view, expand=True, visible=False
         )
 
-        # 消息区
-        self.message_container = ft.Container(visible=False)
-
         # 播放控制
         controls = self.playback_control_component.build()
 
@@ -270,7 +280,6 @@ class PlaybackView:
                     self.tab_selector,
                     self.playlist_panel,
                     self.lyrics_panel,
-                    self.message_container,
                     controls,
                 ],
                 spacing=Space.SM,
@@ -357,12 +366,18 @@ class PlaybackView:
             "shuffle": PlayMode.SHUFFLE,
         }
         self.play_mode = mode_map.get(mode, PlayMode.REPEAT_ONE)
+        self.playback_service.set_play_mode_by_string(mode)
 
-    def on_playback_state_changed(self, is_playing: bool):
+    def on_playback_state_changed(self, is_playing: bool, is_stopped: bool = False):
         """播放状态改变回调"""
         if self.playback_control_component:
             self.playback_control_component.update_play_pause_button(is_playing)
-        if is_playing:
+        if is_stopped:
+            self._song_completed = False
+            if self.playback_control_component:
+                self.playback_control_component.reset_progress()
+            self._set_status("停止", Color.STATUS_STOPPED)
+        elif is_playing:
             self._set_status("播放中", Color.STATUS_PLAYING)
         else:
             self._set_status("暂停", Color.STATUS_PAUSED)
@@ -390,14 +405,19 @@ class PlaybackView:
             self._set_status("切换中...", Color.INFO)
             self.page.update()
 
-            if song_info.get("is_downloaded") and song_info.get("filepath"):
-                local_path = song_info["filepath"]
-                if os.path.exists(local_path):
-                    return await self.play_music_file(local_path, request_id=request_id)
-
             song_name = song_info.get("name", "")
-            remote_path = song_info.get("remote_path", "")
             music_service = self.app_context.get("music_service")
+
+            # 先按真实文件检查本地缓存；不要只依赖可能过期的元数据标记。
+            local_path = (
+                music_service.get_local_file_path(song_name)
+                if music_service and song_name
+                else ""
+            )
+            if local_path and os.path.exists(local_path):
+                return await self.play_music_file(local_path, request_id=request_id)
+
+            remote_path = song_info.get("remote_path", "")
             if not (music_service and remote_path):
                 self._set_status("无法播放", Color.DANGER_TEXT)
                 self.page.update()
@@ -446,9 +466,16 @@ class PlaybackView:
 
             self.playback_service.set_current_song(file_path)
             try:
-                await asyncio.wait_for(self.playback_service.play_music(), timeout=5.0)
+                played = await asyncio.wait_for(
+                    self.playback_service.play_music(), timeout=15.0
+                )
             except asyncio.TimeoutError:
                 logger.error("播放音乐超时")
+                self._set_status("播放失败", Color.DANGER_TEXT)
+                self.page.update()
+                return False
+
+            if not played:
                 self._set_status("播放失败", Color.DANGER_TEXT)
                 self.page.update()
                 return False
@@ -482,9 +509,21 @@ class PlaybackView:
             await asyncio.sleep(update_interval)
             if not self._view_active or not self._built:
                 continue
+            if getattr(self.view_manager, "app_backgrounded", False):
+                # 应用在后台：Flet websocket 可能已被系统冻结，
+                # page.update 会阻塞事件循环并拖慢下载协程
+                continue
             try:
                 self._update_progress_only()
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
+                if self._is_destroyed_session_error(e):
+                    # 客户端关闭或热重载会直接销毁 Flet session，不一定触发
+                    # 视图切出回调；此时结束永久刷新任务，避免持续访问失效页面。
+                    self._view_active = False
+                    logger.info("Flet会话已销毁，停止播放页UI刷新")
+                    break
                 logger.error(f"UI更新失败: {e}")
 
     def _update_progress_only(self):
@@ -509,8 +548,13 @@ class PlaybackView:
             if self.lyrics_component:
                 self.lyrics_component.update_lyrics_position(position)
 
-            # 检测播放完成
-            if duration > 0 and position > 0:
+            # 优先使用播放器的自然结束事件。部分原生后端结束时会立即把
+            # position 归零，旧的“进度接近 100%”判断会因此漏掉续播。
+            completed = self.playback_service.has_completed()
+            if completed and not self._song_completed:
+                self._song_completed = True
+                asyncio.create_task(self._auto_play_next_song())
+            elif duration > 0 and position > 0:
                 progress_ratio = position / duration
                 from ..platform_audio import is_ios
 
@@ -538,6 +582,9 @@ class PlaybackView:
                 self._set_status("停止", Color.STATUS_STOPPED)
                 self.playback_control_component.update_play_pause_button(False)
         except Exception as e:
+            if self._is_destroyed_session_error(e):
+                # 交给定时任务终止循环，不把正常的会话关闭误报为播放故障。
+                raise
             logger.error(f"更新播放进度失败: {e}")
 
     async def _auto_play_next_song(self):
@@ -545,11 +592,16 @@ class PlaybackView:
         if self._switching_song:
             return
         await asyncio.sleep(0.2)
-        success = await self.playback_controller.auto_play_next_song()
-        if success:
-            if self.playlist_component:
-                self.playlist_component.refresh_display()
-            self.update_ui()
+        self._switching_song = True
+        try:
+            success = await self.playback_controller.auto_play_next_song()
+            if success:
+                self._song_completed = False
+                if self.playlist_component:
+                    self.playlist_component.refresh_display()
+                self.update_ui()
+        finally:
+            self._switching_song = False
 
     def update_ui(self):
         """更新 UI 显示"""
@@ -616,21 +668,8 @@ class PlaybackView:
             return None
 
     def show_message(self, message: str, message_type: str = "info"):
-        """显示消息"""
-        bg_color, text_color, icon = get_message_style(message_type)
-        self.message_container.content = ft.Row(
-            [
-                ft.Icon(ft.Icons.INFO_OUTLINE, color=text_color, size=18),
-                ft.Text(message, color=text_color, size=FontSize.BODY),
-            ],
-            spacing=Space.XS,
-        )
-        self.message_container.bgcolor = bg_color
-        self.message_container.border = ft.Border.all(1, bg_color)
-        self.message_container.padding = Space.SM
-        self.message_container.border_radius = Radius.CIRCLE
-        self.message_container.visible = True
-        self.page.update()
+        """在页面顶部显示消息。"""
+        show_snack_bar(self.page, message, message_type)
 
     def handle_play_selected(
         self, music_files: List[Dict[str, Any]], start_index: int = 0
@@ -659,9 +698,16 @@ class PlaybackView:
                         if start_index < len(music_files)
                         else music_files[0]
                     )
-                    asyncio.create_task(self.play_selected_song(target))
+                    asyncio.create_task(self._play_or_skip_unavailable(target))
         except Exception as e:
             logger.error(f"处理播放选中歌曲请求失败: {e}")
+
+    async def _play_or_skip_unavailable(self, target: Dict[str, Any]):
+        """播放选中歌曲；来源连接或下载失败时继续下一首。"""
+        if await self.play_selected_song(target):
+            return True
+        logger.warning("歌曲不可用，自动跳过: %s", target.get("name", ""))
+        return await self.playback_controller.next_song()
 
     def on_view_activated(self):
         """视图激活"""

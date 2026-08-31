@@ -21,14 +21,19 @@ class FakePage:
 
     def __init__(self):
         self.update_calls = 0
-        self.dialogs = []          # show_dialog 打开的对话框栈
+        self.dialogs = []  # show_dialog 打开的对话框栈
         self.popped_dialogs = 0
         self.overlay = []
+        self.launched_urls = []  # launch_url 打开过的外部链接
 
     def update(self, *controls):
         self.update_calls += 1
 
+    async def launch_url(self, url, **kwargs):
+        self.launched_urls.append(url)
+
     def show_dialog(self, dialog):
+        dialog.open = True  # 与真实 Page.show_dialog 一致
         self.dialogs.append(dialog)
 
     def pop_dialog(self):
@@ -36,14 +41,22 @@ class FakePage:
         return self.dialogs.pop() if self.dialogs else None
 
 
+def last_notification_text(page) -> str:
+    """Return the message from the latest top-overlay notification."""
+    notification = page.overlay[-1]
+    return notification.content.content.controls[1].value
+
+
 class FakeAudioPlayer:
     """平台音频播放器替身：记录加载历史与播放状态"""
 
     def __init__(self):
-        self.loaded_files = []     # 按顺序记录 load() 过的文件
+        self.loaded_files = []  # 按顺序记录 load() 过的文件
         self.playing = False
         self.paused = False
         self.stopped_count = 0
+        self.completed = False
+        self.volume = 0.7
 
     def load(self, path):
         self.loaded_files.append(str(path))
@@ -72,6 +85,11 @@ class FakeAudioPlayer:
     def is_playing(self):
         return self.playing
 
+    def has_completed(self):
+        completed = self.completed
+        self.completed = False
+        return completed
+
     def get_duration(self):
         return 180.0 if self.playing else 0.0
 
@@ -82,6 +100,7 @@ class FakeAudioPlayer:
         return True
 
     def set_volume(self, volume):
+        self.volume = volume
         return True
 
 
@@ -92,22 +111,31 @@ class FakeNextcloudClient:
     "先点慢歌 A 再点快歌 B" 的竞态场景。
     """
 
-    def __init__(self, files=None, directories=None, download_delay=0.0,
-                 list_delay=0.0, download_error=None, list_error=None,
-                 dir_errors=None, connect_ok=True, connect_delay=0.0,
-                 connect_error=None):
-        self.files = files or []                # list_music_files 返回值
-        self.directories = directories or {}    # {路径: [{'name': ...}]}
+    def __init__(
+        self,
+        files=None,
+        directories=None,
+        download_delay=0.0,
+        list_delay=0.0,
+        download_error=None,
+        list_error=None,
+        dir_errors=None,
+        connect_ok=True,
+        connect_delay=0.0,
+        connect_error=None,
+    ):
+        self.files = files or []  # list_music_files 返回值
+        self.directories = directories or {}  # {路径: [{'name': ...}]}
         self.download_delay = download_delay
         self.list_delay = list_delay
         self.download_error = download_error
         self.list_error = list_error
-        self.dir_errors = dir_errors or {}      # {路径: Exception}
+        self.dir_errors = dir_errors or {}  # {路径: Exception}
         self.connect_ok = connect_ok
         self.connect_delay = connect_delay
         self.connect_error = connect_error
 
-        self.download_calls = []                # [(remote_path, filename)]
+        self.download_calls = []  # [(remote_path, filename)]
         self.list_calls = []
         self.dir_calls = []
 
@@ -156,15 +184,20 @@ class FakeMusicLibrary:
         self.music_dir.mkdir(parents=True, exist_ok=True)
         self.sync_folder = "/"
 
-    def add_remote_song(self, song_name, remote_path, size=0, modified="", etag=""):
+    def add_remote_song(
+        self, song_name, remote_path, size=0, modified="", etag="",
+        source_type="nextcloud", sync_folder="",
+    ):
         if song_name not in self.songs:
             self.songs[song_name] = {
                 "name": song_name,
                 "filename": song_name,
                 "remote_path": remote_path,
+                "source_type": source_type,
                 "size": size,
                 "modified": modified,
                 "etag": etag,
+                "sync_folder": sync_folder,
                 "is_downloaded": False,
                 "filepath": "",
             }
@@ -212,12 +245,23 @@ class FakeConfigManager:
             self._config.setdefault(section, {}).update(options)
 
     def get(self, key, default=None):
-        section, _, option = key.partition(".")
-        return self._config.get(section, {}).get(option, default)
+        # 与真实 ConfigManager 一致：全路径点分键逐层取值，
+        # 裸段落键返回整个字典
+        value = self._config
+        for part in key.split("."):
+            if not isinstance(value, dict) or part not in value:
+                return default
+            value = value[part]
+        return value
 
     def set(self, key, value):
-        section, _, option = key.partition(".")
-        self._config.setdefault(section, {})[option] = value
+        target = self._config
+        keys = key.split(".")
+        for part in keys[:-1]:
+            if not isinstance(target.get(part), dict):
+                target[part] = {}
+            target = target[part]
+        target[keys[-1]] = value
 
     def save_config(self):
         pass
@@ -262,6 +306,7 @@ def make_music_service(music_library, nextcloud_client, config_manager, monkeypa
     monkeypatch.setattr(audio_normalize, "normalize_audio_async", _noop_normalize)
 
     from nextcloud_music_player.services.music_service import MusicService
+
     return MusicService(music_library, nextcloud_client, config_manager)
 
 

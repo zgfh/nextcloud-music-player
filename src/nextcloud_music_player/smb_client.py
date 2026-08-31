@@ -1,9 +1,15 @@
 """
 SMB 音乐来源客户端 - 通过 pysmb 访问 SMB 共享中的音乐文件。
 
+协议支持：SMB1 / SMB 2.002 / 2.1 / 3.0 / 3.0.2 / 3.1.1（未签名/未加密）——
+由 smb_dialects 扩展 pysmb 的协商方言实现，iOS 上同样可用；
+强制签名（AES-CMAC）或强制加密（AES-CCM/GCM）的服务器暂不支持
+（如 Windows 11 24H2+ 默认强制签名，见 smb_dialects.py）。
+
 接口与 NextCloudClient 保持鸭子类型兼容（MusicService/FolderSelector/LyricsService
 均按此事实接口调用，无需改动）：
 - test_connection() -> bool
+- list_shares() -> [{'name','comment','type'}]（连接向导列举服务器共享）
 - list_music_files(folder_path) -> [{'name','path','size','modified','type'}]
 - list_directories(folder_path) -> [{'name','path','modified','type'}]
 - download_file(file_path, file_name, local_path) -> str（本地路径，失败抛异常）
@@ -109,41 +115,80 @@ class SMBClient:
     # === 连接管理 ===
 
     def _get_conn(self):
-        """获取或建立 SMB 连接（必须在持有 _smb_lock 时调用）"""
+        """获取或建立 SMB 连接（必须在持有 _smb_lock 时调用）
+
+        share 可为空：空 share 表示"只连接服务器"（用于列举共享的向导阶段），
+        具体共享在 listPath/retrieveFile 等调用时才需要。
+        """
         if self._conn is not None:
             return self._conn
 
         if not self.host:
             raise ConnectionError("未配置 SMB 主机地址")
-        if not self.share:
-            raise ConnectionError("未配置 SMB 共享名称")
 
+        from . import smb_dialects
+
+        # 协商支持 SMB1 / SMB2 / SMB3（见 smb_dialects.py）
+        smb_dialects.enable_modern_negotiation()
+        conn = self._connect_once()
+
+        self._conn = conn
+        logger.info(f"✅ SMB 连接已建立: {self.host}:{self.port} 共享 '{self.share}'")
+        return self._conn
+
+    def _connect_once(self):
+        """建立一条新的 SMB 连接
+
+        协商策略先试 SMB 3.1.1（现代服务器一步到位），被拒（老服务器）
+        时换多方言（2.002/2.1/3.0/3.0.2）重连一次；认证失败不重试
+        （换方言也于事无补，且会多算一次失败登录）。
+        """
         from smb.SMBConnection import SMBConnection
+
+        from . import smb_dialects
 
         try:
             my_name = (socket.gethostname() or "music-player").split(".")[0][:15]
         except Exception:
             my_name = "music-player"
 
-        # 445 端口为 SMB 直连 TCP；139 为传统 NetBIOS
-        conn = SMBConnection(
-            self.username,
-            self.password,
-            my_name=my_name,
-            remote_name=self.host.upper(),
-            domain=self.domain,
-            use_ntlm_v2=True,
-            is_direct_tcp=(self.port == 445),
-        )
-        if not conn.connect(self.host, self.port, timeout=10):
+        auth_failed = None
+        for prefer_311 in (True, False):
+            # 直连 TCP 帧格式适用于除 139（传统 NetBIOS）外的所有端口，
+            # 不能按"端口==445"判断：非 445 的直连端口同样不需要 NBT 会话头
+            conn = SMBConnection(
+                self.username,
+                self.password,
+                my_name=my_name,
+                remote_name=self.host.upper(),
+                domain=self.domain,
+                use_ntlm_v2=True,
+                is_direct_tcp=(self.port != 139),
+            )
+            smb_dialects.configure_connection(conn, prefer_311=prefer_311)
+            try:
+                ok = conn.connect(self.host, self.port, timeout=10)
+            except Exception as e:
+                conn.close()
+                if not smb_dialects.is_dialect_rejection(e):
+                    raise
+                logger.info(f"SMB 协商被拒（{e}），切换多方言策略重连")
+                continue
+            if ok:
+                if not prefer_311:
+                    logger.info("多方言协商回退后连接成功（服务器不支持 3.1.1）")
+                return conn
+            # connect() 返回 False：认证失败，换方言重试无意义
             conn.close()
             raise ConnectionError(
                 f"无法连接到 SMB 服务器 {self.host}:{self.port}"
-                f"（认证失败或服务器强制 SMB3 加密协议，当前实现支持 SMB1/SMB2）"
+                f"（认证失败，或服务器强制 SMB 签名/加密）"
             )
-        self._conn = conn
-        logger.info(f"✅ SMB 连接已建立: {self.host}:{self.port} 共享 '{self.share}'")
-        return self._conn
+
+        raise ConnectionError(
+            f"无法连接到 SMB 服务器 {self.host}:{self.port}"
+            f"（两次协商均被拒绝，请检查服务器协议配置）"
+        )
 
     def _reset_conn(self):
         """丢弃当前连接（必须在持有 _smb_lock 时调用）"""
@@ -174,6 +219,17 @@ class SMBClient:
         msg = str(exc)
         text = f"{name}: {msg}" if msg else name
 
+        # 服务器只接受 pysmb 无法协商的协议（SMB 3.1.1 / 强制签名或加密）
+        if (
+            "does not support any of the" in msg
+            or ("ProtocolError" in name and "dialect" in msg.lower())
+        ):
+            return (
+                f"服务器 {self.host} 要求 SMB 3.1.1 或强制签名/加密，"
+                f"当前实现最高支持 SMB 3.0（未加密）。可在服务器端放宽协议要求"
+                f"（Samba: server min protocol = SMB2，并关闭强制加密），"
+                f"或改用支持 SMB 2/3 的共享主机"
+            )
         if (
             "NtlmError" in name
             or "LOGON" in msg.upper()
@@ -201,15 +257,52 @@ class SMBClient:
 
     # === 事实接口实现 ===
 
+    async def list_shares(self) -> List[Dict]:
+        """列出服务器上可访问的共享（连接向导用），返回 [{'name','comment','type'}]"""
+        logger.info(f"🔍 [SMB_SHARES] 列出服务器共享: {self.host}:{self.port}")
+
+        def _sync():
+            with self._smb_lock:
+                shares = self._call(lambda conn: conn.listShares())
+
+            result = []
+            for share in shares:
+                if share.isSpecial:
+                    # IPC$ / ADMIN$ 等管理共享对音乐播放无意义
+                    continue
+                result.append(
+                    {
+                        "name": share.name,
+                        "comment": getattr(share, "comments", "") or "",
+                        "type": "share",
+                    }
+                )
+            logger.info(f"✅ [SMB_SHARES] 找到 {len(result)} 个共享")
+            return result
+
+        try:
+            return await self._run_in_executor(_sync)
+        except Exception as e:
+            error = self._friendly_error(e)
+            logger.error(f"❌ [SMB_SHARES] {error}")
+            raise Exception(error)
+
     async def test_connection(self) -> bool:
-        """测试连接：建立 SMB 连接并列出共享根目录验证凭据与共享可访问性"""
+        """测试连接：验证认证可用的前提下，列出共享根目录（或共享列表）"""
 
         def _sync():
             with self._smb_lock:
                 try:
                     conn = self._get_conn()
-                    conn.listPath(self.share, "/")
-                    logger.info(f"✅ SMB 连接测试成功: {self.host} 共享 '{self.share}'")
+                    if self.share:
+                        conn.listPath(self.share, "/")
+                        logger.info(
+                            f"✅ SMB 连接测试成功: {self.host} 共享 '{self.share}'"
+                        )
+                    else:
+                        # 未指定共享（向导第一阶段）：能列出共享即认证通过
+                        conn.listShares()
+                        logger.info(f"✅ SMB 连接测试成功: {self.host}（未指定共享）")
                     return True
                 except Exception as e:
                     self._reset_conn()
@@ -287,7 +380,11 @@ class SMBClient:
             raise Exception(error)
 
     async def download_file(
-        self, file_path: str, file_name: str, local_path: str = None
+        self,
+        file_path: str,
+        file_name: str,
+        local_path: str = None,
+        progress_callback=None,
     ) -> str:
         """从 SMB 共享下载文件到本地，返回本地路径；失败抛异常"""
         smb_path = to_smb_path(file_path)
@@ -308,8 +405,26 @@ class SMBClient:
                 with self._smb_lock:
 
                     def _do(conn):
+                        total = 0
+                        try:
+                            total = (
+                                conn.getAttributes(self.share, smb_path).file_size or 0
+                            )
+                        except Exception:
+                            pass
                         with open(tmp_path, "wb") as f:
-                            conn.retrieveFile(self.share, smb_path, f)
+
+                            class ProgressWriter:
+                                def write(self, data):
+                                    written = f.write(data)
+                                    if progress_callback:
+                                        progress_callback(f.tell(), total)
+                                    return written
+
+                                def __getattr__(self, name):
+                                    return getattr(f, name)
+
+                            conn.retrieveFile(self.share, smb_path, ProgressWriter())
 
                     self._call(_do)
                 tmp_path.replace(cached_path)

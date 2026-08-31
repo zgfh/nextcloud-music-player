@@ -8,12 +8,12 @@ from typing import Any, Dict, List
 
 import flet as ft
 
+from ..utils.notify import show_snack_bar
 from ..utils.theme import (
     Color,
     FontSize,
     Radius,
     Space,
-    get_message_style,
     glow,
     tint,
 )
@@ -34,6 +34,10 @@ class FileListView:
         self.last_selected_name = None  # 最后点选的歌曲，播放时从它开始
         self.is_syncing = False
         self._built = False
+        # 下载队列：iOS 切后台进程挂起会中断下载协程，
+        # 未完成项留在 pending，回前台（on_app_resumed）自动续传
+        self._pending_downloads: list[tuple[str, str]] = []
+        self._download_task: asyncio.Task | None = None
 
     def rebuild(self):
         """重建视图（Flet 0.86 控件脱离页面后被冻结且不可复用）"""
@@ -116,18 +120,18 @@ class FileListView:
             on_click=self._search_music,
         )
 
-        # 文件夹路径栏
+        # 同步状态栏（点击查看所有来源/目录详情）
         self.folder_text = ft.Text(
-            "文件夹: 未设置",
+            "同步状态：0/0",
             size=FontSize.CAPTION,
             color=Color.TEXT_MUTED,
             max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS,
         )
         self.folder_button = ft.TextButton(
-            "去设置",
-            icon=ft.Icons.TUNE,
-            on_click=lambda e: self.view_manager.switch_to_view("connection"),
+            "查看详情",
+            icon=ft.Icons.CHEVRON_RIGHT,
+            on_click=self._show_sync_details,
             style=ft.ButtonStyle(
                 color=Color.PRIMARY,
                 icon_color=Color.PRIMARY,
@@ -179,7 +183,6 @@ class FileListView:
             on_click=self._delete_selected,
             style=ft.ButtonStyle(color=Color.DANGER_TEXT),
         )
-
         # 统计栏（数据芯片风）
         self.stats_text = ft.Text(
             "总数 0 · 已选 0 · 已下载 0",
@@ -218,21 +221,6 @@ class FileListView:
                 shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
             ),
         )
-        self.clear_cache_button = ft.OutlinedButton(
-            "清除缓存",
-            icon=ft.Icons.DELETE_SWEEP,
-            on_click=self._clear_cache,
-            style=ft.ButtonStyle(
-                color=Color.TEXT_SECONDARY,
-                icon_color=Color.TEXT_MUTED,
-                side=ft.BorderSide(1, Color.BORDER),
-                shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
-            ),
-        )
-
-        # 消息区
-        self.message_container = ft.Container(visible=False)
-
         # 组装
         self._container = ft.Container(
             content=ft.Column(
@@ -276,11 +264,7 @@ class FileListView:
                         border_radius=Radius.LG,
                         padding=Space.XS,
                     ),
-                    ft.Row(
-                        [self.download_button, self.clear_cache_button],
-                        spacing=Space.SM,
-                    ),
-                    self.message_container,
+                    ft.Row([self.download_button], spacing=Space.SM),
                 ],
                 spacing=Space.MD,
                 expand=True,
@@ -302,6 +286,15 @@ class FileListView:
             title = title[:-4]
         artist = song.get("artist", "未知艺术家")
         is_downloaded = song.get("is_downloaded", False)
+        source_type = song.get("source_type", "nextcloud")
+        source_label = {
+            "nextcloud": "Nextcloud",
+            "smb": "SMB",
+            "gdrive": "Google Drive",
+        }.get(source_type, source_type or "未知来源")
+        availability = (
+            f"{source_label} · " + ("已下载" if is_downloaded else "需联网")
+        )
         size = song.get("size", 0)
 
         size_str = f"{float(size) / 1024 / 1024:.1f}MB" if size else ""
@@ -318,6 +311,7 @@ class FileListView:
         )
 
         return ft.Container(
+            key=f"song:{name}",
             content=ft.Row(
                 [
                     check_icon,
@@ -337,7 +331,8 @@ class FileListView:
                                 overflow=ft.TextOverflow.ELLIPSIS,
                             ),
                             ft.Text(
-                                f"{artist} · {size_str}",
+                                f"{artist} · {availability}"
+                                + (f" · {size_str}" if size_str else ""),
                                 size=FontSize.CAPTION,
                                 color=Color.TEXT_MUTED,
                                 max_lines=1,
@@ -403,14 +398,8 @@ class FileListView:
         self.show_message("正在同步...", "info")
 
         try:
-            sync_folder = self.music_service.get_default_sync_folder()
-            if not sync_folder:
-                self.show_message("请先设置同步文件夹", "error")
-                return
-
-            files = await self.music_service.sync_music_files(sync_folder)
-            folder_display = self.music_service.music_library.sync_folder or sync_folder
-            self.folder_text.value = f"文件夹: {folder_display}"
+            files = await self.music_service.sync_all_sources()
+            self._update_sync_status()
             self.reload_music_list()
             self.show_message(f"同步完成，共 {len(files)} 首歌曲", "success")
         except Exception as ex:
@@ -442,16 +431,17 @@ class FileListView:
         self.reload_music_list(keep_scroll=True)
 
     def _delete_selected(self, e):
-        """删除选中的文件"""
+        """从本地音乐库索引移除选中歌曲。"""
         if not self.selected_files:
-            self.show_message("请先选择要删除的文件", "warning")
+            self.show_message("请先选择要删除的音乐", "warning")
             return
         for name in list(self.selected_files):
             if self.music_service.has_song(name):
                 self.music_service.remove_song(name)
         self.selected_files.clear()
+        self.last_selected_name = None
         self.reload_music_list()
-        self.show_message("删除完成", "success")
+        self.show_message("已从音乐库移除", "success")
 
     def _get_selected_start_index(self, selected_files: List[Dict[str, Any]]) -> int:
         """计算播放起始索引：从最后点选的歌曲开始，未命中则回到 0"""
@@ -497,59 +487,166 @@ class FileListView:
             self.view_manager.switch_to_view("playback")
 
     async def _download_selected(self, e):
-        """下载选中的文件"""
+        """把选中的文件排入下载队列，由后台 worker 整批处理"""
         if not self.selected_files:
             return
-        self.download_button.disabled = True
-        self.show_message(f"开始下载 {len(self.selected_files)} 首歌曲...", "info")
-        self.page.update()
 
-        success_count = 0
+        added = 0
         for name in list(self.selected_files):
             song = next((s for s in self.music_files if s.get("name") == name), None)
             if song and not song.get("is_downloaded", False):
                 remote_path = song.get("remote_path", "")
                 if remote_path:
-                    try:
-                        ok = await self.music_service.download_file(remote_path, name)
-                        if ok:
-                            success_count += 1
-                    except Exception as ex:
-                        logger.error(f"下载 {name} 失败: {ex}")
+                    self._pending_downloads.append((name, remote_path))
+                    added += 1
 
         self.selected_files.clear()
         self.reload_music_list()
-        self.show_message(f"下载完成，成功 {success_count} 首", "success")
 
-    def _clear_cache(self, e):
-        """清除缓存"""
-        self.music_service.clear_cache()
-        self.selected_files.clear()
-        self.reload_music_list()
-        self.show_message("缓存已清除", "info")
+        if not added:
+            self.show_message("选中歌曲均已下载", "info")
+            return
+
+        self.show_message(f"开始下载 {added} 首歌曲...", "info")
+        self._start_download_worker()
+
+    def _start_download_worker(self):
+        """启动下载 worker；已在运行时不重复启动（新排队项由现有 worker 继续消化）"""
+        if self._download_task and not self._download_task.done():
+            return
+        self._download_task = asyncio.create_task(self._download_worker())
+
+    async def _download_worker(self):
+        """整批消化下载队列。
+
+        music_service.download_batch 在原生可用时把整批一次性提交给
+        系统后台会话：切后台/锁屏/应用被杀都继续，每首完成经
+        on_complete 回调刷新列表。requests 回退路径逐首执行，进程挂
+        起会中断协程，未完成项留在 _pending_downloads，回前台由
+        on_app_resumed() 重新拉起 worker 续传。
+        """
+        from ..ios_background_task import begin_background_task, end_background_task
+
+        # 申请约 30s 的 iOS 后台宽限，尽量让收尾处理在切后台后完成
+        bg_token = begin_background_task("music-download")
+        success_count = 0
+        failed_count = 0
+        try:
+            while self._pending_downloads:
+                raw_batch = self._pending_downloads.copy()
+                self._pending_downloads.clear()
+                # 队列存 (name, remote_path)，服务层约定 (remote_path, filename)
+                batch = [(remote_path, name) for name, remote_path in raw_batch]
+                try:
+                    success, failed = await self.music_service.download_batch(
+                        batch, on_complete=self._on_download_file_complete
+                    )
+                except asyncio.CancelledError:
+                    # 取消时把本批放回队首，续传时从这里继续
+                    self._pending_downloads[:0] = raw_batch
+                    raise
+                success_count += success
+                failed_count += failed
+                self.reload_music_list(keep_scroll=True)
+        finally:
+            end_background_task(bg_token)
+
+        if success_count or failed_count:
+            message = f"下载完成，成功 {success_count} 首"
+            message_type = "success"
+            if failed_count:
+                message += f"，失败 {failed_count} 首"
+                message_type = "warning"
+            self.show_message(message, message_type)
+            self.reload_music_list()
+
+    def _on_download_file_complete(self, filename: str, success: bool):
+        """单首下载完成：刷新列表的已下载标识（事件循环线程调用）"""
+        try:
+            self.reload_music_list(keep_scroll=True)
+        except Exception as e:
+            logger.debug(f"下载完成刷新列表失败: {e}")
+
+    def on_app_resumed(self):
+        """应用回到前台：下载队列有剩余且 worker 已死时自动续传"""
+        if not self._pending_downloads:
+            return
+        if self._download_task and not self._download_task.done():
+            return
+        remaining = len(self._pending_downloads)
+        logger.info(f"应用回到前台，续传下载剩余 {remaining} 首")
+        self.show_message(f"继续下载剩余 {remaining} 首...", "info")
+        self._start_download_worker()
 
     def show_message(self, message: str, message_type: str = "info"):
-        """显示消息（霓虹芯片风）"""
-        bg_color, text_color, icon = get_message_style(message_type)
-        self.message_container.content = ft.Row(
-            [
-                ft.Icon(ft.Icons.INFO_OUTLINE, color=text_color, size=18),
-                ft.Text(message, color=text_color, size=FontSize.BODY),
-            ],
-            spacing=Space.XS,
-        )
-        self.message_container.bgcolor = bg_color
-        self.message_container.padding = Space.SM
-        self.message_container.border = ft.Border.all(1, bg_color)
-        self.message_container.border_radius = Radius.CIRCLE
-        self.message_container.visible = True
-        self.page.update()
-        logger.info(f"[{message_type.upper()}] {message}")
+        """在页面顶部显示消息。"""
+        show_snack_bar(self.page, message, message_type)
 
     def on_view_activated(self):
         """视图激活时刷新列表"""
         self.reload_music_list()
-        sync_folder = self.music_service.get_default_sync_folder()
-        if sync_folder:
-            self.folder_text.value = f"文件夹: {sync_folder}"
-            self.page.update()
+        self._update_sync_status()
+        self.page.update()
+
+    @staticmethod
+    def _source_label(source_type: str) -> str:
+        return {
+            "nextcloud": "Nextcloud", "smb": "SMB",
+            "gdrive": "Google Drive",
+        }.get(source_type, source_type or "未知来源")
+
+    def _sync_report(self) -> List[Dict[str, Any]]:
+        """返回最近同步报告；尚未同步时也列出所有已配置目录。"""
+        report = getattr(self.music_service, "last_sync_report", None) or []
+        if report:
+            return report
+        result = []
+        for source_type in self.music_service.source_clients:
+            for folder in self.music_service.get_sync_folders(source_type):
+                result.append({
+                    "source_type": source_type, "folder": folder,
+                    "song_count": 0, "synced_count": 0,
+                    "status": "pending", "error": "",
+                })
+        return result
+
+    def _update_sync_status(self):
+        report = self._sync_report()
+        synced = sum(int(item.get("synced_count", 0)) for item in report)
+        total = sum(int(item.get("song_count", 0)) for item in report)
+        self.folder_text.value = f"同步状态：{synced}/{total}"
+
+    def _show_sync_details(self, e):
+        report = self._sync_report()
+        rows = []
+        for item in report:
+            ok = item.get("status") == "success"
+            pending = item.get("status") == "pending"
+            status = "等待同步" if pending else ("同步完成" if ok else "同步失败")
+            count = int(item.get("song_count", 0))
+            subtitle = f"{item.get('folder') or '/'}\n歌曲数量：{count} · {status}"
+            if item.get("error"):
+                subtitle += f"\n{item['error']}"
+            rows.append(ft.ListTile(
+                leading=ft.Icon(
+                    ft.Icons.SCHEDULE if pending else (
+                        ft.Icons.CHECK_CIRCLE if ok else ft.Icons.ERROR_OUTLINE
+                    ),
+                    color=Color.TEXT_MUTED if pending else (
+                        Color.SUCCESS if ok else Color.DANGER_TEXT
+                    ),
+                ),
+                title=ft.Text(self._source_label(item.get("source_type", ""))),
+                subtitle=ft.Text(subtitle),
+            ))
+        if not rows:
+            rows.append(ft.Text("尚未配置同步目录", color=Color.TEXT_MUTED))
+        dialog = ft.AlertDialog(
+            title=ft.Text("同步目录详情"),
+            content=ft.Container(
+                content=ft.Column(rows, tight=True, scroll=ft.ScrollMode.AUTO),
+                width=420, height=min(420, max(100, len(rows) * 96)),
+            ),
+            actions=[ft.TextButton("关闭", on_click=lambda event: self.page.pop_dialog())],
+        )
+        self.page.show_dialog(dialog)
