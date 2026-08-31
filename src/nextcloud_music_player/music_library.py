@@ -54,25 +54,37 @@ class MusicLibrary:
         size: int = 0,
         modified: str = "",
         etag: str = "",
+        source_type: str = "nextcloud",
+        sync_folder: str = "",
     ) -> None:
         """Add a remote song to the library (not yet downloaded)."""
         song_info = self.extract_song_info_from_filename(song_name)
-        # 如果不存在则更新
+        # 同步时更新远端元数据，同时保留已下载的本地状态。
         if song_name in self.songs:
+            self.songs[song_name].update(
+                {
+                    "remote_path": remote_path,
+                    "size": size,
+                    "modified": modified,
+                    "etag": etag,
+                    "sync_folder": sync_folder,
+                    "source_type": source_type,
+                }
+            )
+            self.save_music_list()
             return
-        if song_name in self.songs:
-            self.update_remote_song(song_name, song_info)
-        else:
-            self.songs[song_name] = {
-                **song_info,
-                "filename": song_name,
-                "remote_path": remote_path,
-                "size": size,
-                "modified": modified,
-                "etag": etag,
-                "is_downloaded": False,
-                "filepath": "初始化为音乐",  # Will be set when downloaded
-            }
+        self.songs[song_name] = {
+            **song_info,
+            "filename": song_name,
+            "remote_path": remote_path,
+            "size": size,
+            "modified": modified,
+            "etag": etag,
+            "sync_folder": sync_folder,
+            "source_type": source_type,
+            "is_downloaded": False,
+            "filepath": None,
+        }
         self.save_music_list()
 
     def update_remote_song(self, song_name: str, file_info: Dict) -> None:

@@ -127,13 +127,13 @@ def test_download_card_renders_live_progress():
 
     view, _, _ = make_settings_view(sub_page="download")
     tracker = DownloadProgressTracker()
-    tracker.enqueue(2)
-    token = tracker.start("song.mp3")
-    tracker.update(512 * 1024, 1024 * 1024, token)
+    tracker.enqueue(["other.mp3", "song.mp3"])
+    tracker.mark_downloading("song.mp3")
+    tracker.update("song.mp3", 512 * 1024, 1024 * 1024)
     view.app_context["music_service"] = SimpleNamespace(download_progress=tracker)
 
     assert view._refresh_download_progress() is True
-    assert view.download_status_text.value == "正在下载"
+    assert view.download_status_text.value == "正在下载 1 首"
     assert view.download_filename_text.value == "song.mp3"
     assert view.download_progress_bar.value == 0.5
     assert "512.0 KB / 1.0 MB" in view.download_progress_text.value
@@ -170,23 +170,23 @@ def test_cache_manager_lists_and_selectively_clears_downloads():
     assert page.update_calls > 0
 
 
-def test_stale_download_cannot_overwrite_newer_progress():
+def test_stale_progress_cannot_resurrect_finished_file():
+    """文件完成后的迟到进度不会复活条目"""
     from nextcloud_music_player.services.download_progress import (
         DownloadProgressTracker,
     )
 
     tracker = DownloadProgressTracker()
-    old_token = tracker.start("old.mp3")
-    new_token = tracker.start("new.mp3")
-    tracker.update(100, 100, old_token)
-    tracker.finish(True, token=old_token)
+    tracker.enqueue("a.mp3")
+    tracker.mark_downloading("a.mp3")
+    tracker.update("a.mp3", 100, 100)
+    tracker.finish("a.mp3", True)
+
+    tracker.update("a.mp3", 50, 100)  # 迟到进度
 
     state = tracker.snapshot()
-    assert state["filename"] == "new.mp3"
-    assert state["status"] == "downloading"
-    assert state["downloaded_bytes"] == 0
-    tracker.update(50, 100, new_token)
-    assert tracker.snapshot()["downloaded_bytes"] == 50
+    assert state["completed"] == 1
+    assert tracker.file_states()[0]["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -224,18 +224,19 @@ def test_menu_lists_all_feature_entries():
         entry.content.controls[1].controls[0].value
         for entry in view._container.content.controls[1:]
     ]
-    assert titles == ["下载进度", "缓存管理", "应用日志", "应用信息"]
+    assert titles == ["下载进度", "缓存管理", "应用日志", "谷歌云盘", "应用信息"]
 
 
 def test_menu_entry_click_opens_sub_page():
     """点击菜单入口进入对应子页面，返回按钮可回到菜单"""
     view, _, _ = make_settings_view()
 
-    # 第四个入口：应用信息
-    about_entry = view._container.content.controls[4]
-    about_entry.on_click(SimpleNamespace(control=about_entry))
+    # 第五个入口：谷歌云盘
+    gdrive_entry = view._container.content.controls[4]
+    gdrive_entry.on_click(SimpleNamespace(control=gdrive_entry))
 
-    assert view._sub_page == "about"
+    assert view._sub_page == "gdrive"
+    assert hasattr(view, "gdrive_api_base_input")
     header = view._container.content.controls[0]
     back_button = header.controls[0]
     assert back_button.icon == ft.Icons.ARROW_BACK_IOS_NEW
@@ -270,14 +271,14 @@ def test_menu_download_subtitle_tracks_live_progress():
 
     view, _, _ = make_settings_view()
     tracker = DownloadProgressTracker()
-    tracker.enqueue(3)
-    token = tracker.start("song.mp3")
-    tracker.update(512 * 1024, 1024 * 1024, token)
+    tracker.enqueue(["a.mp3", "b.mp3", "song.mp3"])
+    tracker.mark_downloading("song.mp3")
+    tracker.update("song.mp3", 512 * 1024, 1024 * 1024)
     view.app_context["music_service"] = SimpleNamespace(download_progress=tracker)
 
     assert view._refresh_download_progress() is True
     subtitle = view._menu_subtitles["download"]
-    assert "正在下载 song.mp3" in subtitle.value
+    assert "正在下载 1 首" in subtitle.value
     assert "排队 2" in subtitle.value
 
 
@@ -287,3 +288,81 @@ def test_log_tail_poll_updates_download_only_when_not_on_logs_page():
 
     # 模拟轮询循环的一步：不在日志页时不应触碰 log_list
     assert not hasattr(view, "log_list")
+
+
+# ---------------------------------------------------------------------------
+# 谷歌云盘设置页
+# ---------------------------------------------------------------------------
+
+
+def test_gdrive_page_loads_existing_api_base():
+    view, _, _ = make_settings_view(
+        config={"connection": {"gdrive": {"api_base_url": "http://192.168.1.10:8931"}}},
+        sub_page="gdrive",
+    )
+
+    assert view.gdrive_api_base_input.value == "http://192.168.1.10:8931"
+
+
+def test_gdrive_page_save_persists_normalized_api_base():
+    view, page, config = make_settings_view(sub_page="gdrive")
+
+    view.gdrive_api_base_input.value = "  http://127.0.0.1:8931/ "
+    view._save_gdrive_settings(None)
+
+    assert config.get("connection.gdrive.api_base_url") == "http://127.0.0.1:8931"
+    # 归一化结果回填输入框，避免保存后显示原始输入
+    assert view.gdrive_api_base_input.value == "http://127.0.0.1:8931"
+    notification_texts = [
+        control.value
+        for control in page.overlay[-1].content.content.controls
+        if hasattr(control, "value")
+    ]
+    assert any("已保存" in text for text in notification_texts)
+
+
+def test_gdrive_page_save_empty_restores_official_endpoint():
+    """清空地址保存 = 回到 Google 官方端点"""
+    view, _, config = make_settings_view(
+        config={"connection": {"gdrive": {"api_base_url": "http://192.168.1.10:8931"}}},
+        sub_page="gdrive",
+    )
+
+    view.gdrive_api_base_input.value = ""
+    view._save_gdrive_settings(None)
+
+    assert config.get("connection.gdrive.api_base_url", "unset") == ""
+
+
+def test_gdrive_menu_summary_reflects_endpoint_state():
+    view, _, _ = make_settings_view()
+    assert view._menu_subtitles["gdrive"].value == "使用 Google 官方端点"
+
+    view, _, _ = make_settings_view(
+        config={"connection": {"gdrive": {"api_base_url": "http://127.0.0.1:8931"}}}
+    )
+    assert view._menu_subtitles["gdrive"].value == "自定义端点 http://127.0.0.1:8931"
+
+
+def test_download_page_renders_per_file_list():
+    """下载页按文件渲染列表：进度、成功、失败各自成行"""
+    from nextcloud_music_player.services.download_progress import (
+        DownloadProgressTracker,
+    )
+
+    view, _, _ = make_settings_view(sub_page="download")
+    tracker = DownloadProgressTracker()
+    tracker.enqueue(["a.mp3", "b.mp3", "c.mp3"])
+    tracker.mark_downloading("a.mp3")
+    tracker.update("a.mp3", 50, 100)
+    tracker.finish("b.mp3", True)
+    tracker.finish("c.mp3", False, "HTTP 404")
+    view.app_context["music_service"] = SimpleNamespace(download_progress=tracker)
+
+    assert view._refresh_download_progress() is True
+
+    rows = view.download_list.controls
+    assert [row.controls[1].value for row in rows] == ["a.mp3", "b.mp3", "c.mp3"]
+    assert "50%" in rows[0].controls[2].value
+    assert "HTTP 404" in rows[2].controls[2].value
+    assert view.download_status_text.value == "正在下载 1 首"

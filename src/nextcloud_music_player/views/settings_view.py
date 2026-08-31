@@ -1,6 +1,6 @@
 """
 设置视图 - 菜单式二级导航：首页为功能菜单列表，点击进入对应子页面
-（下载进度 / 缓存管理 / 应用日志 / 应用信息）
+（下载进度 / 缓存管理 / 应用日志 / 谷歌云盘 / 应用信息）
 """
 
 import asyncio
@@ -29,7 +29,7 @@ _LOG_INITIAL_LINES = 40
 _LOG_PAGE_LINES = 50
 
 # 菜单入口 -> 子页面标识
-_SUB_PAGES = ("download", "cache", "logs", "about")
+_SUB_PAGES = ("download", "cache", "logs", "gdrive", "about")
 
 
 def _package_version(name: str) -> str:
@@ -37,6 +37,24 @@ def _package_version(name: str) -> str:
         return pkg_version(name)
     except PackageNotFoundError:
         return "dev"
+
+
+def _dark_input(**kwargs) -> ft.TextField:
+    """统一暗色科技风输入框样式（与连接页保持一致）"""
+    base = dict(
+        bgcolor=Color.BG_SURFACE_ALT,
+        border_color=Color.BORDER,
+        focused_border_color=Color.PRIMARY,
+        border_width=1,
+        border_radius=Radius.MD,
+        color=Color.TEXT_PRIMARY,
+        hint_style=ft.TextStyle(color=Color.TEXT_DISABLED),
+        label_style=ft.TextStyle(color=Color.TEXT_SECONDARY),
+        cursor_color=Color.PRIMARY,
+        content_padding=ft.Padding(left=14, right=14, top=12, bottom=12),
+    )
+    base.update(kwargs)
+    return ft.TextField(**base)
 
 
 class SettingsView:
@@ -59,6 +77,8 @@ class SettingsView:
         self._sub_page = "menu"
         # 菜单页各入口的副标题控件（每次渲染重建），供轮询刷新
         self._menu_subtitles: dict[str, ft.Text] = {}
+        # 下载列表最近一次渲染签名（避免无变化时整列表重建）
+        self._download_list_signature = None
 
     def rebuild(self):
         """重建视图（Flet 0.86 控件脱离页面后被冻结且不可复用）。
@@ -94,6 +114,7 @@ class SettingsView:
             "download": self._build_download_page,
             "cache": self._build_cache_page,
             "logs": self._build_logs_page,
+            "gdrive": self._build_gdrive_page,
             "about": self._build_about_page,
         }
         builder = builders.get(self._sub_page, self._build_menu_page)
@@ -275,6 +296,12 @@ class SettingsView:
                 "logs",
             ),
             entry(
+                ft.Icons.ADD_TO_DRIVE,
+                "谷歌云盘",
+                self._gdrive_summary(),
+                "gdrive",
+            ),
+            entry(
                 ft.Icons.INFO_OUTLINED,
                 "应用信息",
                 f"v{_package_version('nextcloud-music-player')} · "
@@ -326,18 +353,20 @@ class SettingsView:
         state = tracker.snapshot()
         status = state["status"]
         if status == "downloading":
-            total = state["total_bytes"]
-            percent = f"{state['downloaded_bytes'] / total:.0%}" if total else "…"
-            text = f"正在下载 {state['filename']} · {percent}"
+            text = f"正在下载 {state['downloading']} 首"
+            if state["speed_bps"]:
+                text += f" · {self._format_bytes(state['speed_bps'])}/s"
         elif status == "queued":
             text = f"等待下载 {state['queued']} 首"
+        elif status == "partial":
+            text = f"完成 {state['completed']} 首 · 失败 {state['failed']} 首"
         elif status == "completed":
             text = f"下载完成 {state['completed']} 首"
         elif status == "failed":
             text = f"下载失败 {state['failed']} 首"
         else:
             text = "暂无下载任务"
-        if state["queued"]:
+        if status in ("downloading", "queued") and state["queued"]:
             text += f" · 排队 {state['queued']}"
         return text
 
@@ -345,8 +374,21 @@ class SettingsView:
     # 下载进度页
     # ------------------------------------------------------------------
 
+    _DL_STATUS_LABELS = {
+        "queued": "等待中",
+        "downloading": "下载中",
+        "completed": "完成",
+        "failed": "失败",
+    }
+    _DL_STATUS_ICONS = {
+        "queued": (ft.Icons.HOURGLASS_TOP, Color.TEXT_MUTED),
+        "downloading": (ft.Icons.DOWNLOAD_ROUNDED, Color.PRIMARY),
+        "completed": (ft.Icons.CHECK_CIRCLE_OUTLINE, Color.SUCCESS),
+        "failed": (ft.Icons.ERROR_OUTLINE, Color.DANGER),
+    }
+
     def _build_download_page(self) -> ft.ListView:
-        header = self._detail_header("下载进度", "DOWNLOAD · 实时状态")
+        header = self._detail_header("下载进度", "DOWNLOAD · 队列与实时状态")
 
         self.download_status_text = ft.Text(
             "暂无下载任务",
@@ -405,6 +447,43 @@ class SettingsView:
             border_radius=Radius.LG,
         )
 
+        # 下载列表（每首一行：状态图标 + 文件名 + 进度/结果）
+        self.download_list = ft.ListView(
+            height=280,
+            spacing=2,
+            padding=Space.XS,
+        )
+        self.download_list_card = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(ft.Icons.LIST_ALT, size=16, color=Color.PRIMARY),
+                            ft.Text(
+                                "下载列表",
+                                size=FontSize.BODY + 1,
+                                weight=ft.FontWeight.W_500,
+                                color=Color.TEXT_PRIMARY,
+                            ),
+                        ],
+                        spacing=Space.SM,
+                    ),
+                    ft.Container(
+                        content=self.download_list,
+                        bgcolor=Color.BG_APP_ALT,
+                        border=ft.Border.all(1, Color.BORDER),
+                        border_radius=Radius.MD,
+                        padding=Space.XS,
+                    ),
+                ],
+                spacing=Space.SM,
+            ),
+            padding=Space.MD,
+            bgcolor=Color.BG_SURFACE,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+        )
+
         hint_card = ft.Container(
             content=ft.Row(
                 [
@@ -427,7 +506,50 @@ class SettingsView:
             border_radius=Radius.LG,
         )
 
-        return self._page_scaffold(header, download_card, hint_card)
+        # 页面重建后列表签名重置，强制首轮重绘
+        self._download_list_signature = None
+        return self._page_scaffold(
+            header, download_card, self.download_list_card, hint_card
+        )
+
+    def _download_list_row(self, state: dict) -> ft.Row:
+        """单个文件的下载行：状态图标 + 文件名 + 进度/结果"""
+        status = state.get("status", "queued")
+        icon, color = self._DL_STATUS_ICONS.get(
+            status, (ft.Icons.INSERT_DRIVE_FILE_OUTLINED, Color.TEXT_MUTED)
+        )
+        label = self._DL_STATUS_LABELS.get(status, status)
+        downloaded = state.get("downloaded_bytes", 0)
+        total = state.get("total_bytes", 0)
+        if status == "failed" and state.get("message"):
+            detail = str(state["message"])[:48]
+        elif total:
+            detail = f"{self._format_bytes(downloaded)} / {self._format_bytes(total)}"
+            if status == "downloading":
+                detail += f" · {downloaded / total:.0%}"
+        elif downloaded:
+            detail = self._format_bytes(downloaded)
+        else:
+            detail = label
+        return ft.Row(
+            [
+                ft.Icon(icon, size=14, color=color),
+                ft.Text(
+                    state.get("filename", ""),
+                    size=FontSize.CAPTION,
+                    color=Color.TEXT_SECONDARY,
+                    expand=True,
+                    max_lines=1,
+                    overflow=ft.TextOverflow.ELLIPSIS,
+                ),
+                ft.Text(
+                    detail,
+                    size=FontSize.MICRO + 1,
+                    color=Color.TEXT_MUTED,
+                ),
+            ],
+            spacing=Space.SM,
+        )
 
     # ------------------------------------------------------------------
     # 缓存管理页
@@ -657,6 +779,125 @@ class SettingsView:
         return self._page_scaffold(header, log_card)
 
     # ------------------------------------------------------------------
+    # 谷歌云盘设置页
+    # ------------------------------------------------------------------
+
+    def _build_gdrive_page(self) -> ft.ListView:
+        header = self._detail_header("谷歌云盘", "GDRIVE · 服务端点")
+
+        self.gdrive_api_base_input = _dark_input(
+            key="gdrive_api_base",
+            label="API 地址",
+            value=self._gdrive_api_base_config(),
+            hint_text="留空使用 Google 官方端点",
+            prefix_icon=ft.Icons.LANGUAGE,
+        )
+        self.gdrive_save_button = ft.OutlinedButton(
+            "保存",
+            icon=ft.Icons.SAVE_OUTLINED,
+            on_click=self._save_gdrive_settings,
+            style=ft.ButtonStyle(
+                color=Color.PRIMARY,
+                icon_color=Color.PRIMARY,
+                side=ft.BorderSide(1, tint(Color.PRIMARY, "40")),
+                shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
+            ),
+        )
+        endpoint_card = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(
+                                ft.Icons.ADD_TO_DRIVE,
+                                size=18,
+                                color=Color.PRIMARY,
+                            ),
+                            ft.Text(
+                                "服务端点",
+                                size=FontSize.BODY + 1,
+                                weight=ft.FontWeight.W_500,
+                                color=Color.TEXT_PRIMARY,
+                            ),
+                        ],
+                        spacing=Space.SM,
+                    ),
+                    self.gdrive_api_base_input,
+                    self.gdrive_save_button,
+                ],
+                spacing=Space.SM,
+            ),
+            padding=Space.MD,
+            bgcolor=Color.BG_SURFACE,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+        )
+
+        hint_card = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(
+                                ft.Icons.INFO_OUTLINED,
+                                size=16,
+                                color=Color.TEXT_MUTED,
+                            ),
+                            # expand 约束宽度让长文案换行，否则单行文本横向溢出
+                            ft.Text(
+                                "自定义地址用于代理网关或测试服务器；保存后连接页的"
+                                "谷歌云盘授权与同步请求都会改走该地址",
+                                size=FontSize.CAPTION,
+                                color=Color.TEXT_MUTED,
+                                expand=True,
+                            ),
+                        ],
+                        spacing=Space.SM,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    ft.Text(
+                        "地址会自动拼接：/drive/v3（文件 API）、/auth（授权页）、"
+                        "/token（令牌）。例如 http://192.168.1.10:8931",
+                        size=FontSize.CAPTION,
+                        color=Color.TEXT_MUTED,
+                    ),
+                ],
+                spacing=Space.SM,
+            ),
+            padding=Space.MD,
+            bgcolor=Color.BG_APP_ALT,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+        )
+
+        return self._page_scaffold(header, endpoint_card, hint_card)
+
+    def _gdrive_api_base_config(self) -> str:
+        return str(
+            self.app_context["config_manager"].get("connection.gdrive.api_base_url", "")
+            or ""
+        )
+
+    def _gdrive_summary(self) -> str:
+        base = self._gdrive_api_base_config().strip()
+        return "使用 Google 官方端点" if not base else f"自定义端点 {base}"
+
+    def _save_gdrive_settings(self, e):
+        """保存自定义 API 地址（去空白与尾部斜杠后持久化）"""
+        raw = (self.gdrive_api_base_input.value or "").strip().rstrip("/")
+        try:
+            cm = self.app_context["config_manager"]
+            cm.set("connection.gdrive.api_base_url", raw)
+            cm.save_config()
+        except Exception as ex:
+            logger.error(f"保存谷歌云盘端点失败: {ex}")
+            self.show_message("保存失败，请查看应用日志", "error")
+            return
+        self.gdrive_api_base_input.value = raw
+        logger.info(f"谷歌云盘 API 地址已保存: {raw or '(官方端点)'}")
+        self.show_message("谷歌云盘设置已保存", "success")
+
+    # ------------------------------------------------------------------
     # 应用信息页
     # ------------------------------------------------------------------
 
@@ -821,7 +1062,7 @@ class SettingsView:
     # ------------------------------------------------------------------
 
     def _refresh_download_progress(self) -> bool:
-        """从共享 tracker 刷新下载卡片/菜单副标题，返回控件是否发生变化。"""
+        """从共享 tracker 刷新下载摘要/列表/菜单副标题，返回控件是否变化。"""
         music_service = self.app_context.get("music_service")
         tracker = getattr(music_service, "download_progress", None)
         if tracker is None:
@@ -829,14 +1070,16 @@ class SettingsView:
         changed = self._refresh_menu_subtitles()
         if not hasattr(self, "download_status_text"):
             return changed
+
         state = tracker.snapshot()
         status = state["status"]
         labels = {
             "idle": "暂无下载任务",
-            "queued": "等待下载",
-            "downloading": "正在下载",
-            "completed": "下载完成",
-            "failed": "下载失败",
+            "queued": f"等待下载 {state['queued']} 首",
+            "downloading": f"正在下载 {state['downloading']} 首",
+            "partial": f"完成 {state['completed']} · 失败 {state['failed']}",
+            "completed": f"下载完成 {state['completed']} 首",
+            "failed": f"下载失败 {state['failed']} 首",
         }
         downloaded = state["downloaded_bytes"]
         total = state["total_bytes"]
@@ -849,7 +1092,7 @@ class SettingsView:
         if status == "downloading" and speed:
             progress_text += f" · {self._format_bytes(speed)}/s"
         values = (
-            labels.get(status, state["message"]),
+            labels.get(status, status),
             filename,
             progress,
             progress_text,
@@ -862,14 +1105,34 @@ class SettingsView:
             self.download_progress_text.value,
             self.download_queue_text.value,
         )
-        if values == old_values:
-            return changed
-        self.download_status_text.value = values[0]
-        self.download_filename_text.value = values[1]
-        self.download_progress_bar.value = values[2]
-        self.download_progress_text.value = values[3]
-        self.download_queue_text.value = values[4]
-        return True
+        if values != old_values:
+            self.download_status_text.value = values[0]
+            self.download_filename_text.value = values[1]
+            self.download_progress_bar.value = values[2]
+            self.download_progress_text.value = values[3]
+            self.download_queue_text.value = values[4]
+            changed = True
+
+        # 下载列表：内容签名变化时整体重建（行内无可复用的动态控件）
+        if hasattr(self, "download_list"):
+            states = tracker.file_states()
+            signature = tuple(
+                (
+                    item["filename"],
+                    item["status"],
+                    item["downloaded_bytes"],
+                    item["total_bytes"],
+                )
+                for item in states
+            )
+            if signature != self._download_list_signature:
+                self._download_list_signature = signature
+                self.download_list.controls.clear()
+                self.download_list.controls.extend(
+                    self._download_list_row(item) for item in states
+                )
+                changed = True
+        return changed
 
     # ------------------------------------------------------------------
     # 缓存管理操作

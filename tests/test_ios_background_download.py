@@ -356,24 +356,27 @@ def make_service(tmp_path, client):
 
 
 def install_native_fake(monkeypatch, result=None, error=None, raise_exc=None):
-    """替换原生下载入口；返回调用记录列表"""
+    """替换原生下载入口（submit：提交即返回 future）；返回调用记录列表"""
     calls = []
 
-    async def fake_download(url, headers, dest, key, on_progress=None):
+    def fake_submit(url, headers, dest, key, on_progress=None):
         calls.append({"url": url, "headers": headers, "dest": str(dest), "key": key})
         if raise_exc is not None:
             raise raise_exc
+        fut = asyncio.get_event_loop().create_future()
         if on_progress is not None:
             on_progress(50, 100)
         if result is False:
-            return (False, None, error)
-        dest = Path(dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(b"via-native")
-        return (True, str(dest), None)
+            fut.set_result((False, None, error))
+        else:
+            dest_path = Path(dest)
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            dest_path.write_bytes(b"via-native")
+            fut.set_result((True, str(dest_path), None))
+        return fut
 
     monkeypatch.setattr(native, "is_available", lambda: True)
-    monkeypatch.setattr(native, "download", fake_download)
+    monkeypatch.setattr(native, "submit", fake_submit)
     return calls
 
 
@@ -393,7 +396,9 @@ async def test_download_file_prefers_native_and_marks_library(tmp_path, monkeypa
     assert library.songs["song.mp3"]["is_downloaded"] is True
     snapshot = service.download_progress.snapshot()
     assert snapshot["status"] == "completed"
-    assert snapshot["downloaded_bytes"] == 50
+    assert snapshot["completed"] == 1
+    assert snapshot["total_bytes"] == 100
+    assert snapshot["downloaded_bytes"] == 100  # 完成后补齐到总量
 
 
 async def test_download_file_skips_native_for_smb_client(tmp_path, monkeypatch):
@@ -478,3 +483,75 @@ def test_handle_orphan_native_download_failure_does_not_mark(tmp_path):
 
     assert library.songs["song.mp3"]["is_downloaded"] is False
     assert service.download_progress.snapshot()["status"] == "failed"
+
+
+# ---------------------------------------------------------------------------
+# download_batch：整批一次性提交（后台/被杀继续的关键）
+# ---------------------------------------------------------------------------
+
+
+async def test_download_batch_submits_all_before_any_completes(tmp_path, monkeypatch):
+    """原生批量：整批任务先全部进入系统队列，完成与提交解耦"""
+    client = FakeNativeSourceClient()
+    service, library = make_service(tmp_path, client)
+    for name in ("a.mp3", "b.mp3"):
+        library.add_remote_song(name, REMOTE_PATH)
+
+    submitted = []
+    pending = {}
+
+    def fake_submit(url, headers, dest, key, on_progress=None):
+        submitted.append(key)
+        fut = asyncio.get_event_loop().create_future()
+        pending[key] = (fut, str(dest))
+        return fut
+
+    monkeypatch.setattr(native, "is_available", lambda: True)
+    monkeypatch.setattr(native, "submit", fake_submit)
+
+    items = [(REMOTE_PATH, name) for name in ("song.mp3", "a.mp3", "b.mp3")]
+    task = asyncio.create_task(service.download_batch(items))
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+    # 提交全部完成，而没有任何一首需要等上一首完成
+    assert sorted(submitted) == ["a.mp3", "b.mp3", "song.mp3"]
+    snapshot = service.download_progress.snapshot()
+    assert snapshot["downloading"] == 3
+
+    def complete(key, ok):
+        fut, dest = pending[key]
+        if ok:
+            Path(dest).write_bytes(b"via-native")
+            fut.set_result((True, dest, None))
+        else:
+            fut.set_result((False, None, "boom"))
+
+    complete("song.mp3", True)
+    complete("a.mp3", True)
+    complete("b.mp3", False)
+
+    events = []
+    success, failed = await task
+    assert (success, failed) == (2, 1)
+    assert library.songs["song.mp3"]["is_downloaded"] is True
+    assert library.songs["b.mp3"]["is_downloaded"] is False
+
+
+async def test_download_batch_notifies_each_completion(tmp_path, monkeypatch):
+    client = FakeNativeSourceClient()
+    service, library = make_service(tmp_path, client)
+    library.add_remote_song("a.mp3", REMOTE_PATH)
+    monkeypatch.setattr(native, "is_available", lambda: False)
+
+    events = []
+    success, failed = await service.download_batch(
+        [(REMOTE_PATH, "song.mp3"), (REMOTE_PATH, "a.mp3")],
+        on_complete=lambda name, ok: events.append((name, ok)),
+    )
+
+    assert (success, failed) == (2, 0)
+    # 回退路径逐首执行，顺序保持
+    assert client.download_calls[0] == (REMOTE_PATH, "song.mp3")
+    assert len(client.download_calls) == 2
+    assert events == [("song.mp3", True), ("a.mp3", True)]

@@ -74,7 +74,19 @@ if [ "$DEVICE_STATE" = "unavailable" ]; then
 fi
 
 # ====== 判断是否需要 flet 打包 ======
-FLET_CMD="${FLET_BIN:-/Users/zzg/code/iso-demo/.venv/bin/flet}"
+# flet 优先用本仓库 venv，其次回退到 PATH 中的 flet（可用 FLET_BIN 覆盖）
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+if [ -z "${FLET_BIN:-}" ]; then
+    if [ -f "$SCRIPT_DIR/../.venv/bin/flet" ]; then
+        FLET_CMD="$SCRIPT_DIR/../.venv/bin/flet"
+    elif command -v flet >/dev/null 2>&1; then
+        FLET_CMD="$(command -v flet)"
+    else
+        FLET_CMD=""
+    fi
+else
+    FLET_CMD="$FLET_BIN"
+fi
 PYTHON_APP_REF="build/python-app/main.pyc"
 FLUTTER_IOS_DIR="build/flutter/ios"
 
@@ -107,7 +119,15 @@ if [ "$NEED_FLET_BUILD" = "1" ]; then
     fi
 
     log_message "${YELLOW}🔨 打包 Python 应用并生成 Flutter 工程...${NC}"
-    $FLET_CMD build ipa --yes --no-rich-output 2>&1 | tail -10 || true
+    # 失败必须中止：继续往下会用旧的 build/flutter 产物打包出旧代码的应用
+    FLET_BUILD_LOG=$(mktemp -t deploy_flet)
+    if ! $FLET_CMD build ipa --yes --no-rich-output >"$FLET_BUILD_LOG" 2>&1; then
+        log_message "${RED}❌ flet build 失败，最后 40 行输出：${NC}"
+        tail -40 "$FLET_BUILD_LOG"
+        rm -f "$FLET_BUILD_LOG"
+        exit 1
+    fi
+    rm -f "$FLET_BUILD_LOG"
 else
     log_message "${GREEN}⏭️ 跳过 flet 打包，复用已有 build/python-app 与 build/flutter${NC}"
 fi

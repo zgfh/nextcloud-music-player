@@ -138,11 +138,15 @@ class PlaybackController:
     async def stop_playback(self):
         """停止播放"""
         try:
-            await self.playback_service.stop_music()
+            stopped = await self.playback_service.stop_music()
+            if not stopped:
+                logger.warning("播放器未能确认停止")
+                return False
             logger.info("播放已停止")
             # 通知UI更新按钮状态
             if self.ui_update_callback:
-                self.ui_update_callback(False)
+                self.ui_update_callback(False, is_stopped=True)
+            return True
         except Exception as e:
             logger.error(f"停止播放失败: {e}")
             raise
@@ -203,30 +207,28 @@ class PlaybackController:
             current_index = current_playlist.get("current_index", 0)
             songs = current_playlist["songs"]
 
-            # 根据播放模式确定下一首歌曲
-            new_index = self._calculate_next_index(current_index, len(songs))
-
-            # 更新播放列表索引
-            current_playlist["current_index"] = new_index
-            self.playlist_manager.save_current_playlist(current_playlist)
-
-            # 播放选中的歌曲 - 添加保护机制
-            selected_song = songs[new_index]
-            if self.play_song_callback:
+            # 最多尝试一轮；连接或下载失败的歌曲自动跳过。
+            attempted = 0
+            new_index = current_index
+            while attempted < len(songs):
+                new_index = self._calculate_next_index(new_index, len(songs))
+                current_playlist["current_index"] = new_index
+                self.playlist_manager.save_current_playlist(current_playlist)
+                selected_song = songs[new_index]
+                attempted += 1
+                if not self.play_song_callback:
+                    return True
                 try:
                     logger.info(
                         f"准备播放下一曲: {selected_song['info'].get('title', '未知')}"
                     )
-                    await self.play_song_callback(selected_song["info"])
-                    logger.info(
-                        f"已切换到下一曲: {selected_song['info'].get('title', '未知')}"
-                    )
+                    if await self.play_song_callback(selected_song["info"]):
+                        return True
+                    logger.warning("歌曲不可用，继续下一首")
                 except Exception as callback_error:
                     logger.error(f"播放回调失败: {callback_error}")
-                    # 即使播放失败，也要返回True，因为索引已经更新了
-                    return True
-
-            return True
+            logger.error("播放列表中没有可用歌曲")
+            return False
 
         except Exception as e:
             logger.error(f"下一曲失败: {e}")

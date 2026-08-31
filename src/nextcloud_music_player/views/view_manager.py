@@ -23,6 +23,7 @@ class ViewManager:
         config_manager = app_context["config_manager"]
         music_library = app_context["music_library"]
         nextcloud_client = app_context.get("nextcloud_client")
+        source_clients = app_context.setdefault("source_clients", {})
 
         # 创建服务（复用服务层）
         from ..services.lyrics_service import LyricsService
@@ -39,6 +40,7 @@ class ViewManager:
             nextcloud_client=nextcloud_client,
             config_manager=config_manager,
             lyrics_service=self.lyrics_service,
+            source_clients=source_clients,
         )
 
         app_context["music_service"] = self.music_service
@@ -85,9 +87,9 @@ class ViewManager:
                     label="连接",
                 ),
                 ft.NavigationBarDestination(
-                    icon=ft.Icons.LIST_OUTLINED,
-                    selected_icon=ft.Icons.LIST,
-                    label="文件",
+                    icon=ft.Icons.LIBRARY_MUSIC_OUTLINED,
+                    selected_icon=ft.Icons.LIBRARY_MUSIC,
+                    label="音乐库",
                 ),
                 ft.NavigationBarDestination(
                     icon=ft.Icons.MUSIC_NOTE_OUTLINED,

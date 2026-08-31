@@ -53,6 +53,7 @@ class ConnectionView:
         self._built = False
         self._save_timer = None
         self._auto_connect_started = False  # 自动连接每会话只触发一次
+        self.source_clients = app_context.setdefault("source_clients", {})
 
     def rebuild(self):
         """重建视图（Flet 0.86 控件脱离页面后被冻结且不可复用）"""
@@ -224,13 +225,16 @@ class ConnectionView:
 
         self.sync_folder_input = _dark_input(
             key="nextcloud_sync_folder",
-            label="同步文件夹路径",
-            value=config.get(
+            label="同步文件夹（多个路径用换行分隔）",
+            value="\n".join(config.get("sync_folders") or [config.get(
                 "default_sync_folder", "/mp3/音乐/当月抖音热播流行歌曲484首/"
-            ),
-            hint_text="/Music 或留空表示根目录",
+            )]),
+            hint_text="/Music\n/Podcasts",
             prefix_icon=ft.Icons.FOLDER_OUTLINED,
             on_change=self._on_sync_folder_changed,
+            multiline=True,
+            min_lines=2,
+            max_lines=4,
             expand=1,
         )
 
@@ -275,6 +279,32 @@ class ConnectionView:
             hint_text="如 192.168.1.100 或 nas.local",
             prefix_icon=ft.Icons.LAN_OUTLINED,
         )
+        self.smb_sync_folder_input = _dark_input(
+            key="smb_sync_folders",
+            label="同步文件夹（多个路径用换行分隔）",
+            value="\n".join(smb_config.get("sync_folders") or [
+                smb_config.get("default_sync_folder", "/")
+            ]),
+            hint_text="/\n/Music",
+            multiline=True,
+            min_lines=2,
+            max_lines=4,
+            expand=1,
+        )
+        self.smb_browse_button = ft.OutlinedButton(
+            "浏览", icon=ft.Icons.FOLDER_OPEN, on_click=self._browse_folder
+        )
+        self.smb_edit_button = ft.OutlinedButton(
+            "修改连接设置",
+            icon=ft.Icons.EDIT_OUTLINED,
+            on_click=lambda e: self._open_smb_wizard(),
+            style=ft.ButtonStyle(
+                color=Color.TEXT_SECONDARY,
+                icon_color=Color.INFO,
+                side=ft.BorderSide(1, Color.BORDER),
+                shape=ft.RoundedRectangleBorder(radius=Radius.MD),
+            ),
+        )
 
         smb_hint = ft.Text(
             "点击「建立连接」后，将引导你选择身份（访客/用户）、共享与文件夹",
@@ -300,6 +330,9 @@ class ConnectionView:
             ),
             "token_expiry": gdrive_config.get("token_expiry", 0),
             "sync_folder": gdrive_config.get("default_sync_folder", ""),
+            # 自定义端点在设置页维护；授权/建连时再从配置实时读取，
+            # 避免连接页已构建后设置变更不生效
+            "api_base_url": gdrive_config.get("api_base_url", ""),
         }
 
         self.gdrive_client_id_input = _dark_input(
@@ -333,6 +366,7 @@ class ConnectionView:
 
         self.gdrive_authorize_button = ft.OutlinedButton(
             "授权",
+            key="gdrive_authorize",
             icon=ft.Icons.LOGIN,
             on_click=self._on_authorize_gdrive_clicked,
             style=ft.ButtonStyle(
@@ -346,10 +380,15 @@ class ConnectionView:
 
         self.gdrive_sync_folder_input = _dark_input(
             key="gdrive_sync_folder",
-            label="同步文件夹",
-            value=self._gdrive_settings["sync_folder"],
-            hint_text="点击「浏览」从 Google Drive 选择，留空表示根目录",
+            label="同步文件夹（多个文件夹用换行分隔）",
+            value="\n".join(gdrive_config.get("sync_folders") or ([
+                self._gdrive_settings["sync_folder"]
+            ] if self._gdrive_settings["sync_folder"] else [])),
+            hint_text="点击「浏览」逐个添加；留空表示根目录",
             prefix_icon=ft.Icons.FOLDER_OUTLINED,
+            multiline=True,
+            min_lines=2,
+            max_lines=4,
             expand=1,
         )
 
@@ -383,11 +422,12 @@ class ConnectionView:
         )
 
         self.auto_connect_switch = ft.Switch(
-            label="启动时自动连接",
-            value=config.get("auto_connect", False),
+            label=f"启动时自动连接 {self.title_text.value}",
+            value=self._source_auto_connect_enabled(source_type, config),
             label_position=ft.LabelPosition.RIGHT,
             active_color=Color.PRIMARY,
             label_text_style=ft.TextStyle(color=Color.TEXT_SECONDARY),
+            on_change=self._on_auto_connect_changed,
         )
 
         # === 主按钮：霓虹发光 ===
@@ -473,6 +513,11 @@ class ConnectionView:
                 [
                     self.smb_host_input,
                     smb_hint,
+                    ft.Row(
+                        [self.smb_sync_folder_input, self.smb_browse_button],
+                        spacing=Space.XS,
+                    ),
+                    self.smb_edit_button,
                 ],
                 spacing=Space.SM,
             ),
@@ -515,6 +560,12 @@ class ConnectionView:
             ],
             spacing=Space.SM,
         )
+        active_form = {
+            "nextcloud": self.nextcloud_form_card,
+            "smb": self.smb_form_card,
+            "gdrive": self.gdrive_form_card,
+        }[source_type]
+        active_form.content.controls.extend([self.status_container, action_row])
         self._container = ft.Container(
             content=ft.Column(
                 [
@@ -522,7 +573,6 @@ class ConnectionView:
                         controls=[
                             hero,
                             self.source_selector,
-                            self.status_container,
                             self.nextcloud_form_card,
                             self.smb_form_card,
                             self.gdrive_form_card,
@@ -545,11 +595,6 @@ class ConnectionView:
                         spacing=Space.MD,
                         expand=True,
                     ),
-                    ft.Container(
-                        content=action_row,
-                        padding=ft.Padding(top=Space.SM, left=0, right=0, bottom=0),
-                        bgcolor=Color.BG_APP,
-                    ),
                 ],
                 spacing=0,
                 expand=True,
@@ -562,9 +607,13 @@ class ConnectionView:
         self._built = True
 
         # 自动连接（每会话只触发一次，视图重建不重复连接）
-        if config.get("auto_connect", False) and not self._auto_connect_started:
+        auto_connect_requested = any(
+            self._source_auto_connect_enabled(source, config)
+            for source in ("nextcloud", "smb", "gdrive")
+        )
+        if auto_connect_requested and not self._auto_connect_started:
             self._auto_connect_started = True
-            asyncio.create_task(self._auto_connect())
+            asyncio.create_task(self._auto_connect_all_sources())
 
         return self._container
 
@@ -578,6 +627,9 @@ class ConnectionView:
             try:
                 new_value = e.control.value.strip()
                 self.app_context["config_manager"].set(config_key, new_value)
+                self.app_context["config_manager"].set(
+                    "connection.sync_folders", self._parse_folder_lines(new_value)
+                )
                 self.app_context["config_manager"].save_config()
                 logger.info(f"同步目录已自动保存: {new_value}")
             except Exception as ex:
@@ -586,10 +638,69 @@ class ConnectionView:
         self._save_timer = threading.Timer(2.0, delayed_save)
         self._save_timer.start()
 
-    async def _auto_connect(self):
-        """自动连接"""
+    @staticmethod
+    def _parse_folder_lines(value: str) -> list[str]:
+        """把换行分隔的目录转为稳定去重列表。"""
+        return list(dict.fromkeys(
+            line.strip() for line in str(value or "").splitlines() if line.strip()
+        ))
+
+    @staticmethod
+    def _source_auto_connect_enabled(source_type: str, config: dict) -> bool:
+        """读取来源独立开关；旧全局开关仅兼容为 Nextcloud。"""
+        section = config.get(source_type, {})
+        if source_type == "nextcloud":
+            return bool(section.get("auto_connect") or config.get("auto_connect", False))
+        return bool(section.get("auto_connect", False))
+
+    def _on_auto_connect_changed(self, e):
+        """自动连接开关按当前来源立即持久化。"""
+        source_type = self._current_source_type()
+        enabled = bool(e.control.value)
+        cm = self.app_context["config_manager"]
+        cm.set(f"connection.{source_type}.auto_connect", enabled)
+        if source_type == "nextcloud":
+            cm.set("connection.auto_connect", enabled)
+        cm.save_config()
+
+    async def _auto_connect_all_sources(self):
+        """启动时并行恢复所有启用了自动连接的来源。"""
         await asyncio.sleep(1)
-        await self._connect_to_server(None)
+        config = self.app_context["config_manager"].get("connection", {})
+        sources = [
+            source for source in ("nextcloud", "smb", "gdrive")
+            if self._source_auto_connect_enabled(source, config)
+        ]
+        if not sources:
+            return
+        results = await asyncio.gather(
+            *(self._auto_connect_source(source) for source in sources),
+            return_exceptions=True,
+        )
+        failures = [
+            f"{source}: {result}" for source, result in zip(sources, results)
+            if isinstance(result, Exception)
+        ]
+        current = self._current_source_type()
+        self.is_connected = current in self.source_clients
+        self._update_connection_status(self.is_connected)
+        if failures:
+            self.show_message("部分来源自动连接失败：" + "；".join(failures), "warning")
+        elif self.source_clients:
+            self.show_message(
+                f"已自动连接 {len(self.source_clients)} 个音乐来源", "success"
+            )
+
+    async def _auto_connect_source(self, source_type: str):
+        """静默恢复单个来源，不切换页面，也不覆盖其它来源。"""
+        client = self._build_client_from_form(source_type)
+        if not await client.test_connection():
+            raise ConnectionError("连接测试失败")
+        self.source_clients[source_type] = client
+        self.app_context["nextcloud_client"] = client
+        if self.app_context.get("music_service"):
+            self.app_context["music_service"].update_source_client(source_type, client)
+        logger.info("自动连接成功: %s", source_type)
 
     def _current_source_type(self) -> str:
         """当前选择的来源类型：nextcloud | smb | gdrive"""
@@ -602,6 +713,7 @@ class ConnectionView:
     def _on_source_type_changed(self, e):
         """切换来源类型：切换表单与标题，并立即持久化选择"""
         source_type = self._current_source_type()
+        self.is_connected = source_type in self.source_clients
         self.nextcloud_form_card.visible = source_type == "nextcloud"
         self.smb_form_card.visible = source_type == "smb"
         self.gdrive_form_card.visible = source_type == "gdrive"
@@ -620,14 +732,25 @@ class ConnectionView:
         if getattr(self.view_manager, "current_view", None) is self:
             self.view_manager.switch_to_view("connection")
         else:
+            self._update_connection_status(self.is_connected)
             self.page.update()
 
     def _on_connect_clicked(self, e):
-        """连接入口：SMB 走向导（选择身份/共享/目录），Nextcloud/Google Drive 走表单直连"""
+        """连接入口：SMB 优先复用完整的上次设置，否则进入配置向导。"""
         if self._current_source_type() == "smb":
+            try:
+                host = self._parse_smb_address()
+            except ValueError as ex:
+                self.show_message(str(ex), "error")
+                return
+            saved_host = str(self._smb_settings.get("host", "")).strip()
+            if self._smb_settings.get("share") and host == saved_host:
+                asyncio.create_task(self._connect_to_server(e))
+                return
+            # 首次配置或地址被修改时必须重新选择身份与共享。
             self._open_smb_wizard()
-        else:
-            asyncio.create_task(self._connect_to_server(e))
+            return
+        asyncio.create_task(self._connect_to_server(e))
 
     def _parse_smb_address(self) -> str:
         """读取地址框，支持 host 或 host:port，返回规范化 host（端口写入设置）"""
@@ -676,6 +799,10 @@ class ConnectionView:
             "sync_folder": result.sync_folder,
         }
         self.smb_host_input.value = result.host
+        existing_folders = self._parse_folder_lines(self.smb_sync_folder_input.value)
+        if (result.sync_folder or "/") not in existing_folders:
+            existing_folders.append(result.sync_folder or "/")
+        self.smb_sync_folder_input.value = "\n".join(existing_folders)
 
         # remember_credentials 关闭时仍保存结构信息，但不落盘明文密码
         remember = self.remember_password_switch.value
@@ -687,6 +814,7 @@ class ConnectionView:
             cm.set("connection.smb.domain", result.domain)
             cm.set("connection.smb.share", result.share)
             cm.set("connection.smb.default_sync_folder", result.sync_folder or "/")
+            cm.set("connection.smb.sync_folders", existing_folders)
             cm.set("connection.smb.username", result.username if remember else "")
             cm.set("connection.smb.password", result.password if remember else "")
             cm.set("connection.remember_credentials", remember)
@@ -695,8 +823,9 @@ class ConnectionView:
             logger.error(f"保存 SMB 配置失败: {ex}")
 
         self.app_context["nextcloud_client"] = result.client
+        self.source_clients["smb"] = result.client
         if self.app_context.get("music_service"):
-            self.app_context["music_service"].update_nextcloud_client(result.client)
+            self.app_context["music_service"].update_source_client("smb", result.client)
         if self.app_context.get("lyrics_service"):
             self.app_context["lyrics_service"].update_clients(
                 nextcloud_client=result.client
@@ -714,6 +843,15 @@ class ConnectionView:
         """授权按钮入口：启动浏览器 OAuth 流程"""
         asyncio.create_task(self._authorize_gdrive())
 
+    def _gdrive_api_base_url(self) -> str:
+        """实时读取设置页配置的自定义 API 地址（留空 = Google 官方端点）"""
+        return str(
+            self.app_context["config_manager"].get(
+                "connection.gdrive.api_base_url", ""
+            )
+            or ""
+        ).strip()
+
     async def _authorize_gdrive(self):
         """Google 账号 OAuth 授权：loopback 接收器 + 系统浏览器换码"""
         from .. import gdrive_client as gdrive
@@ -724,19 +862,34 @@ class ConnectionView:
             self.show_message("请先填写 Client ID 和 Client Secret", "error")
             return
 
+        endpoints = gdrive.resolve_endpoints(self._gdrive_api_base_url())
         self._update_gdrive_auth_state(waiting=True)
         receiver = gdrive.LoopbackOAuthReceiver()
         try:
             receiver.start()
-            auth_url = gdrive.build_authorization_url(client_id, receiver.redirect_uri)
-            await self.page.launch_url(auth_url)
+            auth_url = gdrive.build_authorization_url(
+                client_id,
+                receiver.redirect_uri,
+                auth_url=endpoints["oauth_auth"],
+            )
+            try:
+                await self.page.launch_url(auth_url)
+            except Exception as launch_ex:
+                # 浏览器拉起失败（无默认浏览器/测试宿主）不应终止授权：
+                # loopback 接收器继续等待，用户可手动打开授权页
+                logger.warning(f"打开浏览器失败，请手动访问授权页: {launch_ex}")
+                self.show_message(f"无法自动打开浏览器，请手动访问：{auth_url}", "warning")
 
             # 阻塞等待放到线程，避免卡住事件循环（用户最多有 5 分钟完成授权）
             code = await asyncio.to_thread(receiver.wait_for_code, 300.0)
 
             def _exchange():
                 return gdrive.exchange_authorization_code(
-                    client_id, client_secret, code, receiver.redirect_uri
+                    client_id,
+                    client_secret,
+                    code,
+                    receiver.redirect_uri,
+                    token_url=endpoints["oauth_token"],
                 )
 
             payload = await asyncio.to_thread(_exchange)
@@ -801,9 +954,10 @@ class ConnectionView:
         except Exception as ex:
             logger.error(f"持久化 Google Drive 令牌失败: {ex}")
 
-    def _build_client_from_form(self):
+    def _build_client_from_form(self, source_type=None):
         """按当前来源类型构造客户端；SMB 优先使用向导保存的完整设置"""
-        if self._current_source_type() == "smb":
+        source_type = source_type or self._current_source_type()
+        if source_type == "smb":
             try:
                 host = self._parse_smb_address()
             except ValueError:
@@ -825,7 +979,7 @@ class ConnectionView:
                 share=settings["share"],
             )
 
-        if self._current_source_type() == "gdrive":
+        if source_type == "gdrive":
             client_id = self.gdrive_client_id_input.value.strip()
             client_secret = self.gdrive_client_secret_input.value or ""
             if not client_id or not client_secret:
@@ -842,6 +996,7 @@ class ConnectionView:
                 access_token=self._gdrive_settings.get("access_token", ""),
                 token_expiry=self._gdrive_settings.get("token_expiry", 0),
                 on_tokens_updated=self._persist_gdrive_tokens,
+                api_base_url=self._gdrive_api_base_url(),
             )
 
         server_url = self.url_input.value.strip()
@@ -877,9 +1032,13 @@ class ConnectionView:
             # app_context['nextcloud_client'] 槽位承载"当前来源客户端"
             # （NextCloudClient / SMBClient 共用同一事实接口）
             self.app_context["nextcloud_client"] = client
+            source_type = self._current_source_type()
+            self.source_clients[source_type] = client
 
             if self.app_context.get("music_service"):
-                self.app_context["music_service"].update_nextcloud_client(client)
+                self.app_context["music_service"].update_source_client(
+                    source_type, client
+                )
             if self.app_context.get("lyrics_service"):
                 self.app_context["lyrics_service"].update_clients(
                     nextcloud_client=client
@@ -909,15 +1068,19 @@ class ConnectionView:
             self.page.update()
 
     async def _disconnect_from_nextcloud(self, e):
-        """断开连接"""
-        self.app_context["nextcloud_client"] = None
+        """仅断开当前页签的来源，不影响其它已连接来源。"""
+        source_type = self._current_source_type()
+        self.source_clients.pop(source_type, None)
+        self.app_context["nextcloud_client"] = next(
+            iter(self.source_clients.values()), None
+        )
         if self.app_context.get("music_service"):
-            self.app_context["music_service"].update_nextcloud_client(None)
+            self.app_context["music_service"].update_source_client(source_type, None)
         if self.app_context.get("lyrics_service"):
             self.app_context["lyrics_service"].update_clients(nextcloud_client=None)
         self.is_connected = False
         self._update_connection_status(False)
-        self.show_message("已断开连接", "info")
+        self.show_message(f"已断开 {source_type} 连接", "info")
 
     async def _test_connection(self, e):
         """测试连接"""
@@ -961,10 +1124,15 @@ class ConnectionView:
             # Nextcloud 字段始终保存（保留另一来源的表单内容）
             cm.set("connection.server_url", self.url_input.value.strip())
             cm.set("connection.username", self.username_input.value.strip())
+            nextcloud_folders = self._parse_folder_lines(self.sync_folder_input.value)
+            cm.set("connection.sync_folders", nextcloud_folders)
+            cm.set("connection.default_sync_folder", nextcloud_folders[0] if nextcloud_folders else "")
             cm.set(
-                "connection.default_sync_folder", self.sync_folder_input.value.strip()
+                f"connection.{source_type}.auto_connect",
+                self.auto_connect_switch.value,
             )
-            cm.set("connection.auto_connect", self.auto_connect_switch.value)
+            if source_type == "nextcloud":
+                cm.set("connection.auto_connect", self.auto_connect_switch.value)
             cm.set("connection.remember_credentials", remember)
             cm.set(
                 "connection.password",
@@ -978,10 +1146,9 @@ class ConnectionView:
                 self.smb_host_input.value.strip() or s.get("host", ""),
             )
             cm.set("connection.smb.share", s.get("share", ""))
-            cm.set(
-                "connection.smb.default_sync_folder",
-                s.get("sync_folder", "/") or "/",
-            )
+            smb_folders = self._parse_folder_lines(self.smb_sync_folder_input.value) or ["/"]
+            cm.set("connection.smb.default_sync_folder", smb_folders[0])
+            cm.set("connection.smb.sync_folders", smb_folders)
             cm.set("connection.smb.username", s.get("username", ""))
             cm.set("connection.smb.domain", s.get("domain", ""))
             try:
@@ -1021,7 +1188,11 @@ class ConnectionView:
                 cm.set("connection.gdrive.token_expiry", 0)
             cm.set(
                 "connection.gdrive.default_sync_folder",
-                self.gdrive_sync_folder_input.value.strip(),
+                (self._parse_folder_lines(self.gdrive_sync_folder_input.value) or [""])[0],
+            )
+            cm.set(
+                "connection.gdrive.sync_folders",
+                self._parse_folder_lines(self.gdrive_sync_folder_input.value),
             )
 
             cm.save_config()
@@ -1068,38 +1239,106 @@ class ConnectionView:
 
     def on_view_activated(self):
         """视图激活时检查连接状态"""
-        if self.app_context.get("nextcloud_client"):
-            self._update_connection_status(True)
-        else:
-            self._update_connection_status(False)
+        source_type = self._current_source_type()
+        self.is_connected = source_type in self.source_clients
+        self._update_connection_status(self.is_connected)
 
     def _browse_folder(self, e):
         """浏览文件夹（按当前来源选择对应的远程目录输入框与配置键）"""
-        if not self.app_context.get("nextcloud_client"):
+        source_type = self._current_source_type()
+        source_client = self.source_clients.get(source_type)
+        # 兼容旧上下文中仅提供单客户端的调用。
+        if not source_client and not self.source_clients:
+            source_client = self.app_context.get("nextcloud_client")
+        if not source_client:
+            # Google Drive 授权成功后令牌已经足够创建客户端。用户通常会直接
+            # 点击“浏览”，无需再猜测还要先点一次“建立连接”。
+            if self._current_source_type() == "gdrive":
+                asyncio.create_task(self._connect_and_browse_gdrive())
+                return
             self.show_message("请先连接服务器", "error")
             return
+
+        self._open_folder_selector(source_client)
+
+    async def _connect_and_browse_gdrive(self):
+        """按需建立 Google Drive 连接，然后打开文件夹选择器。"""
+        try:
+            client = self._build_client_from_form()
+        except ValueError as ex:
+            self.show_message(str(ex), "error")
+            return
+        except Exception as ex:
+            logger.error(f"初始化 Google Drive 浏览连接失败: {ex}", exc_info=True)
+            self.show_message(f"初始化连接失败: {ex}", "error")
+            return
+
+        self.gdrive_browse_button.disabled = True
+        self.show_message("正在连接 Google Drive...", "info")
+        self.page.update()
+        try:
+            if not await client.test_connection():
+                self.show_message("Google Drive 连接失败，请重新授权后重试", "error")
+                return
+            self.app_context["nextcloud_client"] = client
+            self.source_clients["gdrive"] = client
+            if self.app_context.get("music_service"):
+                self.app_context["music_service"].update_source_client(
+                    "gdrive", client
+                )
+            if self.app_context.get("lyrics_service"):
+                self.app_context["lyrics_service"].update_clients(
+                    nextcloud_client=client
+                )
+            self.is_connected = True
+            self._update_connection_status(True)
+            self._save_config()
+            self._open_folder_selector(client)
+        except Exception as ex:
+            logger.error(f"连接 Google Drive 以浏览文件夹失败: {ex}", exc_info=True)
+            self.show_message(f"Google Drive 连接错误: {ex}", "error")
+        finally:
+            self.gdrive_browse_button.disabled = False
+            self.page.update()
+
+    def _open_folder_selector(self, source_client=None):
+        """使用当前来源客户端打开远程文件夹选择器。"""
 
         if self._current_source_type() == "gdrive":
             folder_input = self.gdrive_sync_folder_input
             config_key = "connection.gdrive.default_sync_folder"
+            folders_key = "connection.gdrive.sync_folders"
+        elif self._current_source_type() == "smb":
+            folder_input = self.smb_sync_folder_input
+            config_key = "connection.smb.default_sync_folder"
+            folders_key = "connection.smb.sync_folders"
         else:
             folder_input = self.sync_folder_input
             config_key = "connection.default_sync_folder"
+            folders_key = "connection.sync_folders"
 
         from .folder_selector import FolderSelector
 
-        current_folder = folder_input.value.strip()
+        folders = self._parse_folder_lines(folder_input.value)
+        current_folder = folders[-1] if folders else "/"
         selector = FolderSelector(
             self.page,
-            self.app_context["nextcloud_client"],
+            source_client or self.source_clients.get(self._current_source_type())
+            or self.app_context["nextcloud_client"],
             current_folder,
         )
 
         def on_selected(path):
-            folder_input.value = path
+            folders = self._parse_folder_lines(folder_input.value)
+            if path not in folders:
+                folders.append(path)
+            folder_input.value = "\n".join(folders)
             self.page.update()
             self.show_message(f"已选择文件夹: {path or '/'}", "success")
-            self.app_context["config_manager"].set(config_key, path)
+            self.app_context["config_manager"].set(
+                config_key, folders[0] if folders else path
+            )
+            self.app_context["config_manager"].set(folders_key, folders)
             self.app_context["config_manager"].save_config()
 
         selector.show_dialog(on_selected)

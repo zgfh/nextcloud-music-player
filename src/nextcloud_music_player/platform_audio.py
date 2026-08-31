@@ -50,6 +50,10 @@ class AudioPlayerProtocol(Protocol):
         """检查是否正在播放"""
         ...
 
+    def has_completed(self) -> bool:
+        """当前音轨是否已由播放器报告自然播放完成。"""
+        ...
+
     def set_volume(self, volume: float) -> bool:
         """设置音量 (0.0-1.0)"""
         ...
@@ -399,6 +403,7 @@ class FletAudioPlayer:
         self._position_ms = 0
         self._position_ts = 0.0
         self._loaded = asyncio.Event()
+        self._completed = False
         self._tasks = set()
 
     def _run(self, coro):
@@ -467,6 +472,8 @@ class FletAudioPlayer:
     def _on_state_change(self, e):
         try:
             self._state = e.state
+            if e.state == self._AudioState.COMPLETED:
+                self._completed = True
         except Exception:
             pass
 
@@ -516,6 +523,7 @@ class FletAudioPlayer:
             self._state = self._AudioState.STOPPED
             self._duration = 0.0
             self._position_ms = 0
+            self._completed = False
             logger.info(f"Flet音频加载成功: {file_path_str} (src={src})")
             return True
         except Exception as e:
@@ -588,6 +596,12 @@ class FletAudioPlayer:
             return self._state == self._AudioState.PLAYING
         except Exception:
             return False
+
+    def has_completed(self) -> bool:
+        """返回并消费一次自然结束事件，避免 UI 轮询重复切歌。"""
+        completed = self._completed
+        self._completed = False
+        return completed
 
     def set_volume(self, volume: float) -> bool:
         try:

@@ -55,6 +55,8 @@ class FakeAudioPlayer:
         self.playing = False
         self.paused = False
         self.stopped_count = 0
+        self.completed = False
+        self.volume = 0.7
 
     def load(self, path):
         self.loaded_files.append(str(path))
@@ -83,6 +85,11 @@ class FakeAudioPlayer:
     def is_playing(self):
         return self.playing
 
+    def has_completed(self):
+        completed = self.completed
+        self.completed = False
+        return completed
+
     def get_duration(self):
         return 180.0 if self.playing else 0.0
 
@@ -93,6 +100,7 @@ class FakeAudioPlayer:
         return True
 
     def set_volume(self, volume):
+        self.volume = volume
         return True
 
 
@@ -176,15 +184,20 @@ class FakeMusicLibrary:
         self.music_dir.mkdir(parents=True, exist_ok=True)
         self.sync_folder = "/"
 
-    def add_remote_song(self, song_name, remote_path, size=0, modified="", etag=""):
+    def add_remote_song(
+        self, song_name, remote_path, size=0, modified="", etag="",
+        source_type="nextcloud", sync_folder="",
+    ):
         if song_name not in self.songs:
             self.songs[song_name] = {
                 "name": song_name,
                 "filename": song_name,
                 "remote_path": remote_path,
+                "source_type": source_type,
                 "size": size,
                 "modified": modified,
                 "etag": etag,
+                "sync_folder": sync_folder,
                 "is_downloaded": False,
                 "filepath": "",
             }
@@ -232,18 +245,23 @@ class FakeConfigManager:
             self._config.setdefault(section, {}).update(options)
 
     def get(self, key, default=None):
-        if "." not in key:
-            # 与真实 ConfigManager 一致：裸段落键返回整个字典
-            return self._config.get(key, default)
-        section, _, option = key.partition(".")
-        return self._config.get(section, {}).get(option, default)
+        # 与真实 ConfigManager 一致：全路径点分键逐层取值，
+        # 裸段落键返回整个字典
+        value = self._config
+        for part in key.split("."):
+            if not isinstance(value, dict) or part not in value:
+                return default
+            value = value[part]
+        return value
 
     def set(self, key, value):
-        if "." not in key:
-            self._config[key] = value
-            return
-        section, _, option = key.partition(".")
-        self._config.setdefault(section, {})[option] = value
+        target = self._config
+        keys = key.split(".")
+        for part in keys[:-1]:
+            if not isinstance(target.get(part), dict):
+                target[part] = {}
+            target = target[part]
+        target[keys[-1]] = value
 
     def save_config(self):
         pass

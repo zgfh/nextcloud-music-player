@@ -50,6 +50,11 @@ OAUTH_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 # access_token 有效期约 1 小时，提前刷新避免边界失败
 _TOKEN_EXPIRY_SKEW = 60.0
 
+# 桌面 loopback 重定向的候选端口（RFC 8252 允许 127.0.0.1 任意端口）。
+# 优先固定端口：端到端测试可以直达回调地址，防火墙也只需放行一次；
+# 被占用时按序回退，全部不可用退回系统随机端口。
+PREFERRED_LOOPBACK_PORTS = (53691, 53692, 53693)
+
 _LIST_PAGE_SIZE = 200
 _DOWNLOAD_CHUNK_SIZE = 128 * 1024
 
@@ -67,10 +72,34 @@ def normalize_folder_path(folder_path: str) -> str:
     return cleaned
 
 
+def resolve_endpoints(api_base_url: str = "") -> Dict[str, str]:
+    """把自定义 API 基础地址解析为三个端点；留空时返回 Google 官方端点。
+
+    自定义地址形如 ``http://127.0.0.1:8931``（设置页「谷歌云盘」可配置），
+    派生规则：Drive API = {base}/drive/v3，OAuth 授权页 = {base}/auth，
+    OAuth 令牌 = {base}/token。官方端点域名各不相同，无法从一个地址派生，
+    因此仅在自定义地址生效时统一派生。
+    """
+    base = (api_base_url or "").strip().rstrip("/")
+    if not base:
+        return {
+            "drive_api": DRIVE_API_BASE,
+            "oauth_auth": OAUTH_AUTH_URL,
+            "oauth_token": OAUTH_TOKEN_URL,
+        }
+    return {
+        "drive_api": f"{base}/drive/v3",
+        "oauth_auth": f"{base}/auth",
+        "oauth_token": f"{base}/token",
+    }
+
+
 # === OAuth 辅助（模块级纯函数，便于连接页与测试复用） ===
 
 
-def build_authorization_url(client_id: str, redirect_uri: str) -> str:
+def build_authorization_url(
+    client_id: str, redirect_uri: str, auth_url: str = None
+) -> str:
     """构建 Google 授权页 URL；prompt=consent 确保每次都签发 refresh_token"""
     params = {
         "client_id": client_id,
@@ -80,13 +109,13 @@ def build_authorization_url(client_id: str, redirect_uri: str) -> str:
         "access_type": "offline",
         "prompt": "consent",
     }
-    return f"{OAUTH_AUTH_URL}?{urlencode(params)}"
+    return f"{auth_url or OAUTH_AUTH_URL}?{urlencode(params)}"
 
 
-def _request_tokens(data: Dict, session=None) -> Dict:
+def _request_tokens(data: Dict, session=None, token_url: str = None) -> Dict:
     """POST 令牌端点的公共实现，失败时抛出带原因的 RuntimeError"""
     poster = session if session is not None else requests
-    resp = poster.post(OAUTH_TOKEN_URL, data=data, timeout=(10, 30))
+    resp = poster.post(token_url or OAUTH_TOKEN_URL, data=data, timeout=(10, 30))
     payload = {}
     try:
         payload = resp.json()
@@ -99,7 +128,12 @@ def _request_tokens(data: Dict, session=None) -> Dict:
 
 
 def exchange_authorization_code(
-    client_id: str, client_secret: str, code: str, redirect_uri: str, session=None
+    client_id: str,
+    client_secret: str,
+    code: str,
+    redirect_uri: str,
+    session=None,
+    token_url: str = None,
 ) -> Dict:
     """用授权码换取令牌，返回 {access_token, refresh_token, expires_in, ...}"""
     return _request_tokens(
@@ -111,11 +145,13 @@ def exchange_authorization_code(
             "redirect_uri": redirect_uri,
         },
         session=session,
+        token_url=token_url,
     )
 
 
 def refresh_access_token(
-    client_id: str, client_secret: str, refresh_token: str, session=None
+    client_id: str, client_secret: str, refresh_token: str, session=None,
+    token_url: str = None,
 ) -> Dict:
     """用 refresh_token 换取新的 access_token"""
     return _request_tokens(
@@ -126,6 +162,7 @@ def refresh_access_token(
             "grant_type": "refresh_token",
         },
         session=session,
+        token_url=token_url,
     )
 
 
@@ -138,15 +175,19 @@ class LoopbackOAuthReceiver:
 
     def __init__(self):
         self._server: Optional[ThreadingHTTPServer] = None
+        self._redirect_uri: str = ""
         self._code: Optional[str] = None
         self._error: Optional[str] = None
         self._done = threading.Event()
 
     @property
     def redirect_uri(self) -> str:
-        if self._server is None:
+        # start() 时记录 URI，close() 后仍可读取：OAuth 换取令牌必须传
+        # 与授权请求完全相同的 redirect_uri，即使监听器已关闭；
+        # 未曾启动时才视为错误
+        if not self._redirect_uri:
             raise RuntimeError("接收器尚未启动")
-        return f"http://127.0.0.1:{self._server.server_address[1]}"
+        return self._redirect_uri
 
     def start(self):
         receiver = self
@@ -176,7 +217,16 @@ class LoopbackOAuthReceiver:
                 # 静默默认的请求日志，避免刷屏
                 pass
 
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        self._server = None
+        for port in (*PREFERRED_LOOPBACK_PORTS, 0):
+            try:
+                self._server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
+                break
+            except OSError:
+                continue
+        if self._server is None:
+            raise OSError("无法绑定 loopback 回调端口")
+        self._redirect_uri = f"http://127.0.0.1:{self._server.server_address[1]}"
         threading.Thread(
             target=self._server.serve_forever, daemon=True, name="gdrive-oauth"
         ).start()
@@ -198,7 +248,11 @@ class LoopbackOAuthReceiver:
     def close(self):
         if self._server is not None:
             server, self._server = self._server, None
-            threading.Thread(target=server.shutdown, daemon=True).start()
+            # shutdown 等待 serve_forever 退出（至多一个 poll 周期），
+            # server_close 释放监听端口；只 shutdown 不 close 会泄漏 socket，
+            # 固定优先端口被泄漏端口占满后就只能回退随机端口
+            server.shutdown()
+            server.server_close()
 
 
 class GoogleDriveClient:
@@ -213,6 +267,7 @@ class GoogleDriveClient:
         token_expiry: float = 0.0,
         session=None,
         on_tokens_updated: Optional[Callable[[Dict], None]] = None,
+        api_base_url: str = "",
     ):
         self.client_id = (client_id or "").strip()
         self.client_secret = client_secret or ""
@@ -225,6 +280,11 @@ class GoogleDriveClient:
         self._session = session if session is not None else requests.Session()
         self._on_tokens_updated = on_tokens_updated
         self._token_lock = threading.Lock()
+        # 自定义 API 地址（设置页「谷歌云盘」配置，测试/自建网关用），留空走官方
+        endpoints = resolve_endpoints(api_base_url)
+        self._drive_api_base = endpoints["drive_api"]
+        self._oauth_token_url = endpoints["oauth_token"]
+        self._oauth_auth_url = endpoints["oauth_auth"]
 
         from .config_manager import ConfigManager
 
@@ -253,6 +313,7 @@ class GoogleDriveClient:
                 self.client_secret,
                 self.refresh_token,
                 session=self._session,
+                token_url=self._oauth_token_url,
             )
         except RuntimeError as e:
             if "invalid_grant" in str(e) or "invalid_client" in str(e):
@@ -359,7 +420,7 @@ class GoogleDriveClient:
             try:
                 resp = self._api_request(
                     "GET",
-                    f"{DRIVE_API_BASE}/about",
+                    f"{self._drive_api_base}/about",
                     params={"fields": "user(displayName)"},
                 )
                 resp.raise_for_status()
@@ -392,7 +453,9 @@ class GoogleDriveClient:
             }
             if page_token:
                 params["pageToken"] = page_token
-            resp = self._api_request("GET", f"{DRIVE_API_BASE}/files", params=params)
+            resp = self._api_request(
+                "GET", f"{self._drive_api_base}/files", params=params
+            )
             resp.raise_for_status()
             payload = resp.json()
 
@@ -483,7 +546,7 @@ class GoogleDriveClient:
             try:
                 resp = self._api_request(
                     "GET",
-                    f"{DRIVE_API_BASE}/files/{file_id}",
+                    f"{self._drive_api_base}/files/{file_id}",
                     params={"alt": "media"},
                     stream=True,
                     timeout=(15, None),
@@ -527,7 +590,7 @@ class GoogleDriveClient:
             try:
                 resp = self._api_request(
                     "GET",
-                    f"{DRIVE_API_BASE}/files/{file_id}",
+                    f"{self._drive_api_base}/files/{file_id}",
                     params={
                         "fields": "id,name,size,modifiedTime,mimeType",
                         "supportsAllDrives": "true",

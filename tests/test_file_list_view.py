@@ -24,6 +24,32 @@ def make_file_list_view(page, client, library, config, monkeypatch):
     return view, music_service
 
 
+def test_library_view_keeps_delete_but_has_no_clear_cache_action(
+    tmp_path, monkeypatch
+):
+    view, _ = make_file_list_view(
+        FakePage(), FakeNextcloudClient(), FakeMusicLibrary(tmp_path),
+        FakeConfigManager(), monkeypatch,
+    )
+
+    assert hasattr(view, "delete_button")
+    assert not hasattr(view, "clear_cache_button")
+
+
+def test_delete_removes_selected_song_from_library(tmp_path, monkeypatch):
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("remove.mp3", "/music/remove.mp3")
+    view, _ = make_file_list_view(
+        FakePage(), FakeNextcloudClient(), library, FakeConfigManager(), monkeypatch
+    )
+    view.selected_files = {"remove.mp3"}
+
+    view._delete_selected(None)
+
+    assert library.get_song_info("remove.mp3") is None
+    assert view.selected_files == set()
+
+
 async def test_sync_shows_progress_and_reloads(tmp_path, monkeypatch):
     """慢网络同步期间显示"正在同步"并禁用按钮，完成后刷新列表"""
     page = FakePage()
@@ -46,6 +72,19 @@ async def test_sync_shows_progress_and_reloads(tmp_path, monkeypatch):
     assert view.sync_button.disabled is False           # 按钮恢复
     assert len(view.file_list.controls) == 2            # 列表已刷新
     assert {s['name'] for s in view.music_service.get_all_songs()} == {"a.mp3", "b.mp3"}
+    assert all(
+        song["source_type"] == "nextcloud"
+        for song in view.music_service.get_all_songs()
+    )
+    assert view.folder_text.value == "同步状态：2/2"
+    assert view.music_service.last_sync_report == [{
+        "source_type": "nextcloud",
+        "folder": "/music",
+        "song_count": 2,
+        "synced_count": 2,
+        "status": "success",
+        "error": "",
+    }]
 
 
 async def test_sync_failure_shows_error_and_reenables(tmp_path, monkeypatch):

@@ -90,6 +90,8 @@ async def main(page: ft.Page):
         "config_manager": config_manager,
         "music_library": music_library,
         "nextcloud_client": None,
+        # 多来源客户端注册表；nextcloud_client 保留为兼容旧视图/服务的活动客户端。
+        "source_clients": {},
         "page": page,
     }
 

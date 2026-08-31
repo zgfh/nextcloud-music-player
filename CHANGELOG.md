@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - iOS 一键部署脚本 `scripts/deploy_iso.sh`（自动设备检测、增量构建、自动签名、7 天续签提醒）
+- **批量下载整批提交**：选中的歌曲一次性全部提交给原生后台会话（此前逐首提交，切后台后链式提交可能中断，表现为后台不再继续）；此后挂起、锁屏、应用被杀，整个队列都由系统继续执行。`DownloadProgressTracker` 重构为按文件维护的下载列表，设置页下载页逐文件显示状态/进度，菜单副标题显示聚合摘要；顺带修复歌词下载失败会覆盖歌曲下载成功状态的旧问题
 - **设置页改为菜单式二级导航**：首页为功能菜单列表（下载进度 / 缓存管理 / 应用日志 / 应用信息），点击进入对应子页面，子页头部返回菜单；下载状态在菜单副标题实时跟随，日志页包含级别切换与实时输出，从其它标签页切回设置时停留在离开前的页面
 - **iOS 原生后台下载**（`ios_background_download.py`）：经 rubicon-objc 创建 Background NSURLSession，音乐下载在切后台、锁屏甚至应用被杀后由系统继续执行；应用重启时重建同名会话，遗留任务自动落库；传输中断用 resumeData 自动续传一次；非 2xx 的 HTTP 响应（如 404 错误页）拦截为失败；SMB 来源与非 iOS 平台自动回退 requests 路径
 - macOS 冒烟脚本 `scripts/test_ios_background_download_macos.py`：在桌面端真实创建后台会话，验证正常下载、404 拦截、进程强杀后恢复三个场景

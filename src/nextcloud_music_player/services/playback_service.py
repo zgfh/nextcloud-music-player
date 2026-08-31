@@ -561,11 +561,9 @@ class PlaybackService:
     async def stop_music(self):
         """停止音乐"""
         try:
-            # 使用新的平台音频播放器
-            if self.audio_player and (
-                self.current_song_state["is_playing"]
-                or self.current_song_state["is_paused"]
-            ):
+            # 只要播放器存在就发送停止命令。原生状态事件可能有延迟，
+            # 不能因内部 is_playing 暂时为 False 而吞掉用户的停止操作。
+            if self.audio_player:
                 stop_async = getattr(self.audio_player, "stop_async", None)
                 stopped = (
                     await stop_async()
@@ -577,9 +575,12 @@ class PlaybackService:
                     self.current_song_state["is_paused"] = False
                     self.current_song_state["position"] = 0
                     logger.info("音乐已停止")
-                    return
+                    return True
                 else:
                     logger.error("音频播放器停止失败")
+
+                # 已有平台播放器时不应再落入 pygame，尤其移动端 pygame 不可用。
+                return False
 
             # 备用方案：使用pygame（向后兼容）
             if not self._ensure_audio_system():
@@ -594,6 +595,8 @@ class PlaybackService:
                 self.current_song_state["is_paused"] = False
                 self.current_song_state["position"] = 0
                 logger.info("音乐已停止")
+                return True
+            return False
         except Exception as e:
             logger.error(f"停止音乐失败: {e}")
             # 如果内置停止失败，尝试使用回调
@@ -602,6 +605,7 @@ class PlaybackService:
                     await self._stop_music_callback()
                 except Exception as callback_error:
                     logger.error(f"回调停止也失败: {callback_error}")
+            return False
 
     def get_play_mode(self):
         """获取播放模式"""
@@ -668,6 +672,23 @@ class PlaybackService:
                     return self._get_is_playing_callback()
                 except Exception as callback_error:
                     logger.error(f"回调检查播放状态也失败: {callback_error}")
+            return False
+
+    def has_completed(self) -> bool:
+        """查询并消费播放器上报的自然播放结束事件。"""
+        if not self.audio_player:
+            return False
+        callback = getattr(self.audio_player, "has_completed", None)
+        if callback is None:
+            return False
+        try:
+            completed = bool(callback())
+            if completed:
+                self.current_song_state["is_playing"] = False
+                self.current_song_state["is_paused"] = False
+            return completed
+        except Exception as e:
+            logger.warning(f"读取播放完成状态失败: {e}")
             return False
 
     def set_audio_volume(self, volume: float):

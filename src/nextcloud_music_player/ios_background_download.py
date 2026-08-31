@@ -410,17 +410,17 @@ def _create_native_state() -> Optional[_DownloadState]:
         return None
 
 
-async def download(
+def submit(
     url: str,
     headers: Optional[dict],
     dest,
     key: str,
     on_progress: Optional[Callable] = None,
-) -> tuple[bool, Optional[str], Optional[str]]:
-    """经后台 NSURLSession 下载一个文件，返回 (success, final_path, error)。
+) -> asyncio.Future:
+    """提交一个后台下载任务并立即返回完成 Future（不等待结果）。
 
-    提交失败（URL 非法、会话不可用等）抛异常，调用方回退 requests；
-    传输失败通过返回值表达。
+    批量下载用它把整个队列一次性交给系统：之后无论应用挂起还是被
+    杀，nsurlsessiond 都会继续执行所有任务。提交失败抛异常。
     """
     state = _ensure_state()
     if state is None:
@@ -443,7 +443,22 @@ async def download(
     except Exception:
         state.unregister(key)
         raise
+    return fut
 
+
+async def download(
+    url: str,
+    headers: Optional[dict],
+    dest,
+    key: str,
+    on_progress: Optional[Callable] = None,
+) -> tuple[bool, Optional[str], Optional[str]]:
+    """经后台 NSURLSession 下载一个文件，返回 (success, final_path, error)。
+
+    提交失败（URL 非法、会话不可用等）抛异常，调用方回退 requests；
+    传输失败通过返回值表达。
+    """
+    fut = submit(url, headers, dest, key, on_progress=on_progress)
     return await fut
 
 

@@ -8,6 +8,7 @@ OAuth 辅助函数用注入的假 session 验证；客户端方法通过 session
 """
 
 import asyncio
+import socket
 import time
 from pathlib import Path
 
@@ -197,6 +198,25 @@ def test_loopback_receiver_times_out():
             receiver.wait_for_code(timeout=0.05)
     finally:
         receiver.close()
+
+
+def test_loopback_receiver_uri_survives_close():
+    """回归：wait_for_code 返回时接收器已关闭，但换取令牌必须携带与
+    授权请求完全相同的 redirect_uri（OAuth 规范），close 后仍需可读"""
+    receiver = gdrive.LoopbackOAuthReceiver()
+    receiver.start()
+    uri = receiver.redirect_uri
+    try:
+        requests.get(uri, params={"code": "abc"}, timeout=5)
+        assert receiver.wait_for_code(timeout=5) == "abc"
+    finally:
+        receiver.close()
+
+    assert receiver._server is None  # 监听器确已关闭
+    assert receiver.redirect_uri == uri  # URI 仍可读
+
+    # 未曾启动过的接收器才报"尚未启动"
+    assert pytest.raises(RuntimeError, lambda: gdrive.LoopbackOAuthReceiver().redirect_uri)
 
 
 # === 列表与映射 ===
@@ -518,3 +538,102 @@ def test_test_connection_false_on_http_error(config_dir):
     )
 
     assert asyncio.run(client.test_connection()) is False
+
+
+# === 自定义 API 端点 ===
+
+
+def test_resolve_endpoints_default_and_custom():
+    defaults = gdrive.resolve_endpoints("")
+    assert defaults == {
+        "drive_api": gdrive.DRIVE_API_BASE,
+        "oauth_auth": gdrive.OAUTH_AUTH_URL,
+        "oauth_token": gdrive.OAUTH_TOKEN_URL,
+    }
+    # 尾部斜杠与空白应被归一化
+    custom = gdrive.resolve_endpoints("  http://127.0.0.1:8931/ ")
+    assert custom == {
+        "drive_api": "http://127.0.0.1:8931/drive/v3",
+        "oauth_auth": "http://127.0.0.1:8931/auth",
+        "oauth_token": "http://127.0.0.1:8931/token",
+    }
+
+
+def test_custom_api_base_routes_all_traffic(config_dir):
+    """自定义地址时令牌刷新/连接测试/列表全部改走派生端点；
+    FakeSession 对未路由的请求直接抛错，官方 URL 一次都不应命中。"""
+    base = "http://127.0.0.1:8931"
+    session = FakeSession()
+    session.route(
+        lambda m, u, kw: u == f"{base}/token"
+        and (kw.get("data") or {}).get("grant_type") == "refresh_token",
+        FakeResponse(json_data={"access_token": "newtok", "expires_in": 3600}),
+    )
+    session.route(
+        lambda m, u, kw: u == f"{base}/drive/v3/about",
+        FakeResponse(json_data={"user": {"displayName": "测试用户"}}),
+    )
+    session.route(
+        lambda m, u, kw: u == f"{base}/drive/v3/files",
+        FakeResponse(
+            json_data={
+                "files": [
+                    {
+                        "id": "f1",
+                        "name": "song.mp3",
+                        "size": "10",
+                        "mimeType": "audio/mpeg",
+                    }
+                ]
+            }
+        ),
+    )
+    client = GoogleDriveClient(
+        client_id="cid",
+        client_secret="csecret",
+        refresh_token="rt",
+        session=session,
+        api_base_url=f"{base}/",
+    )
+
+    assert asyncio.run(client.test_connection()) is True
+    files = asyncio.run(client.list_music_files())
+    assert [f["name"] for f in files] == ["song.mp3"]
+
+    urls = [r["url"] for r in session.requests]
+    assert urls and all(u.startswith(base) for u in urls)
+
+
+def test_loopback_receiver_prefers_fixed_port():
+    receiver = gdrive.LoopbackOAuthReceiver()
+    receiver.start()
+    try:
+        port = receiver._server.server_address[1]
+        assert port in gdrive.PREFERRED_LOOPBACK_PORTS
+    finally:
+        receiver.close()
+
+
+def test_loopback_receiver_falls_back_when_fixed_ports_busy():
+    squatters = []
+    try:
+        for port in gdrive.PREFERRED_LOOPBACK_PORTS:
+            sock = socket.socket()
+            # 与 HTTPServer 的 allow_reuse_address 一致，避免被先前测试连接的
+            # TIME_WAIT 残留挡住绑定
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("127.0.0.1", port))
+            sock.listen(1)
+            squatters.append(sock)
+
+        receiver = gdrive.LoopbackOAuthReceiver()
+        receiver.start()
+        try:
+            port = receiver._server.server_address[1]
+            assert port not in gdrive.PREFERRED_LOOPBACK_PORTS
+            assert port > 0
+        finally:
+            receiver.close()
+    finally:
+        for sock in squatters:
+            sock.close()

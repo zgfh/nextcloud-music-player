@@ -179,6 +179,27 @@ def test_build_client_passes_tokens_and_callback(monkeypatch):
     assert captured["access_token"] == "at-1"
     assert captured["token_expiry"] == 123.5
     assert captured["on_tokens_updated"] == view._persist_gdrive_tokens
+    assert captured["api_base_url"] == ""  # 默认走官方端点
+
+
+def test_build_client_passes_custom_api_base(monkeypatch):
+    """设置页配置了自定义 API 地址时，客户端应改走该地址"""
+    captured = {}
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return FakeNextcloudClient(connect_ok=True)
+
+    monkeypatch.setattr(gdrive_module, "GoogleDriveClient", fake_client)
+    page, view = make_view(
+        {"connection": {"gdrive": {"api_base_url": "http://127.0.0.1:8931"}}}
+    )
+    switch_to_gdrive(view)
+    fill_gdrive_credentials(view)
+
+    view._build_client_from_form()
+
+    assert captured["api_base_url"] == "http://127.0.0.1:8931"
 
 
 # === 授权流程 ===
@@ -194,7 +215,7 @@ async def test_authorize_gdrive_completes_and_persists(monkeypatch):
     monkeypatch.setattr(
         gdrive_module,
         "build_authorization_url",
-        lambda client_id, redirect_uri: "https://auth.example/consent",
+        lambda client_id, redirect_uri, auth_url=None: "https://auth.example/consent",
     )
     monkeypatch.setattr(
         gdrive_module,
@@ -248,7 +269,7 @@ async def test_authorize_gdrive_cancelled_shows_error(monkeypatch):
     monkeypatch.setattr(
         gdrive_module,
         "build_authorization_url",
-        lambda client_id, redirect_uri: "https://auth.example/consent",
+        lambda client_id, redirect_uri, auth_url=None: "https://auth.example/consent",
     )
 
     await view._authorize_gdrive()
@@ -256,6 +277,78 @@ async def test_authorize_gdrive_cancelled_shows_error(monkeypatch):
     assert view._gdrive_settings.get("refresh_token", "") == ""
     assert view.gdrive_auth_status.value == "未授权"
     assert "授权失败" in last_notification_text(page)
+
+
+async def test_authorize_gdrive_uses_custom_endpoints(monkeypatch):
+    """自定义 API 地址时，授权页与令牌交换都改走派生端点"""
+    captured = {}
+
+    def fake_build(client_id, redirect_uri, auth_url=None):
+        captured["auth_url"] = auth_url
+        return "https://auth.example/consent"
+
+    def fake_exchange(client_id, client_secret, code, redirect_uri, token_url=None):
+        captured["token_url"] = token_url
+        return {"access_token": "at", "refresh_token": "rt", "expires_in": 3600}
+
+    page, view = make_view(
+        {"connection": {"gdrive": {"api_base_url": "http://127.0.0.1:8931"}}}
+    )
+    switch_to_gdrive(view)
+    fill_gdrive_credentials(view, refresh_token="")
+
+    monkeypatch.setattr(gdrive_module, "LoopbackOAuthReceiver", lambda: FakeReceiver())
+    monkeypatch.setattr(gdrive_module, "build_authorization_url", fake_build)
+    monkeypatch.setattr(gdrive_module, "exchange_authorization_code", fake_exchange)
+
+    await view._authorize_gdrive()
+
+    assert captured["auth_url"] == "http://127.0.0.1:8931/auth"
+    assert captured["token_url"] == "http://127.0.0.1:8931/token"
+    assert view._gdrive_settings["refresh_token"] == "rt"
+
+
+async def test_authorize_gdrive_succeeds_with_real_receiver(monkeypatch):
+    """回归（iOS 实测）：浏览器提示授权成功、返回应用却仍显示未授权。
+
+    wait_for_code 返回时会关闭接收器，换取令牌时再取 receiver.redirect_uri
+    抛"接收器尚未启动"，令牌交换从未发生。用真实 LoopbackOAuthReceiver 走
+    完整流程：浏览器回调经真实 HTTP 到达，换令牌用的 redirect_uri 必须与
+    授权请求一致且流程整体成功。"""
+    import threading
+    import time
+
+    import requests as requests_lib
+
+    page, view = make_view()
+    switch_to_gdrive(view)
+    fill_gdrive_credentials(view, refresh_token="")
+
+    exchanged = {}
+
+    def fake_build(client_id, redirect_uri, auth_url=None):
+        def browser_callback():
+            # 模拟浏览器授权完成后重定向回 loopback 接收器
+            time.sleep(0.1)
+            requests_lib.get(redirect_uri, params={"code": "code-live"}, timeout=5)
+
+        threading.Thread(target=browser_callback, daemon=True).start()
+        return "https://auth.example/consent"
+
+    def fake_exchange(client_id, client_secret, code, redirect_uri, token_url=None):
+        exchanged.update({"code": code, "redirect_uri": redirect_uri})
+        return {"access_token": "at", "refresh_token": "rt", "expires_in": 3600}
+
+    monkeypatch.setattr(gdrive_module, "build_authorization_url", fake_build)
+    monkeypatch.setattr(gdrive_module, "exchange_authorization_code", fake_exchange)
+
+    await view._authorize_gdrive()
+
+    assert exchanged["code"] == "code-live"
+    assert exchanged["redirect_uri"].startswith("http://127.0.0.1:")
+    assert view._gdrive_settings["refresh_token"] == "rt"
+    assert view.gdrive_auth_status.value == "已授权 ✓"
+    assert "授权成功" in last_notification_text(page)
 
 
 def test_persist_gdrive_tokens_respects_no_remember():

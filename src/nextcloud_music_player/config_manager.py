@@ -79,10 +79,13 @@ class ConfigManager:
                 "username": "guest",
                 "password": "",
                 "default_sync_folder": "/mp3/音乐/当月抖音热播流行歌曲484首/",
+                "sync_folders": ["/mp3/音乐/当月抖音热播流行歌曲484首/"],
                 "auto_connect": False,
+                "nextcloud": {"auto_connect": False},
                 "remember_credentials": True,
                 # SMB 来源配置（路径均为共享内相对路径，'/' 为共享根）
                 "smb": {
+                    "auto_connect": False,
                     "host": "",
                     "port": 445,
                     "share": "",
@@ -90,15 +93,18 @@ class ConfigManager:
                     "password": "",
                     "domain": "",
                     "default_sync_folder": "/",
+                    "sync_folders": ["/"],
                 },
                 # Google Drive 来源配置（default_sync_folder 为 Drive 文件夹 ID，空为根目录）
                 "gdrive": {
+                    "auto_connect": False,
                     "client_id": "",
                     "client_secret": "",
                     "refresh_token": "",
                     "access_token": "",
                     "token_expiry": 0,
                     "default_sync_folder": "",
+                    "sync_folders": [],
                 },
             },
             "player": {

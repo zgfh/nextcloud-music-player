@@ -9,6 +9,7 @@
 """
 
 import asyncio
+from types import SimpleNamespace
 
 from fakes import add_remote_song
 
@@ -24,6 +25,78 @@ async def test_play_downloaded_song_skips_download(playback_env):
     assert playback_env.player.loaded_files[-1].endswith("local.mp3")
     assert playback_env.player.stopped_count == 0
     assert playback_env.view.status_label.value == "播放中"
+
+
+async def test_existing_local_file_wins_even_with_stale_metadata(playback_env):
+    """本地文件存在时应直接播放，即使下载标记已经过期。"""
+    info = add_remote_song(playback_env.library, "cached.mp3", downloaded=True)
+    info["is_downloaded"] = False
+
+    ok = await playback_env.view.play_selected_song(info)
+
+    assert ok is True
+    assert playback_env.client.download_calls == []
+
+
+async def test_native_completion_triggers_repeat_one(playback_env):
+    """原生完成事件应触发单曲循环，不依赖末尾进度采样。"""
+    info = add_remote_song(playback_env.library, "loop.mp3", downloaded=True)
+    playback_env.view.handle_play_selected([info])
+    await asyncio.sleep(0.05)
+    assert playback_env.player.playing is True
+    initial_loads = len(playback_env.player.loaded_files)
+    # FakeConfigManager 不持久化播放列表；为控制器提供与真实配置一致的缓存。
+    playback_env.view.playlist_manager._current_playlist_cache = {
+        "id": 1,
+        "songs": [{"name": "loop.mp3", "info": info}],
+        "current_index": 0,
+    }
+
+    playback_env.player.playing = False
+    playback_env.player.completed = True
+    playback_env.view._update_progress_only()
+    # 完成处理自身有 0.2 秒去抖；另留时间等待播放锁和 UI 回调。
+    await asyncio.sleep(0.5)
+
+    assert len(playback_env.player.loaded_files) == initial_loads + 1
+    assert playback_env.player.loaded_files[-1].endswith("loop.mp3")
+
+
+async def test_volume_slider_applies_volume_immediately(playback_env):
+    """拖动音量后应立即下发给播放器，并持久化百分比配置。"""
+    component = playback_env.view.playback_control_component
+
+    component._on_volume_change(SimpleNamespace(control=SimpleNamespace(value=35)))
+
+    assert playback_env.player.volume == 0.35
+    assert playback_env.config.get("player.volume") == 35
+
+
+async def test_stop_is_sent_even_when_cached_state_is_stale(playback_env):
+    """内部状态暂时不同步时，停止按钮仍必须命令原生播放器停止。"""
+    playback_env.player.playing = True
+    playback_env.view.playback_service.current_song_state["is_playing"] = False
+
+    await playback_env.view.playback_control_component._on_stop_playback(None)
+
+    assert playback_env.player.stopped_count == 1
+    assert playback_env.player.playing is False
+    assert playback_env.view.status_label.value == "停止"
+    assert playback_env.view.playback_control_component.progress_slider.value == 0
+
+
+async def test_stop_works_while_paused(playback_env):
+    """暂停中点击停止也应归零并进入停止状态。"""
+    info = add_remote_song(playback_env.library, "paused.mp3", downloaded=True)
+    assert await playback_env.view.play_selected_song(info) is True
+    await playback_env.view.playback_controller.toggle_playback()
+    assert playback_env.view.status_label.value == "暂停"
+
+    await playback_env.view.playback_control_component._on_stop_playback(None)
+
+    assert playback_env.player.stopped_count == 1
+    assert playback_env.player.paused is False
+    assert playback_env.view.status_label.value == "停止"
 
 
 async def test_undownloaded_song_shows_downloading_status(playback_env):
@@ -116,6 +189,29 @@ async def test_download_exception_is_caught(playback_env):
 
     assert ok is False
     assert playback_env.view.status_label.value == "下载失败"
+
+
+async def test_failed_download_skips_to_next_available_song(playback_env):
+    """自动播放时，第一首下载失败应继续播放下一首本地歌曲。"""
+    failed = add_remote_song(playback_env.library, "gone.mp3")
+    available = add_remote_song(
+        playback_env.library, "available.mp3", downloaded=True
+    )
+    playback_env.client.download_error = RuntimeError("404 Not Found")
+
+    playback_env.view.playlist_manager._current_playlist_cache = {
+        "id": 1,
+        "songs": [
+            {"name": "gone.mp3", "info": failed},
+            {"name": "available.mp3", "info": available},
+        ],
+        "current_index": 0,
+    }
+
+    assert await playback_env.view._play_or_skip_unavailable(failed) is True
+
+    assert playback_env.player.loaded_files[-1].endswith("available.mp3")
+    assert playback_env.view.status_label.value == "播放中"
 
 
 async def test_play_request_without_remote_path_fails_visibly(playback_env):

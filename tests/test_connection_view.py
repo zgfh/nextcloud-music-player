@@ -63,6 +63,37 @@ async def test_browse_folder_with_connection_opens_selector():
     assert len(page.dialogs) == 1                       # 文件夹选择对话框已打开
 
 
+async def test_gdrive_browse_after_authorization_connects_and_opens_selector(monkeypatch):
+    """Google 授权后可直接浏览，无需额外点击“建立连接”。"""
+    import nextcloud_music_player.gdrive_client as gdrive_client_module
+
+    page = FakePage()
+    client = FakeNextcloudClient(
+        connect_ok=True, directories={"/": [{"name": "Music", "path": "folder-id"}]}
+    )
+    monkeypatch.setattr(
+        gdrive_client_module, "GoogleDriveClient", lambda *args, **kwargs: client
+    )
+    config = FakeConfigManager(
+        {
+            "connection": {
+                "source_type": "gdrive",
+                "gdrive": {"refresh_token": "refresh-token"},
+            }
+        }
+    )
+    context = base_context(config)
+    view = make_connection_view(page, context, FakeViewManager())
+    view.gdrive_client_id_input.value = "client-id"
+    view.gdrive_client_secret_input.value = "client-secret"
+
+    view._browse_folder(None)
+    await asyncio.sleep(0.05)
+
+    assert context["nextcloud_client"] is client
+    assert len(page.dialogs) == 1
+
+
 async def test_browse_folder_selection_updates_input_and_config(tmp_path):
     page = FakePage()
     config = FakeConfigManager()
@@ -81,6 +112,58 @@ async def test_browse_folder_selection_updates_input_and_config(tmp_path):
     view.sync_folder_input.value = selected[0]
 
     assert view.sync_folder_input.value == "/"
+
+
+def test_auto_connect_switch_is_saved_per_source():
+    page = FakePage()
+    config = FakeConfigManager()
+    view = make_connection_view(page, base_context(config), FakeViewManager())
+
+    view.auto_connect_switch.value = True
+    view._on_auto_connect_changed(type("Event", (), {"control": view.auto_connect_switch})())
+
+    assert config.get("connection.nextcloud.auto_connect") is True
+    assert config.get("connection.auto_connect") is True
+
+
+async def test_auto_connect_sources_are_independent(monkeypatch):
+    import nextcloud_music_player.gdrive_client as gdrive_module
+    import nextcloud_music_player.smb_client as smb_module
+
+    page = FakePage()
+    nextcloud = FakeNextcloudClient(connect_ok=True)
+    smb = FakeNextcloudClient(connect_ok=False)
+    gdrive = FakeNextcloudClient(connect_ok=True)
+    monkeypatch.setattr(nextcloud_client_module, "NextCloudClient", lambda *a, **k: nextcloud)
+    monkeypatch.setattr(smb_module, "SMBClient", lambda *a, **k: smb)
+    monkeypatch.setattr(gdrive_module, "GoogleDriveClient", lambda *a, **k: gdrive)
+    config = FakeConfigManager({
+        "connection": {
+            "source_type": "nextcloud",
+            "server_url": "https://cloud.example.com",
+            "username": "u",
+            "password": "p",
+            "smb": {"host": "nas", "share": "music", "username": "u", "password": "p"},
+            "gdrive": {
+                "client_id": "client-id", "client_secret": "secret",
+                "refresh_token": "refresh-token",
+            },
+        }
+    })
+    context = base_context(config)
+    view = make_connection_view(page, context, FakeViewManager())
+
+    results = await asyncio.gather(
+        view._auto_connect_source("nextcloud"),
+        view._auto_connect_source("smb"),
+        view._auto_connect_source("gdrive"),
+        return_exceptions=True,
+    )
+
+    assert not isinstance(results[0], Exception)
+    assert isinstance(results[1], Exception)
+    assert not isinstance(results[2], Exception)
+    assert set(context["source_clients"]) == {"nextcloud", "gdrive"}
 
 
 async def test_connect_success_flow(monkeypatch):
@@ -214,6 +297,54 @@ async def test_connect_smb_requires_share_from_wizard():
 
     assert view.is_connected is False
     assert "向导" in last_message_text(page)
+
+
+async def test_smb_connect_reuses_saved_settings_without_wizard(monkeypatch):
+    """已有主机和共享时，建立连接直接复用配置。"""
+    page = FakePage()
+    view = make_connection_view(page, base_context(FakeConfigManager()), FakeViewManager())
+    switch_to_smb(view)
+    fill_smb_settings(view, host="nas.local", share="music")
+    calls = []
+
+    async def connect(event):
+        calls.append("connect")
+
+    monkeypatch.setattr(view, "_connect_to_server", connect)
+    monkeypatch.setattr(view, "_open_smb_wizard", lambda: calls.append("wizard"))
+
+    view._on_connect_clicked(None)
+    await asyncio.sleep(0)
+
+    assert calls == ["connect"]
+
+
+def test_smb_changed_host_opens_wizard(monkeypatch):
+    """地址改变后旧共享不可直接复用，应重新进入修改向导。"""
+    page = FakePage()
+    view = make_connection_view(page, base_context(FakeConfigManager()), FakeViewManager())
+    switch_to_smb(view)
+    fill_smb_settings(view, host="old-nas", share="music")
+    view.smb_host_input.value = "new-nas"
+    calls = []
+    monkeypatch.setattr(view, "_open_smb_wizard", lambda: calls.append("wizard"))
+
+    view._on_connect_clicked(None)
+
+    assert calls == ["wizard"]
+
+
+def test_smb_edit_button_opens_wizard(monkeypatch):
+    page = FakePage()
+    view = make_connection_view(page, base_context(FakeConfigManager()), FakeViewManager())
+    switch_to_smb(view)
+    fill_smb_settings(view)
+    calls = []
+    monkeypatch.setattr(view, "_open_smb_wizard", lambda: calls.append("wizard"))
+
+    view.smb_edit_button.on_click(None)
+
+    assert calls == ["wizard"]
 
 
 def test_parse_smb_address_with_port():

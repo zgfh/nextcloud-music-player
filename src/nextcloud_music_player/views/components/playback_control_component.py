@@ -8,7 +8,7 @@ from typing import Callable, Optional
 
 import flet as ft
 
-from ...utils.platform_ui import get_button_height, get_button_icon_size
+from ...utils.platform_ui import get_button_icon_size
 from ...utils.theme import (
     Color,
     FontSize,
@@ -50,7 +50,7 @@ class PlaybackControlComponent:
 
         icon_primary = get_button_icon_size(primary=True)
         icon_secondary = get_button_icon_size(secondary=True)
-        play_button_size = 56 if icon_primary >= 24 else 48
+        play_button_size = 64 if icon_primary >= 24 else 56
 
         # === 进度条（霓虹滑轨） ===
         self.current_time_label = ft.Text(
@@ -89,34 +89,70 @@ class PlaybackControlComponent:
             thumb_color=Color.ACCENT,
         )
 
-        # === 播放模式按钮（霓虹激活态） ===
-        def mode_button(icon, tooltip, mode):
+        # === 播放模式（带文字的分段胶囊，避免多个相似图标难以辨认） ===
+        self._mode_visuals = {}
+
+        def mode_button(icon, label, tooltip, mode):
+            icon_control = ft.Icon(
+                icon, size=get_button_icon_size(small=True), color=Color.TEXT_MUTED
+            )
+            label_control = ft.Text(
+                label,
+                size=FontSize.MICRO,
+                color=Color.TEXT_MUTED,
+                weight=ft.FontWeight.BOLD,
+            )
+            button = ft.Container(
+                content=ft.Row(
+                    [icon_control, label_control],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=4,
+                ),
+                height=36,
+                padding=ft.Padding(left=9, right=9, top=0, bottom=0),
+                border_radius=Radius.MD,
+                tooltip=tooltip,
+                on_click=lambda e: self._set_play_mode(mode),
+            )
+            self._mode_visuals[mode] = (icon_control, label_control)
+            return button
+
+        self.normal_button = mode_button(
+            ft.Icons.FORMAT_LIST_NUMBERED, "顺序", "顺序播放", "normal"
+        )
+        self.repeat_one_button = mode_button(
+            ft.Icons.REPEAT_ONE, "单曲", "单曲循环", "repeat_one"
+        )
+        self.repeat_all_button = mode_button(
+            ft.Icons.REPEAT, "列表", "列表循环", "repeat_all"
+        )
+        self.shuffle_button = mode_button(
+            ft.Icons.SHUFFLE, "随机", "随机播放", "shuffle"
+        )
+
+        # === 播放控制按钮 ===
+        def transport_button(icon, tooltip, callback):
             return ft.IconButton(
                 icon,
                 tooltip=tooltip,
-                icon_size=get_button_icon_size(small=True),
-                style=ft.ButtonStyle(shape=ft.CircleBorder()),
-                on_click=lambda e: self._set_play_mode(mode),
+                width=48,
+                height=48,
+                icon_size=icon_secondary,
+                icon_color=Color.TEXT_PRIMARY,
+                style=ft.ButtonStyle(
+                    bgcolor={
+                        ft.ControlState.DEFAULT: Color.BG_ELEVATED,
+                        ft.ControlState.HOVERED: tint(Color.PRIMARY, "1F"),
+                        ft.ControlState.PRESSED: tint(Color.PRIMARY, "33"),
+                    },
+                    side=ft.BorderSide(1, Color.BORDER_STRONG),
+                    shape=ft.CircleBorder(),
+                ),
+                on_click=callback,
             )
 
-        self.normal_button = mode_button(ft.Icons.REPEAT, "顺序播放", "normal")
-        self.repeat_one_button = mode_button(
-            ft.Icons.REPEAT_ONE, "单曲循环", "repeat_one"
-        )
-        self.repeat_all_button = mode_button(ft.Icons.REPEAT, "全部循环", "repeat_all")
-        self.shuffle_button = mode_button(ft.Icons.SHUFFLE, "随机播放", "shuffle")
-
-        # === 播放控制按钮 ===
-        h_primary = get_button_height(primary=True)
-        h_secondary = get_button_height(secondary=True)
-
-        self.prev_button = ft.IconButton(
-            ft.Icons.SKIP_PREVIOUS,
-            tooltip="上一曲",
-            icon_size=icon_secondary,
-            icon_color=Color.TEXT_SECONDARY,
-            style=ft.ButtonStyle(shape=ft.CircleBorder()),
-            on_click=self._on_previous_song,
+        self.prev_button = transport_button(
+            ft.Icons.SKIP_PREVIOUS_ROUNDED, "上一曲", self._on_previous_song
         )
 
         # 主播放键：圆形渐变 + 霓虹光晕
@@ -129,25 +165,45 @@ class PlaybackControlComponent:
             height=play_button_size,
             border_radius=play_button_size / 2,
             gradient=Gradient.primary(),
+            border=ft.Border.all(1, tint(Color.PRIMARY, "99")),
             shadow=glow(Color.GLOW_CYAN, radius=18, alpha="59"),
+            tooltip="播放 / 暂停",
             on_click=self._on_toggle_playback,
         )
 
-        self.next_button = ft.IconButton(
-            ft.Icons.SKIP_NEXT,
-            tooltip="下一曲",
-            icon_size=icon_secondary,
-            icon_color=Color.TEXT_SECONDARY,
-            style=ft.ButtonStyle(shape=ft.CircleBorder()),
-            on_click=self._on_next_song,
+        self.next_button = transport_button(
+            ft.Icons.SKIP_NEXT_ROUNDED, "下一曲", self._on_next_song
         )
         self.stop_button = ft.IconButton(
-            ft.Icons.STOP_CIRCLE_OUTLINED,
+            ft.Icons.STOP_ROUNDED,
             tooltip="停止",
-            icon_size=icon_secondary,
-            icon_color=Color.DANGER,
-            style=ft.ButtonStyle(shape=ft.CircleBorder()),
+            icon_size=get_button_icon_size(small=True),
+            icon_color=Color.TEXT_MUTED,
+            style=ft.ButtonStyle(
+                bgcolor={
+                    ft.ControlState.DEFAULT: Color.BG_SURFACE_ALT,
+                    ft.ControlState.HOVERED: tint(Color.DANGER, "1A"),
+                },
+                shape=ft.CircleBorder(),
+            ),
             on_click=self._on_stop_playback,
+        )
+
+        mode_selector = ft.Container(
+            content=ft.Row(
+                [
+                    self.normal_button,
+                    self.repeat_one_button,
+                    self.repeat_all_button,
+                    self.shuffle_button,
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                spacing=2,
+            ),
+            bgcolor=Color.BG_SURFACE_ALT,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+            padding=4,
         )
 
         # === 组装（控制台卡片） ===
@@ -163,51 +219,40 @@ class PlaybackControlComponent:
                         ],
                         spacing=Space.XS,
                     ),
-                    # 音量 + 模式
-                    ft.Row(
-                        [
-                            ft.Row(
-                                [
-                                    ft.Icon(
-                                        ft.Icons.VOLUME_UP,
-                                        color=Color.TEXT_MUTED,
-                                        size=18,
-                                    ),
-                                    self.volume_slider,
-                                ],
-                                spacing=4,
-                                expand=True,
-                            ),
-                            ft.Row(
-                                [
-                                    self.normal_button,
-                                    self.repeat_one_button,
-                                    self.repeat_all_button,
-                                    self.shuffle_button,
-                                ],
-                                spacing=2,
-                            ),
-                        ],
-                        spacing=Space.SM,
-                    ),
-                    # 播放控制按钮
+                    # 主播放操作：保持严格居中和清晰的大小层级
                     ft.Row(
                         [
                             self.prev_button,
                             self.play_pause_button,
                             self.next_button,
-                            self.stop_button,
                         ],
                         alignment=ft.MainAxisAlignment.CENTER,
-                        spacing=Space.MD,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=Space.XL,
                     ),
+                    # 次级操作：停止、音量和播放模式各自成组
+                    ft.Row(
+                        [
+                            self.stop_button,
+                            ft.Container(width=1, height=20, bgcolor=Color.BORDER),
+                            ft.Icon(
+                                ft.Icons.VOLUME_UP_ROUNDED,
+                                color=Color.TEXT_MUTED,
+                                size=17,
+                            ),
+                            self.volume_slider,
+                        ],
+                        spacing=Space.XS,
+                    ),
+                    mode_selector,
                 ],
-                spacing=Space.SM,
+                spacing=Space.MD,
             ),
-            bgcolor=Color.BG_SURFACE,
-            border=ft.Border.all(1, Color.BORDER),
-            border_radius=Radius.LG,
-            padding=Space.MD,
+            gradient=Gradient.surface(),
+            border=ft.Border.all(1, Color.BORDER_STRONG),
+            border_radius=Radius.XL,
+            padding=Space.LG,
+            shadow=glow(Color.GLOW_VIOLET, radius=24, alpha="14"),
         )
 
         self._built = True
@@ -244,9 +289,10 @@ class PlaybackControlComponent:
         """音量变化"""
         if self.playback_service:
             volume = int(e.control.value)
+            # 配置使用 0-100，播放器接口使用 0.0-1.0；必须实时下发，
+            # 不能只保存到配置等下一首歌加载时才生效。
+            self.playback_service.set_audio_volume(volume / 100.0)
             self.playback_service.set_volume(volume)
-            self.app_context["config_manager"].set("player.volume", volume)
-            self.app_context["config_manager"].save_config()
 
     def _set_play_mode(self, mode: str):
         """设置播放模式"""
@@ -371,7 +417,7 @@ class PlaybackControlComponent:
         self.page.update()
 
     def update_mode_buttons(self):
-        """更新播放模式按钮状态（霓虹激活态）"""
+        """更新播放模式分段按钮状态。"""
         if not self._built or not hasattr(self, "normal_button"):
             return
         from ...services.playback_controller import PlayMode
@@ -383,19 +429,26 @@ class PlaybackControlComponent:
             PlayMode.REPEAT_ALL: self.repeat_all_button,
             PlayMode.SHUFFLE: self.shuffle_button,
         }
+        mode_keys = {
+            PlayMode.NORMAL: "normal",
+            PlayMode.REPEAT_ONE: "repeat_one",
+            PlayMode.REPEAT_ALL: "repeat_all",
+            PlayMode.SHUFFLE: "shuffle",
+        }
         for m, btn in buttons.items():
+            icon, label = self._mode_visuals[mode_keys[m]]
             if m == mode:
-                btn.style = ft.ButtonStyle(
-                    bgcolor=tint(Color.PRIMARY, "26"),
-                    color=Color.PRIMARY,
-                    shape=ft.CircleBorder(),
-                )
+                btn.bgcolor = tint(Color.PRIMARY, "26")
+                btn.border = ft.Border.all(1, tint(Color.PRIMARY, "73"))
+                btn.shadow = glow(Color.PRIMARY, radius=10, alpha="1F")
+                icon.color = Color.PRIMARY
+                label.color = Color.PRIMARY
             else:
-                btn.style = ft.ButtonStyle(
-                    bgcolor=None,
-                    color=Color.TEXT_MUTED,
-                    shape=ft.CircleBorder(),
-                )
+                btn.bgcolor = None
+                btn.border = ft.Border.all(1, "#00000000")
+                btn.shadow = None
+                icon.color = Color.TEXT_MUTED
+                label.color = Color.TEXT_MUTED
         self.page.update()
 
     def enable_controls(self, enabled: bool):

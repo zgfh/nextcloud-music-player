@@ -1,9 +1,10 @@
 """
 SMB 音乐来源客户端 - 通过 pysmb 访问 SMB 共享中的音乐文件。
 
-协议支持：SMB1 / SMB 2.002 / SMB 2.1 / SMB 3.0（未加密）——
+协议支持：SMB1 / SMB 2.002 / 2.1 / 3.0 / 3.0.2 / 3.1.1（未签名/未加密）——
 由 smb_dialects 扩展 pysmb 的协商方言实现，iOS 上同样可用；
-SMB 3.1.1 与强制签名/加密的服务器暂不支持（见 smb_dialects.py）。
+强制签名（AES-CMAC）或强制加密（AES-CCM/GCM）的服务器暂不支持
+（如 Windows 11 24H2+ 默认强制签名，见 smb_dialects.py）。
 
 接口与 NextCloudClient 保持鸭子类型兼容（MusicService/FolderSelector/LyricsService
 均按此事实接口调用，无需改动）：
@@ -127,7 +128,7 @@ class SMBClient:
 
         from . import smb_dialects
 
-        # 协商支持 SMB1 / SMB 2.002 / SMB 2.1 / SMB 3.0（见 smb_dialects.py）
+        # 协商支持 SMB1 / SMB2 / SMB3（见 smb_dialects.py）
         smb_dialects.enable_modern_negotiation()
         conn = self._connect_once()
 
@@ -136,33 +137,58 @@ class SMBClient:
         return self._conn
 
     def _connect_once(self):
-        """以当前方言列表建立一条新的 SMB 连接"""
+        """建立一条新的 SMB 连接
+
+        协商策略先试 SMB 3.1.1（现代服务器一步到位），被拒（老服务器）
+        时换多方言（2.002/2.1/3.0/3.0.2）重连一次；认证失败不重试
+        （换方言也于事无补，且会多算一次失败登录）。
+        """
         from smb.SMBConnection import SMBConnection
+
+        from . import smb_dialects
 
         try:
             my_name = (socket.gethostname() or "music-player").split(".")[0][:15]
         except Exception:
             my_name = "music-player"
 
-        # 直连 TCP 帧格式适用于除 139（传统 NetBIOS）外的所有端口，
-        # 不能按"端口==445"判断：非 445 的直连端口同样不需要 NBT 会话头
-        conn = SMBConnection(
-            self.username,
-            self.password,
-            my_name=my_name,
-            remote_name=self.host.upper(),
-            domain=self.domain,
-            use_ntlm_v2=True,
-            is_direct_tcp=(self.port != 139),
-        )
-        if not conn.connect(self.host, self.port, timeout=10):
+        auth_failed = None
+        for prefer_311 in (True, False):
+            # 直连 TCP 帧格式适用于除 139（传统 NetBIOS）外的所有端口，
+            # 不能按"端口==445"判断：非 445 的直连端口同样不需要 NBT 会话头
+            conn = SMBConnection(
+                self.username,
+                self.password,
+                my_name=my_name,
+                remote_name=self.host.upper(),
+                domain=self.domain,
+                use_ntlm_v2=True,
+                is_direct_tcp=(self.port != 139),
+            )
+            smb_dialects.configure_connection(conn, prefer_311=prefer_311)
+            try:
+                ok = conn.connect(self.host, self.port, timeout=10)
+            except Exception as e:
+                conn.close()
+                if not smb_dialects.is_dialect_rejection(e):
+                    raise
+                logger.info(f"SMB 协商被拒（{e}），切换多方言策略重连")
+                continue
+            if ok:
+                if not prefer_311:
+                    logger.info("多方言协商回退后连接成功（服务器不支持 3.1.1）")
+                return conn
+            # connect() 返回 False：认证失败，换方言重试无意义
             conn.close()
             raise ConnectionError(
                 f"无法连接到 SMB 服务器 {self.host}:{self.port}"
-                f"（认证失败或服务器要求 SMB 3.1.1/强制加密协议，"
-                f"当前实现支持 SMB1/SMB2/SMB3.0-未加密）"
+                f"（认证失败，或服务器强制 SMB 签名/加密）"
             )
-        return conn
+
+        raise ConnectionError(
+            f"无法连接到 SMB 服务器 {self.host}:{self.port}"
+            f"（两次协商均被拒绝，请检查服务器协议配置）"
+        )
 
     def _reset_conn(self):
         """丢弃当前连接（必须在持有 _smb_lock 时调用）"""
