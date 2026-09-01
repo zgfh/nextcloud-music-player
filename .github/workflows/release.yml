@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'  # 匹配 v1.0.0, v1.2.3 等格式的标签
 
+# GitHub 默认会为工作流令牌提供只读权限；创建 Release 需要仓库内容写权限。
+permissions:
+  contents: write
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -105,7 +109,7 @@ jobs:
         EOF
     
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.version.outputs.tag }}
         name: NextCloud Music Player v${{ steps.version.outputs.version }}
