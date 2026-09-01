@@ -36,6 +36,127 @@ def test_library_view_keeps_delete_but_has_no_clear_cache_action(
     assert not hasattr(view, "clear_cache_button")
 
 
+def test_library_toolbar_has_no_add_and_download_follows_select_all(
+    tmp_path, monkeypatch
+):
+    view, _ = make_file_list_view(
+        FakePage(), FakeNextcloudClient(), FakeMusicLibrary(tmp_path),
+        FakeConfigManager(), monkeypatch,
+    )
+
+    assert not hasattr(view, "add_button")
+    toolbar = view.selection_action_row
+    assert toolbar.controls.index(view.download_button) == (
+        toolbar.controls.index(view.select_all_button) + 1
+    )
+
+
+def test_download_button_shows_selected_count(tmp_path, monkeypatch):
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("one.mp3", "/one.mp3")
+    view, _ = make_file_list_view(
+        FakePage(), FakeNextcloudClient(), library, FakeConfigManager(), monkeypatch
+    )
+
+    view.selected_files = {"one.mp3"}
+    view._update_stats()
+
+    assert view.download_button.text == "下载（1）"
+    assert view.select_all_button.text == "取消全选"
+
+
+def test_song_details_save_custom_title_without_changing_library_key(tmp_path, monkeypatch):
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("original.mp3", "/original.mp3")
+    page = FakePage()
+    view, _ = make_file_list_view(
+        page, FakeNextcloudClient(), library, FakeConfigManager(), monkeypatch
+    )
+
+    view._show_song_details("original.mp3")
+    view.song_title_input.value = "自定义歌名"
+    view.song_artist_input.value = "新歌手"
+    view._save_song_details(None)
+
+    assert "original.mp3" in library.songs
+    assert library.songs["original.mp3"]["custom_title"] == "自定义歌名"
+    assert library.songs["original.mp3"]["remote_path"] == "/original.mp3"
+    assert page.popped_dialogs == 1
+
+
+async def test_song_details_query_requires_selection_before_save(tmp_path, monkeypatch):
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("周杰伦 - 晴天.mp3", "/song.mp3")
+    page = FakePage()
+    view, _ = make_file_list_view(
+        page, FakeNextcloudClient(), library, FakeConfigManager(), monkeypatch
+    )
+    view._show_song_details("周杰伦 - 晴天.mp3")
+
+    class SearchService:
+        async def search(self, artist, title):
+            return [{
+                "title": "晴天", "artist": "周杰伦", "album": "叶惠美",
+                "year": "2003", "mbid": "mbid-1", "confidence": 99,
+            }]
+
+    view._musicbrainz_service = SearchService()
+    await view._query_song_metadata()
+
+    # 查询本身不持久化，必须先选择候选再保存。
+    assert library.songs["周杰伦 - 晴天.mp3"].get("musicbrainz_mbid") is None
+    view._select_song_candidate({
+        "title": "晴天", "artist": "周杰伦", "album": "叶惠美",
+        "year": "2003", "mbid": "mbid-1",
+    })
+    view._save_song_details(None)
+    assert library.songs["周杰伦 - 晴天.mp3"]["musicbrainz_mbid"] == "mbid-1"
+
+
+async def test_song_details_keeps_editing_but_disables_online_query(
+    tmp_path, monkeypatch
+):
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("song.mp3", "/song.mp3")
+    page = FakePage()
+    config = FakeConfigManager(
+        {"metadata": {"musicbrainz_enabled": False}}
+    )
+    view, _ = make_file_list_view(
+        page, FakeNextcloudClient(), library, config, monkeypatch
+    )
+
+    view._show_song_details("song.mp3")
+
+    assert view.song_query_button.disabled is True
+    assert "已在设置中关闭" in view.song_query_status.value
+    view.song_title_input.value = "仍可手动编辑"
+    view._save_song_details(None)
+    assert library.songs["song.mp3"]["custom_title"] == "仍可手动编辑"
+
+
+def test_remote_song_cloud_icon_reflects_its_source_connection(
+    tmp_path, monkeypatch
+):
+    from nextcloud_music_player.utils.theme import Color
+
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song(
+        "drive.mp3", "drive-file-id", source_type="gdrive"
+    )
+    view, service = make_file_list_view(
+        FakePage(), FakeNextcloudClient(), library, FakeConfigManager(), monkeypatch
+    )
+    song = service.get_all_songs()[0]
+
+    offline_item = view.build_file_item(song)
+    assert offline_item.content.controls[1].color == Color.TEXT_DISABLED
+
+    service.source_clients["gdrive"] = FakeNextcloudClient()
+    online_item = view.build_file_item(song)
+    assert online_item.content.controls[1].color == Color.PRIMARY
+
+
 def test_delete_removes_selected_song_from_library(tmp_path, monkeypatch):
     library = FakeMusicLibrary(tmp_path)
     library.add_remote_song("remove.mp3", "/music/remove.mp3")
@@ -66,10 +187,12 @@ async def test_sync_shows_progress_and_reloads(tmp_path, monkeypatch):
     await asyncio.sleep(0.05)
 
     assert view.sync_button.disabled is True
+    assert view.sync_button.text == "同步中…"
     assert "正在同步" in last_notification_text(page)
 
     await task
     assert view.sync_button.disabled is False           # 按钮恢复
+    assert view.sync_button.text == "同步"
     assert len(view.file_list.controls) == 2            # 列表已刷新
     assert {s['name'] for s in view.music_service.get_all_songs()} == {"a.mp3", "b.mp3"}
     assert all(
@@ -80,6 +203,7 @@ async def test_sync_shows_progress_and_reloads(tmp_path, monkeypatch):
     assert view.music_service.last_sync_report == [{
         "source_type": "nextcloud",
         "folder": "/music",
+        "folder_label": "/music",
         "song_count": 2,
         "synced_count": 2,
         "status": "success",
@@ -97,6 +221,7 @@ async def test_sync_failure_shows_error_and_reenables(tmp_path, monkeypatch):
     await view._sync_music_list(None)
 
     assert view.sync_button.disabled is False
+    assert view.sync_button.text == "同步"
     assert "同步失败" in last_notification_text(page)
 
 

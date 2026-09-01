@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # 确保在项目根目录执行
 cd "$(dirname "$0")/.."
@@ -19,7 +19,7 @@ usage() {
     echo "选项:"
     echo "  (无参数)     自动判断：源码有更新则完整重建，否则仅刷新签名"
     echo "  --rebuild    强制完整重建（flet 打包 + flutter 签名）"
-    echo "  --refresh    仅刷新签名（跳过 flet 打包，代码未变时用，速度快）"
+    echo "  --refresh    优先仅刷新签名；产物不安全时自动完整重建"
     echo "  --fast       快速模式：debug 增量构建代替 release archive，迭代测试快数倍"
     echo "  --help       显示帮助"
     echo ""
@@ -89,18 +89,37 @@ else
 fi
 PYTHON_APP_REF="build/python-app/main.pyc"
 FLUTTER_IOS_DIR="build/flutter/ios"
+# flet 的 ios-simulator 与 ipa 会复用 build/flutter。用真机构建标记识别
+# 外部执行过 ios-simulator 后留下的模拟器工程，避免直接拿它构建真机 IPA。
+DEVICE_BUILD_STAMP="build/.flet-ipa-device-ready"
 
 NEED_FLET_BUILD=0
 if [ "$FORCE_REBUILD" = "1" ]; then
     NEED_FLET_BUILD=1
     REASON="--rebuild 强制重建"
 elif [ "$FORCE_REFRESH" = "1" ]; then
-    NEED_FLET_BUILD=0
-    REASON="--refresh 仅续签"
+    if [ ! -f "$DEVICE_BUILD_STAMP" ]; then
+        NEED_FLET_BUILD=1
+        REASON="缺少真机构建标记，不能安全复用产物"
+    elif find build/ios-simulator -type d -name "*.app" -newer "$DEVICE_BUILD_STAMP" \
+        -print -quit 2>/dev/null | grep -q .; then
+        NEED_FLET_BUILD=1
+        REASON="检测到更新的模拟器产物，需恢复真机构建环境"
+    else
+        NEED_FLET_BUILD=0
+        REASON="--refresh 仅续签"
+    fi
 elif [ ! -d "$FLUTTER_IOS_DIR" ] || [ ! -f "$PYTHON_APP_REF" ]; then
     NEED_FLET_BUILD=1
     REASON="首次构建（缺少打包产物）"
-elif [ -n "$(find src -type f -newer "$PYTHON_APP_REF" 2>/dev/null | head -1)" ] || [ "pyproject.toml" -nt "$PYTHON_APP_REF" ]; then
+elif [ ! -f "$DEVICE_BUILD_STAMP" ]; then
+    NEED_FLET_BUILD=1
+    REASON="缺少真机构建标记"
+elif find build/ios-simulator -type d -name "*.app" -newer "$DEVICE_BUILD_STAMP" \
+    -print -quit 2>/dev/null | grep -q .; then
+    NEED_FLET_BUILD=1
+    REASON="检测到更新的模拟器产物"
+elif [ -n "$(find src -type f -newer "$DEVICE_BUILD_STAMP" 2>/dev/null | head -1)" ] || [ "pyproject.toml" -nt "$DEVICE_BUILD_STAMP" ]; then
     NEED_FLET_BUILD=1
     REASON="源码有更新"
 else
@@ -128,6 +147,7 @@ if [ "$NEED_FLET_BUILD" = "1" ]; then
         exit 1
     fi
     rm -f "$FLET_BUILD_LOG"
+    touch "$DEVICE_BUILD_STAMP"
 else
     log_message "${GREEN}⏭️ 跳过 flet 打包，复用已有 build/python-app 与 build/flutter${NC}"
 fi
@@ -181,7 +201,16 @@ fi
 log_message "${YELLOW}📦 构建并签名 IPA ($FLUTTER_BUILD_MODE)...${NC}"
 
 export PATH="$HOME/flutter/3.44.8/bin:/usr/local/bin:$PATH"
-(cd build/flutter && flutter build ipa --$FLUTTER_BUILD_MODE --export-options-plist ios/exportOptions.plist 2>&1 | tail -15)
+FLUTTER_BUILD_LOG=$(mktemp -t deploy_flutter)
+if ! (cd build/flutter && flutter build ipa --$FLUTTER_BUILD_MODE \
+    --export-options-plist ios/exportOptions.plist >"$FLUTTER_BUILD_LOG" 2>&1); then
+    log_message "${RED}❌ flutter build ipa 失败，最后 40 行输出：${NC}"
+    tail -40 "$FLUTTER_BUILD_LOG"
+    rm -f "$FLUTTER_BUILD_LOG"
+    exit 1
+fi
+tail -15 "$FLUTTER_BUILD_LOG"
+rm -f "$FLUTTER_BUILD_LOG"
 
 # ====== 4. 查找 IPA ======
 IPA_PATH=$(find build/flutter/build/ios -name "*.ipa" -type f 2>/dev/null | head -1)

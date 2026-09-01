@@ -112,6 +112,9 @@ class ConfigManager:
                 "play_mode": "repeat_one",
                 "auto_play_on_select": True,
             },
+            "metadata": {
+                "musicbrainz_enabled": True,
+            },
             "app": {
                 "last_view": "playback",
                 "window_size": [800, 600],

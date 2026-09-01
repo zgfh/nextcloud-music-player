@@ -13,6 +13,8 @@ from .config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
 
+MUSIC_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma"}
+
 
 class MusicLibrary:
     """Manages the local music library with metadata support."""
@@ -57,20 +59,44 @@ class MusicLibrary:
         source_type: str = "nextcloud",
         sync_folder: str = "",
     ) -> None:
-        """Add a remote song to the library (not yet downloaded)."""
+        """Add a remote song while retaining every origin for the same filename."""
         song_info = self.extract_song_info_from_filename(song_name)
-        # 同步时更新远端元数据，同时保留已下载的本地状态。
+        origin = {
+            "source_type": source_type,
+            "remote_path": remote_path,
+            "size": size,
+            "modified": modified,
+            "etag": etag,
+            "sync_folder": sync_folder,
+        }
+        # 文件名仍是播放列表兼容主键；远端候选保存在 origins，首次发现的
+        # 来源保持为稳定主来源，后同步来源不再覆盖它。
         if song_name in self.songs:
-            self.songs[song_name].update(
-                {
-                    "remote_path": remote_path,
-                    "size": size,
-                    "modified": modified,
-                    "etag": etag,
-                    "sync_folder": sync_folder,
-                    "source_type": source_type,
-                }
+            existing = self.songs[song_name]
+            origins = existing.setdefault("origins", [])
+            if not origins and existing.get("remote_path"):
+                origins.append(
+                    {
+                        "source_type": existing.get("source_type", "nextcloud"),
+                        "remote_path": existing.get("remote_path", ""),
+                        "size": existing.get("size", 0),
+                        "modified": existing.get("modified", ""),
+                        "etag": existing.get("etag", ""),
+                        "sync_folder": existing.get("sync_folder", ""),
+                    }
+                )
+            match = next(
+                (
+                    item for item in origins
+                    if item.get("source_type") == source_type
+                    and item.get("remote_path") == remote_path
+                ),
+                None,
             )
+            if match is None:
+                origins.append(origin)
+            else:
+                match.update(origin)
             self.save_music_list()
             return
         self.songs[song_name] = {
@@ -82,6 +108,7 @@ class MusicLibrary:
             "etag": etag,
             "sync_folder": sync_folder,
             "source_type": source_type,
+            "origins": [origin],
             "is_downloaded": False,
             "filepath": None,
         }
@@ -171,12 +198,26 @@ class MusicLibrary:
                 "artist": parts[0].strip(),
                 "album": "未知专辑",
             }
-        else:
-            return {
-                "title": name_without_ext,
-                "artist": "未知艺术家",
-                "album": "未知专辑",
-            }
+        return {
+            "title": name_without_ext,
+            "artist": "未知艺术家",
+            "album": "未知专辑",
+        }
+
+    def update_song_metadata(self, song_name: str, metadata: Dict) -> bool:
+        """保存用户确认的展示信息，不修改源文件名或音频标签。"""
+        song = self.songs.get(song_name)
+        if not song:
+            return False
+        allowed = {
+            "custom_title", "artist", "album", "year", "musicbrainz_mbid",
+            "metadata_source", "metadata_updated_at",
+        }
+        for key in allowed:
+            if key in metadata:
+                song[key] = str(metadata[key] or "").strip()
+        self.save_music_list()
+        return True
 
     def has_song(self, song_name: str) -> bool:
         """Check if a song exists in the library."""
@@ -217,6 +258,7 @@ class MusicLibrary:
         for song_name, song_info in self.songs.items():
             if (
                 query in song_info.get("title", "").lower()
+                or query in song_info.get("custom_title", "").lower()
                 or query in song_info.get("artist", "").lower()
                 or query in song_info.get("album", "").lower()
                 or query in song_name.lower()
@@ -271,8 +313,13 @@ class MusicLibrary:
                 logger.error(f"Failed to delete music list file: {e}")
 
     def get_cached_songs(self) -> List[Dict]:
-        """Return downloaded files that currently exist on disk."""
+        """Return real audio files in the managed cache directory.
+
+        Disk is the source of truth: stale index flags are ignored and orphaned
+        audio files are included, so the cache page count matches actual storage.
+        """
         cached = []
+        seen_paths = set()
         for song_name, song_info in self.songs.items():
             if not song_info.get("is_downloaded", False):
                 continue
@@ -283,9 +330,13 @@ class MusicLibrary:
             try:
                 if not path.is_file():
                     continue
+                resolved = path.resolve()
+                if not resolved.is_relative_to(self.music_dir.resolve()):
+                    continue
                 size = path.stat().st_size
             except OSError:
                 continue
+            seen_paths.add(resolved)
             cached.append(
                 {
                     "name": song_name,
@@ -294,6 +345,25 @@ class MusicLibrary:
                     "download_time": song_info.get("download_time", ""),
                 }
             )
+        # 兼容升级、异常退出或旧版本遗留：文件已落盘但索引尚未写入。
+        try:
+            for path in self.music_dir.rglob("*"):
+                if not path.is_file() or path.suffix.lower() not in MUSIC_EXTENSIONS:
+                    continue
+                resolved = path.resolve()
+                if resolved in seen_paths:
+                    continue
+                cached.append(
+                    {
+                        "name": path.relative_to(self.music_dir).as_posix(),
+                        "filepath": str(path),
+                        "size": path.stat().st_size,
+                        "download_time": "",
+                        "orphaned": True,
+                    }
+                )
+        except OSError as ex:
+            logger.warning(f"扫描音乐缓存目录失败: {ex}")
         return sorted(cached, key=lambda item: item["name"].lower())
 
     def remove_cached_songs(self, song_names: List[str]) -> tuple[int, int]:
@@ -308,9 +378,10 @@ class MusicLibrary:
         changed = False
         for song_name in dict.fromkeys(song_names):
             song_info = self.songs.get(song_name)
-            if not song_info or not song_info.get("is_downloaded", False):
-                continue
-            filepath = song_info.get("filepath")
+            filepath = song_info.get("filepath") if song_info else None
+            if not filepath:
+                # 允许清理由缓存扫描发现的孤立文件，路径仍受 music_root 约束。
+                filepath = self.music_dir / song_name
             if not filepath:
                 continue
             path = Path(filepath)
@@ -324,10 +395,11 @@ class MusicLibrary:
                     resolved.unlink()
                 freed_bytes += size
                 deleted_count += 1
-                song_info["is_downloaded"] = False
-                song_info["filepath"] = None
-                song_info.pop("download_time", None)
-                changed = True
+                if song_info:
+                    song_info["is_downloaded"] = False
+                    song_info["filepath"] = None
+                    song_info.pop("download_time", None)
+                    changed = True
             except OSError as ex:
                 logger.error(f"删除缓存文件失败 {path}: {ex}")
         if changed:

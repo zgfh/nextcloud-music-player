@@ -121,6 +121,12 @@ async def test_id_based_navigation_with_breadcrumbs():
     # 再进入一层后返回上级：回到 FOLDER1 而非字符串截断
     selector._enter_folder("周杰伦", "FOLDER2")
     await asyncio.sleep(0.05)
+    selected = []
+    selector.on_path_selected = selected.append
+    selector._select_current(None)
+    assert selected == ["FOLDER2"]
+    assert selector.selected_display_path == "/音乐/周杰伦"
+
     selector._go_back(None)
     await asyncio.sleep(0.05)
     assert selector.current_path == "FOLDER1"

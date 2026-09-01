@@ -153,9 +153,7 @@ class SMBConnectWizard:
 
         self.auth_dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text(
-                f"连接 {self.host}", size=16, weight=ft.FontWeight.BOLD
-            ),
+            title=ft.Text(f"连接 {self.host}", size=16, weight=ft.FontWeight.BOLD),
             content=ft.Container(
                 content=ft.Column(
                     [
@@ -262,7 +260,9 @@ class SMBConnectWizard:
             comment = share.get("comment", "")
             share_list.controls.append(
                 ft.ListTile(
-                    leading=ft.Icon(ft.Icons.FOLDER_SHARED_OUTLINED, color=Color.ACCENT),
+                    leading=ft.Icon(
+                        ft.Icons.FOLDER_SHARED_OUTLINED, color=Color.ACCENT
+                    ),
                     title=ft.Text(name, size=14, color=Color.TEXT_PRIMARY),
                     subtitle=(
                         ft.Text(comment, size=11, color=Color.TEXT_MUTED)

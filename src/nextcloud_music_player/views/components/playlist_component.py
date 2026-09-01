@@ -98,7 +98,17 @@ class PlaylistViewComponent:
         """构建单个歌曲项（暗色卡片，当前曲目霓虹高亮）"""
         song_info = song_entry.get("info", {})
         song_name = song_entry.get("name", "")
-        title = song_info.get("title", song_name)
+        # 播放列表持久化的是加入时的快照；下载状态、文件路径等以音乐库
+        # 的实时记录为准，避免下载完成后仍显示“未下载”。
+        music_library = self.app_context.get("music_library")
+        latest_info = (
+            music_library.get_song_info(song_name)
+            if music_library and song_name
+            else None
+        )
+        if latest_info:
+            song_info = {**song_info, **latest_info}
+        title = song_info.get("custom_title") or song_info.get("title", song_name)
         if title.endswith(".mp3"):
             title = title[:-4]
         artist = song_info.get("artist", "未知艺术家")

@@ -25,10 +25,23 @@ class DownloadFileState:
     total_bytes: int = 0
     message: str = ""
     started_at: float = 0.0
+    finished_at: float = 0.0
 
-    def as_dict(self) -> dict:
+    def as_dict(self, now: float | None = None) -> dict:
+        now = time.monotonic() if now is None else now
         data = asdict(self)
         data.pop("started_at")
+        data.pop("finished_at")
+        end = self.finished_at or now
+        elapsed = max(end - self.started_at, 0.0) if self.started_at else 0.0
+        speed = self.downloaded_bytes / elapsed if elapsed > 0 else 0.0
+        remaining = max(self.total_bytes - self.downloaded_bytes, 0)
+        data["elapsed_seconds"] = elapsed
+        data["eta_seconds"] = (
+            remaining / speed
+            if self.status == "downloading" and remaining and speed > 0
+            else 0.0
+        )
         return data
 
 
@@ -63,6 +76,7 @@ class DownloadProgressTracker:
             state.downloaded_bytes = 0
             state.total_bytes = 0
             state.started_at = time.monotonic()
+            state.finished_at = 0.0
 
     def update(
         self, filename: str, downloaded_bytes: int, total_bytes: int = 0
@@ -90,13 +104,18 @@ class DownloadProgressTracker:
             )
             state.status = "completed" if success else "failed"
             state.message = message or ("下载完成" if success else "下载失败")
+            now = time.monotonic()
+            if not state.started_at:
+                state.started_at = now
+            state.finished_at = now
             if success and state.total_bytes:
                 state.downloaded_bytes = max(state.downloaded_bytes, state.total_bytes)
 
     def file_states(self) -> list[dict]:
         """按入队顺序返回各文件状态（UI 列表用）"""
         with self._lock:
-            return [state.as_dict() for state in self._files.values()]
+            now = time.monotonic()
+            return [state.as_dict(now) for state in self._files.values()]
 
     def snapshot(self) -> dict:
         """聚合计数与活动文件信息；字段与设置页摘要消费方对齐"""
@@ -114,6 +133,8 @@ class DownloadProgressTracker:
                 "downloaded_bytes": 0,
                 "total_bytes": 0,
                 "speed_bps": 0.0,
+                "elapsed_seconds": 0.0,
+                "eta_seconds": 0.0,
                 "message": "暂无下载任务",
             }
 
@@ -148,6 +169,21 @@ class DownloadProgressTracker:
         last_terminal = next(
             (s for s in reversed(states) if s.status in ("completed", "failed")), None
         )
+        started_times = [s.started_at for s in states if s.started_at]
+        if started_times:
+            end_time = now if active else max(
+                (s.finished_at for s in states if s.finished_at), default=now
+            )
+            elapsed_seconds = max(end_time - min(started_times), 0.0)
+        else:
+            elapsed_seconds = 0.0
+        downloaded_bytes = sum(s.downloaded_bytes for s in states)
+        total_bytes = sum(s.total_bytes for s in states)
+        eta_seconds = (
+            max(total_bytes - downloaded_bytes, 0) / speed
+            if active and total_bytes > downloaded_bytes and speed > 0
+            else 0.0
+        )
         return {
             "status": status,
             "filename": filename,
@@ -155,8 +191,10 @@ class DownloadProgressTracker:
             "downloading": counts["downloading"],
             "completed": counts["completed"],
             "failed": counts["failed"],
-            "downloaded_bytes": sum(s.downloaded_bytes for s in states),
-            "total_bytes": sum(s.total_bytes for s in states),
+            "downloaded_bytes": downloaded_bytes,
+            "total_bytes": total_bytes,
             "speed_bps": speed,
+            "elapsed_seconds": elapsed_seconds,
+            "eta_seconds": eta_seconds,
             "message": last_terminal.message if last_terminal else "",
         }
