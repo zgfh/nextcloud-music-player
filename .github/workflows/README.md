@@ -51,14 +51,14 @@ NO_PROXY=127.0.0.1,localhost,::1 no_proxy=127.0.0.1,localhost,::1 \
 | Job | 命令 | 产物 |
 |---|---|---|
 | build-android | `flet build apk` | `.apk` |
-| build-linux | `flet build linux` | bundle 目录打 tar.gz（apt 装 gstreamer 供 flet-audio） |
+| build-linux | `flet build linux` | x64 / ARM64 runner 原生构建，bundle 目录分别打 tar.gz（apt 装 gstreamer 供 flet-audio） |
 | build-windows | `flet build windows` | Release 目录打 zip（`PYTHONUTF8=1` 防 emoji 编码崩溃） |
-| build-macos | `flet build macos` | `.app` 打 zip（ad-hoc 签名，分发需重签） |
+| build-macos | `flet build macos --arch arm64/x64` | Apple Silicon / Intel `.app` 分别打 zip（ad-hoc 签名，分发需重签） |
 | build-ios | `flet build ios-simulator` | 模拟器 `.app` 打 zip（免签名编译验证） |
 
   - 所有 upload-artifact 均 `if-no-files-found: error`，产物缺失直接失败
 - `publish-dev`：**仅 main push** 触发，创建 `dev-{sha}` 预发布；PR 不刷 release
-- `publish-release`：GitHub Release 发布时把 5 平台产物挂到 Release
+- `publish-release`：GitHub Release 发布时把各平台产物挂到 Release；macOS 和 Linux 均提供 ARM64、x64 两种架构
 
 **iOS 真机签名包**：CI 无证书不出正式 IPA，由本地 `scripts/deploy_iso.sh`（自动签名 + 装机 + 续签）完成。
 
@@ -71,7 +71,7 @@ NO_PROXY=127.0.0.1,localhost,::1 no_proxy=127.0.0.1,localhost,::1 \
 ## 发布流程
 
 ### 开发版本
-push 到 main 即自动发布 `dev-{commit-sha}` 预发布（含 5 平台产物）。
+push 到 main 即自动发布 `dev-{commit-sha}` 预发布（macOS、Linux 均含 ARM64 和 x64 产物）。
 
 ### 正式版本
 

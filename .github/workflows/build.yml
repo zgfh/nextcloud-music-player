@@ -78,7 +78,15 @@ jobs:
 
   build-linux:
     needs: test
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
@@ -110,14 +118,14 @@ jobs:
 
     - name: Package Linux app
       run: |
-        tar -czf nextcloud-music-player-linux-x64.tar.gz \
-          -C build/flutter/build/linux/x64/release bundle
+        tar -czf nextcloud-music-player-linux-${{ matrix.arch }}.tar.gz \
+          -C build/flutter/build/linux/${{ matrix.arch }}/release bundle
 
     - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: linux-build
-        path: nextcloud-music-player-linux-x64.tar.gz
+        name: linux-build-${{ matrix.arch }}
+        path: nextcloud-music-player-linux-${{ matrix.arch }}.tar.gz
         if-no-files-found: error
         retention-days: 7
 
@@ -165,6 +173,10 @@ jobs:
 
   build-macos:
     needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -187,18 +199,18 @@ jobs:
 
     # CI 无开发者证书，走 ad-hoc 签名（可本地运行，分发需重签）
     - name: Build macOS app
-      run: flet build macos --yes
+      run: flet build macos --arch ${{ matrix.arch }} --yes
 
     - name: Package macOS app
       run: |
         APP=$(find build/flutter/build/macos/Build/Products/Release -name "*.app" -maxdepth 1 | head -1)
-        ditto -c -k --keepParent "$APP" nextcloud-music-player-macos.zip
+        ditto -c -k --keepParent "$APP" nextcloud-music-player-macos-${{ matrix.arch }}.zip
 
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: macos-build
-        path: nextcloud-music-player-macos.zip
+        name: macos-build-${{ matrix.arch }}
+        path: nextcloud-music-player-macos-${{ matrix.arch }}.zip
         if-no-files-found: error
         retention-days: 7
 
@@ -258,7 +270,7 @@ jobs:
         path: artifacts
 
     - name: Create development release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: dev-${{ github.sha }}
         name: Development Build ${{ github.sha }}
@@ -268,7 +280,9 @@ jobs:
           This is an automated development release. Use at your own risk.
 
           **📦 Available Downloads:**
-          - **Desktop**: Linux (tar.gz), Windows (zip), macOS (zip, ad-hoc signed)
+          - **Linux**: x64 / ARM64（tar.gz）
+          - **macOS**: Apple Silicon arm64 / Intel x64（zip，ad-hoc signed）
+          - **Windows**: x64（zip）
           - **Mobile**: Android APK, iOS Simulator app (zip)
 
           **📱 iOS 设备安装：** 正式签名 IPA 请使用本地 `scripts/deploy_iso.sh` 构建（需要 Apple 开发者证书）。
@@ -277,9 +291,9 @@ jobs:
           ${{ github.event.head_commit.message }}
         files: |
           artifacts/android-build/*.apk
-          artifacts/linux-build/*.tar.gz
+          artifacts/linux-build-*/*.tar.gz
           artifacts/windows-build/*.zip
-          artifacts/macos-build/*.zip
+          artifacts/macos-build-*/*.zip
           artifacts/ios-build/*.zip
         prerelease: true
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -300,12 +314,12 @@ jobs:
         path: artifacts
 
     - name: Upload release assets
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: |
           artifacts/android-build/*.apk
-          artifacts/linux-build/*.tar.gz
+          artifacts/linux-build-*/*.tar.gz
           artifacts/windows-build/*.zip
-          artifacts/macos-build/*.zip
+          artifacts/macos-build-*/*.zip
           artifacts/ios-build/*.zip
         token: ${{ secrets.GITHUB_TOKEN }}

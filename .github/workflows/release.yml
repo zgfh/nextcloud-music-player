@@ -58,8 +58,10 @@ jobs:
         
         #### 桌面平台
         - **Windows**: `.msi` 文件 - 适用于 Windows 10/11
-        - **macOS**: `.dmg` 文件 - 适用于 macOS 10.14+
-        - **Linux**: `.deb` 文件 - 适用于 Ubuntu/Debian 系统
+        - **macOS Apple Silicon**: `macos-arm64.zip` - 适用于 M 系列芯片
+        - **macOS Intel**: `macos-x64.zip` - 适用于 Intel 芯片
+        - **Linux ARM64**: `linux-arm64.tar.gz` - 适用于 ARM64 Linux
+        - **Linux x64**: `linux-x64.tar.gz` - 适用于 Intel/AMD 64 位 Linux
         
         #### 移动平台
         - **iOS**: Xcode 项目文件 - 需要自行编译和签名

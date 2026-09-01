@@ -438,7 +438,8 @@ uv run flet test ios --no-swift-package-manager --device-id <UDID> --tests-dir t
 uv run python -m nextcloud_music_player
 
 # 或使用 flet build 出各平台包（需 Flutter 3.44.x）
-uv run flet build macos     # macOS（.app）
+uv run flet build macos --arch arm64  # macOS Apple Silicon（.app）
+uv run flet build macos --arch x64    # macOS Intel（.app）
 uv run flet build linux     # Linux（bundle 目录）
 uv run flet build windows   # Windows（exe 目录）
 uv run flet build apk       # Android APK
@@ -456,7 +457,7 @@ PR 与 main push 会触发三条工作流（详见 [.github/workflows/README.md]
 
 - **Code Quality**：flake8 语法门禁 + black/isort 格式检查（阻塞），mypy、bandit/safety（非阻塞）
 - **E2E Tests**：全量 pytest，随后在 macOS runner 的 iOS 模拟器上跑 `flet test`（flet-e2e job 因上文提到的上游收尾 bug 暂时 `continue-on-error`）
-- **Build and Release**：`flet build` 出 5 平台产物（Android APK / iOS 模拟器验证包 / macOS / Linux / Windows），产物上传为 artifact；main push 额外发布 dev release，正式版随 GitHub Release 发布（`release.yml` 在 v* tag 时自动生成 changelog 和 Release）
+- **Build and Release**：`flet build` 出 Android APK、iOS 模拟器验证包、Windows x64，以及 macOS/Linux 的 ARM64、x64 双架构产物；main push 额外发布 dev release，正式版随 GitHub Release 发布（`release.yml` 在 v* tag 时自动生成 changelog 和 Release）
 
 ## 📄 许可证
 
