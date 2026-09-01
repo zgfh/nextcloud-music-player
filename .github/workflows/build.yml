@@ -214,8 +214,10 @@ jobs:
         pip install -e . "flet==${FLET_VERSION}" "flet-audio==${FLET_VERSION}" "flet-cli==${FLET_VERSION}"
 
     # CI 无开发者证书，走 ad-hoc 签名（可本地运行，分发需重签）
+    # runner 已与目标架构一致。Flet 0.86.5 显式指定单一 x64 时会错误进入
+    # 多架构 Python 包合并流程，因此直接构建当前 runner 的原生架构。
     - name: Build macOS app
-      run: flet build macos --arch ${{ matrix.arch }} --yes
+      run: flet build macos --yes
 
     - name: Package macOS app
       run: |

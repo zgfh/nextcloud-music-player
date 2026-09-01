@@ -438,8 +438,7 @@ uv run flet test ios --no-swift-package-manager --device-id <UDID> --tests-dir t
 uv run python -m nextcloud_music_player
 
 # 或使用 flet build 出各平台包（需 Flutter 3.44.x）
-uv run flet build macos --arch arm64  # macOS Apple Silicon（.app）
-uv run flet build macos --arch x64    # macOS Intel（.app）
+uv run flet build macos     # macOS（按当前机器原生架构生成 .app）
 uv run flet build linux     # Linux（bundle 目录）
 uv run flet build windows   # Windows（exe 目录）
 uv run flet build apk       # Android APK

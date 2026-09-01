@@ -53,7 +53,7 @@ NO_PROXY=127.0.0.1,localhost,::1 no_proxy=127.0.0.1,localhost,::1 \
 | build-android | `flet build apk` | `.apk` |
 | build-linux | `flet build linux` | x64 / ARM64 runner 原生构建，bundle 目录分别打 tar.gz（apt 装 gstreamer 供 flet-audio） |
 | build-windows | `flet build windows` | Release 目录打 zip（`PYTHONUTF8=1` 防 emoji 编码崩溃） |
-| build-macos | `flet build macos --arch arm64/x64` | Apple Silicon / Intel `.app` 分别打 zip（ad-hoc 签名，分发需重签） |
+| build-macos | `flet build macos` | Apple Silicon / Intel runner 原生构建，`.app` 分别打 zip（ad-hoc 签名，分发需重签） |
 | build-ios | `flet build ios-simulator` | 模拟器 `.app` 打 zip（免签名编译验证） |
 
   - 所有 upload-artifact 均 `if-no-files-found: error`，产物缺失直接失败
