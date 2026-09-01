@@ -369,9 +369,9 @@ class MusicService:
             return ""
 
     async def download_file(self, file_path: str, filename: str) -> bool:
-        """下载单个文件；失败抛出异常（既有调用方依赖此语义）"""
+        """下载单个文件，成功返回 True，失败返回 False。"""
         self.download_progress.enqueue(filename)
-        return await self._download_one(file_path, filename, raise_on_error=True)
+        return await self._download_one(file_path, filename)
 
     async def download_batch(
         self, items: List[Tuple[str, str]], on_complete=None
