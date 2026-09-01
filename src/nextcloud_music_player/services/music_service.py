@@ -18,7 +18,11 @@ class MusicService:
     """音乐服务 - 处理音乐文件、播放列表、同步等业务逻辑"""
 
     def __init__(
-        self, music_library, nextcloud_client, config_manager, lyrics_service=None,
+        self,
+        music_library,
+        nextcloud_client,
+        config_manager,
+        lyrics_service=None,
         source_clients=None,
     ):
         """
@@ -84,14 +88,26 @@ class MusicService:
         return [value] if value else ([fallback] if fallback else [])
 
     def get_sync_folders(self, source_type: str) -> List[str]:
-        base = "connection" if source_type == "nextcloud" else f"connection.{source_type}"
+        base = (
+            "connection" if source_type == "nextcloud" else f"connection.{source_type}"
+        )
         folders = self.config_manager.get(f"{base}.sync_folders", None)
         default = self.config_manager.get(f"{base}.default_sync_folder", "")
         # Google Drive 的空字符串表示根目录，显式保留一个根目录任务。
         if folders is None:
-            return self._normalise_folders(default) or ([""] if source_type == "gdrive" else [])
+            return self._normalise_folders(default) or (
+                [""] if source_type == "gdrive" else []
+            )
         result = self._normalise_folders(folders)
         return result or ([""] if source_type == "gdrive" and default == "" else [])
+
+    def get_sync_folder_label(self, source_type: str, folder: str) -> str:
+        """返回同步目录的友好名称；Google Drive 内部仍使用文件夹 ID。"""
+        if source_type == "gdrive":
+            labels = self.config_manager.get("connection.gdrive.sync_folder_labels", {})
+            if isinstance(labels, dict):
+                return str(labels.get(folder, folder or "/"))
+        return folder or "/"
 
     async def sync_all_sources(self) -> List[Dict[str, Any]]:
         """同步所有已连接来源的所有配置目录，汇总进同一个音乐库。"""
@@ -112,25 +128,43 @@ class MusicService:
                         item["source_type"] = source_type
                         item["sync_folder"] = item.get("sync_folder", folder)
                         self.music_library.add_remote_song(
-                            item["name"], item.get("path", ""), item.get("size", 0),
+                            item["name"],
+                            item.get("path", ""),
+                            item.get("size", 0),
                             item.get("modified", ""),
                             sync_folder=item.get("sync_folder", folder),
                             source_type=source_type,
                         )
                         merged.append(item)
-                    report.append({
-                        "source_type": source_type, "folder": folder,
-                        "song_count": len(files), "synced_count": len(files),
-                        "status": "success", "error": "",
-                    })
+                    report.append(
+                        {
+                            "source_type": source_type,
+                            "folder": folder,
+                            "folder_label": self.get_sync_folder_label(
+                                source_type, folder
+                            ),
+                            "song_count": len(files),
+                            "synced_count": len(files),
+                            "status": "success",
+                            "error": "",
+                        }
+                    )
                 except Exception as ex:
                     logger.error("同步 %s:%s 失败: %s", source_type, folder, ex)
                     errors.append(f"{source_type}({folder or '/'}): {ex}")
-                    report.append({
-                        "source_type": source_type, "folder": folder,
-                        "song_count": 0, "synced_count": 0,
-                        "status": "error", "error": str(ex),
-                    })
+                    report.append(
+                        {
+                            "source_type": source_type,
+                            "folder": folder,
+                            "folder_label": self.get_sync_folder_label(
+                                source_type, folder
+                            ),
+                            "song_count": 0,
+                            "synced_count": 0,
+                            "status": "error",
+                            "error": str(ex),
+                        }
+                    )
         self.last_sync_report = report
         if not merged and errors:
             raise Exception("；".join(errors))
@@ -207,9 +241,7 @@ class MusicService:
 
             # 获取远程文件列表
             music_files = await self.nextcloud_client.list_music_files(sync_folder)
-            source_type = self.config_manager.get(
-                "connection.source_type", "nextcloud"
-            )
+            source_type = self.config_manager.get("connection.source_type", "nextcloud")
 
             # 通知同步文件夹变化
             if self._sync_folder_change_callback:
@@ -421,42 +453,65 @@ class MusicService:
 
         local_path = self.music_library.music_dir / filename
         song_info = self.music_library.get_song_info(filename) or {}
-        source_type = song_info.get("source_type")
-        client = self.source_clients.get(source_type) if source_type else None
-        client = client or self.nextcloud_client
-        if not client:
-            raise Exception(f"歌曲来源 {source_type or '未知'} 未连接")
-
-        native_result = await self._download_native(
-            file_path, filename, local_path, client=client
-        )
-        if native_result is not None:
-            success = native_result[0]
-        else:
-            tracker.mark_downloading(filename)
-            download_method = client.download_file
-            parameters = inspect.signature(download_method).parameters.values()
-            supports_progress = any(
-                p.name == "progress_callback" or p.kind == p.VAR_KEYWORD
-                for p in parameters
+        origins = list(song_info.get("origins") or [])
+        if not origins:
+            origins = [{
+                "source_type": song_info.get("source_type"),
+                "remote_path": song_info.get("remote_path", file_path),
+            }]
+        candidates = [
+            (origin, self.source_clients.get(origin.get("source_type")))
+            for origin in origins
+            if self.source_clients.get(origin.get("source_type"))
+        ]
+        if not candidates and self.nextcloud_client:
+            candidates = [(origins[0], self.nextcloud_client)]
+        if not candidates:
+            source_names = ", ".join(
+                dict.fromkeys(str(o.get("source_type") or "未知") for o in origins)
             )
-            if supports_progress:
-                success = await download_method(
-                    file_path,
-                    filename,
-                    local_path,
-                    progress_callback=lambda downloaded, total=0: tracker.update(
-                        filename, downloaded, total
-                    ),
+            raise Exception(f"歌曲来源未连接: {source_names}")
+
+        last_error = None
+        for origin, client in candidates:
+            origin_path = origin.get("remote_path") or file_path
+            try:
+                native_result = await self._download_native(
+                    origin_path, filename, local_path, client=client
                 )
-            else:
-                success = await download_method(file_path, filename, local_path)
-
-        if success:
-            await self._post_download(filename, local_path, file_path)
-
-        tracker.finish(filename, bool(success))
-        return bool(success)
+                if native_result is not None:
+                    success = native_result[0]
+                else:
+                    tracker.mark_downloading(filename)
+                    download_method = client.download_file
+                    parameters = inspect.signature(download_method).parameters.values()
+                    supports_progress = any(
+                        p.name == "progress_callback" or p.kind == p.VAR_KEYWORD
+                        for p in parameters
+                    )
+                    if supports_progress:
+                        success = await download_method(
+                            origin_path,
+                            filename,
+                            local_path,
+                            progress_callback=lambda downloaded, total=0: tracker.update(
+                                filename, downloaded, total
+                            ),
+                        )
+                    else:
+                        success = await download_method(origin_path, filename, local_path)
+                if success:
+                    await self._post_download(filename, local_path, origin_path)
+                    tracker.finish(filename, True)
+                    return True
+                last_error = RuntimeError("下载返回失败")
+            except Exception as ex:
+                last_error = ex
+                logger.warning(
+                    "从 %s 下载 %s 失败，尝试备用来源: %s",
+                    origin.get("source_type"), filename, ex,
+                )
+        raise last_error or RuntimeError("所有来源下载失败")
 
     async def _post_download(self, filename: str, local_path, file_path: str) -> None:
         """下载成功后的收尾：转码、标记已下载、抓取歌词。"""

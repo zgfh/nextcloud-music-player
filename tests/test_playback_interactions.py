@@ -11,7 +11,10 @@
 import asyncio
 from types import SimpleNamespace
 
+import flet as ft
+
 from fakes import add_remote_song
+from nextcloud_music_player.services.playback_controller import PlayMode
 
 
 async def test_play_downloaded_song_skips_download(playback_env):
@@ -25,6 +28,7 @@ async def test_play_downloaded_song_skips_download(playback_env):
     assert playback_env.player.loaded_files[-1].endswith("local.mp3")
     assert playback_env.player.stopped_count == 0
     assert playback_env.view.status_label.value == "播放中"
+    assert playback_env.view.playback_control_component.play_icon.name == ft.Icons.PAUSE
 
 
 async def test_existing_local_file_wins_even_with_stale_metadata(playback_env):
@@ -115,6 +119,88 @@ async def test_undownloaded_song_shows_downloading_status(playback_env):
     assert ok is True
     assert playback_env.player.loaded_files[-1].endswith("slow.mp3")
     assert playback_env.view.status_label.value == "播放中"
+
+
+async def test_download_for_play_immediately_updates_playlist_icon(playback_env):
+    """在线播放触发下载后，播放列表应立即改为绿色已下载状态。"""
+    info = add_remote_song(playback_env.library, "online.mp3")
+    playlist_data = {
+        "playlists": [{
+            "id": 1,
+            "name": "默认播放列表",
+            "songs": [{"name": "online.mp3", "info": info, "state": {}}],
+            "current_index": 0,
+        }],
+        "current_playlist_id": 1,
+        "next_id": 2,
+    }
+    playback_env.config.load_playlists = lambda: playlist_data
+    playback_env.config.save_playlists = lambda data: playlist_data.update(data)
+    playback_env.view.playlist_manager.invalidate_cache()
+    playback_env.view.playlist_component.refresh_display()
+
+    before_icon = (
+        playback_env.view.playlist_component.song_list.controls[0]
+        .content.controls[-1]
+    )
+    assert before_icon.icon == ft.Icons.CLOUD_DOWNLOAD_OUTLINED
+
+    ok = await playback_env.view.play_selected_song(info)
+
+    assert ok is True
+    after_icon = (
+        playback_env.view.playlist_component.song_list.controls[0]
+        .content.controls[-1]
+    )
+    assert after_icon.icon == ft.Icons.TASK_ALT
+
+
+async def test_playing_song_prefetches_connected_next_song(playback_env):
+    """当前歌曲开始播放后，应静默下载同一在线来源的下一首。"""
+    first = add_remote_song(playback_env.library, "first.mp3", downloaded=True)
+    second = add_remote_song(playback_env.library, "second.mp3")
+    playlist = {
+        "id": 1,
+        "songs": [
+            {"name": "first.mp3", "info": first, "state": {}},
+            {"name": "second.mp3", "info": second, "state": {}},
+        ],
+        "current_index": 0,
+    }
+    playback_env.view.playlist_manager._current_playlist_cache = playlist
+    playback_env.view.playlist_manager.invalidate_cache = lambda: None
+    playback_env.view.play_mode = playback_env.view.playback_controller.play_mode = (
+        PlayMode.NORMAL
+    )
+
+    assert await playback_env.view.play_selected_song(first) is True
+    assert playback_env.view._prefetch_task is not None
+    assert await playback_env.view._prefetch_task is True
+
+    assert playback_env.library.get_song_info("second.mp3")["is_downloaded"] is True
+    assert ("/remote/second.mp3", "second.mp3") in playback_env.client.download_calls
+
+
+async def test_next_song_is_not_prefetched_when_source_is_offline(playback_env):
+    first = add_remote_song(playback_env.library, "first.mp3", downloaded=True)
+    second = add_remote_song(playback_env.library, "second.mp3")
+    playback_env.view.playlist_manager._current_playlist_cache = {
+        "id": 1,
+        "songs": [
+            {"name": "first.mp3", "info": first, "state": {}},
+            {"name": "second.mp3", "info": second, "state": {}},
+        ],
+        "current_index": 0,
+    }
+    playback_env.view.playlist_manager.invalidate_cache = lambda: None
+    playback_env.view.play_mode = playback_env.view.playback_controller.play_mode = (
+        PlayMode.NORMAL
+    )
+    playback_env.music_service.source_clients.clear()
+
+    assert await playback_env.view.play_selected_song(first) is True
+    assert playback_env.view._prefetch_task is None
+    assert playback_env.library.get_song_info("second.mp3")["is_downloaded"] is False
 
 
 async def test_new_click_supersedes_slow_download(playback_env):

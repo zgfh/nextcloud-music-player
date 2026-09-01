@@ -53,6 +53,7 @@ class ConnectionView:
         self._built = False
         self._save_timer = None
         self._auto_connect_started = False  # 自动连接每会话只触发一次
+        self._auto_connect_in_progress = False
         self.source_clients = app_context.setdefault("source_clients", {})
 
     def rebuild(self):
@@ -226,9 +227,14 @@ class ConnectionView:
         self.sync_folder_input = _dark_input(
             key="nextcloud_sync_folder",
             label="同步文件夹（多个路径用换行分隔）",
-            value="\n".join(config.get("sync_folders") or [config.get(
-                "default_sync_folder", "/mp3/音乐/当月抖音热播流行歌曲484首/"
-            )]),
+            value="\n".join(
+                config.get("sync_folders")
+                or [
+                    config.get(
+                        "default_sync_folder", "/mp3/音乐/当月抖音热播流行歌曲484首/"
+                    )
+                ]
+            ),
             hint_text="/Music\n/Podcasts",
             prefix_icon=ft.Icons.FOLDER_OUTLINED,
             on_change=self._on_sync_folder_changed,
@@ -282,9 +288,10 @@ class ConnectionView:
         self.smb_sync_folder_input = _dark_input(
             key="smb_sync_folders",
             label="同步文件夹（多个路径用换行分隔）",
-            value="\n".join(smb_config.get("sync_folders") or [
-                smb_config.get("default_sync_folder", "/")
-            ]),
+            value="\n".join(
+                smb_config.get("sync_folders")
+                or [smb_config.get("default_sync_folder", "/")]
+            ),
             hint_text="/\n/Music",
             multiline=True,
             min_lines=2,
@@ -334,6 +341,20 @@ class ConnectionView:
             # 避免连接页已构建后设置变更不生效
             "api_base_url": gdrive_config.get("api_base_url", ""),
         }
+        self._gdrive_folder_ids = list(
+            dict.fromkeys(
+                str(folder)
+                for folder in (
+                    gdrive_config.get("sync_folders")
+                    or (
+                        [self._gdrive_settings["sync_folder"]]
+                        if self._gdrive_settings["sync_folder"]
+                        else []
+                    )
+                )
+            )
+        )
+        self._gdrive_folder_labels = dict(gdrive_config.get("sync_folder_labels") or {})
 
         self.gdrive_client_id_input = _dark_input(
             key="gdrive_client_id",
@@ -381,9 +402,10 @@ class ConnectionView:
         self.gdrive_sync_folder_input = _dark_input(
             key="gdrive_sync_folder",
             label="同步文件夹（多个文件夹用换行分隔）",
-            value="\n".join(gdrive_config.get("sync_folders") or ([
-                self._gdrive_settings["sync_folder"]
-            ] if self._gdrive_settings["sync_folder"] else [])),
+            value="\n".join(
+                self._gdrive_folder_labels.get(folder, folder)
+                for folder in self._gdrive_folder_ids
+            ),
             hint_text="点击「浏览」逐个添加；留空表示根目录",
             prefix_icon=ft.Icons.FOLDER_OUTLINED,
             multiline=True,
@@ -613,6 +635,8 @@ class ConnectionView:
         )
         if auto_connect_requested and not self._auto_connect_started:
             self._auto_connect_started = True
+            self._auto_connect_in_progress = True
+            self._set_connecting_state(True)
             asyncio.create_task(self._auto_connect_all_sources())
 
         return self._container
@@ -641,16 +665,20 @@ class ConnectionView:
     @staticmethod
     def _parse_folder_lines(value: str) -> list[str]:
         """把换行分隔的目录转为稳定去重列表。"""
-        return list(dict.fromkeys(
-            line.strip() for line in str(value or "").splitlines() if line.strip()
-        ))
+        return list(
+            dict.fromkeys(
+                line.strip() for line in str(value or "").splitlines() if line.strip()
+            )
+        )
 
     @staticmethod
     def _source_auto_connect_enabled(source_type: str, config: dict) -> bool:
         """读取来源独立开关；旧全局开关仅兼容为 Nextcloud。"""
         section = config.get(source_type, {})
         if source_type == "nextcloud":
-            return bool(section.get("auto_connect") or config.get("auto_connect", False))
+            return bool(
+                section.get("auto_connect") or config.get("auto_connect", False)
+            )
         return bool(section.get("auto_connect", False))
 
     def _on_auto_connect_changed(self, e):
@@ -668,21 +696,26 @@ class ConnectionView:
         await asyncio.sleep(1)
         config = self.app_context["config_manager"].get("connection", {})
         sources = [
-            source for source in ("nextcloud", "smb", "gdrive")
+            source
+            for source in ("nextcloud", "smb", "gdrive")
             if self._source_auto_connect_enabled(source, config)
         ]
         if not sources:
+            self._auto_connect_in_progress = False
+            self._update_connection_status(False)
             return
         results = await asyncio.gather(
             *(self._auto_connect_source(source) for source in sources),
             return_exceptions=True,
         )
         failures = [
-            f"{source}: {result}" for source, result in zip(sources, results)
+            f"{source}: {result}"
+            for source, result in zip(sources, results)
             if isinstance(result, Exception)
         ]
         current = self._current_source_type()
         self.is_connected = current in self.source_clients
+        self._auto_connect_in_progress = False
         self._update_connection_status(self.is_connected)
         if failures:
             self.show_message("部分来源自动连接失败：" + "；".join(failures), "warning")
@@ -846,9 +879,7 @@ class ConnectionView:
     def _gdrive_api_base_url(self) -> str:
         """实时读取设置页配置的自定义 API 地址（留空 = Google 官方端点）"""
         return str(
-            self.app_context["config_manager"].get(
-                "connection.gdrive.api_base_url", ""
-            )
+            self.app_context["config_manager"].get("connection.gdrive.api_base_url", "")
             or ""
         ).strip()
 
@@ -878,7 +909,9 @@ class ConnectionView:
                 # 浏览器拉起失败（无默认浏览器/测试宿主）不应终止授权：
                 # loopback 接收器继续等待，用户可手动打开授权页
                 logger.warning(f"打开浏览器失败，请手动访问授权页: {launch_ex}")
-                self.show_message(f"无法自动打开浏览器，请手动访问：{auth_url}", "warning")
+                self.show_message(
+                    f"无法自动打开浏览器，请手动访问：{auth_url}", "warning"
+                )
 
             # 阻塞等待放到线程，避免卡住事件循环（用户最多有 5 分钟完成授权）
             code = await asyncio.to_thread(receiver.wait_for_code, 300.0)
@@ -1126,7 +1159,10 @@ class ConnectionView:
             cm.set("connection.username", self.username_input.value.strip())
             nextcloud_folders = self._parse_folder_lines(self.sync_folder_input.value)
             cm.set("connection.sync_folders", nextcloud_folders)
-            cm.set("connection.default_sync_folder", nextcloud_folders[0] if nextcloud_folders else "")
+            cm.set(
+                "connection.default_sync_folder",
+                nextcloud_folders[0] if nextcloud_folders else "",
+            )
             cm.set(
                 f"connection.{source_type}.auto_connect",
                 self.auto_connect_switch.value,
@@ -1146,7 +1182,9 @@ class ConnectionView:
                 self.smb_host_input.value.strip() or s.get("host", ""),
             )
             cm.set("connection.smb.share", s.get("share", ""))
-            smb_folders = self._parse_folder_lines(self.smb_sync_folder_input.value) or ["/"]
+            smb_folders = self._parse_folder_lines(
+                self.smb_sync_folder_input.value
+            ) or ["/"]
             cm.set("connection.smb.default_sync_folder", smb_folders[0])
             cm.set("connection.smb.sync_folders", smb_folders)
             cm.set("connection.smb.username", s.get("username", ""))
@@ -1186,13 +1224,33 @@ class ConnectionView:
                 )
             except (TypeError, ValueError):
                 cm.set("connection.gdrive.token_expiry", 0)
+            # 兼容旧版可直接输入 Drive 文件夹 ID 的用法。正常通过浏览器选择时，
+            # 输入框显示的是 labels；只有用户手动改写内容时才把它视为 ID。
+            displayed_folders = [
+                self._gdrive_folder_labels.get(folder, folder)
+                for folder in self._gdrive_folder_ids
+            ]
+            entered_folders = self._parse_folder_lines(
+                self.gdrive_sync_folder_input.value
+            )
+            if entered_folders != displayed_folders:
+                self._gdrive_folder_ids = entered_folders
+                self._gdrive_folder_labels = {
+                    folder: label
+                    for folder, label in self._gdrive_folder_labels.items()
+                    if folder in self._gdrive_folder_ids
+                }
             cm.set(
                 "connection.gdrive.default_sync_folder",
-                (self._parse_folder_lines(self.gdrive_sync_folder_input.value) or [""])[0],
+                (self._gdrive_folder_ids or [""])[0],
             )
             cm.set(
                 "connection.gdrive.sync_folders",
-                self._parse_folder_lines(self.gdrive_sync_folder_input.value),
+                self._gdrive_folder_ids,
+            )
+            cm.set(
+                "connection.gdrive.sync_folder_labels",
+                self._gdrive_folder_labels,
             )
 
             cm.save_config()
@@ -1203,7 +1261,7 @@ class ConnectionView:
     def _update_connection_status(self, connected: bool):
         """更新连接状态显示（霓虹状态胶囊）"""
         if connected:
-            self.status_text.value = "已连接 · ONLINE"
+            self.status_text.value = "已连接"
             self.status_text.color = Color.SUCCESS_TEXT
             self.status_dot.bgcolor = Color.SUCCESS
             self.status_dot.shadow = glow(Color.SUCCESS, radius=8, alpha="80")
@@ -1212,7 +1270,7 @@ class ConnectionView:
             self.connect_button.disabled = True
             self.disconnect_button.disabled = False
         else:
-            self.status_text.value = "未连接 · OFFLINE"
+            self.status_text.value = "未连接"
             self.status_text.color = Color.DANGER_TEXT
             self.status_dot.bgcolor = Color.DANGER
             self.status_dot.shadow = glow(Color.DANGER, radius=8, alpha="80")
@@ -1225,12 +1283,14 @@ class ConnectionView:
     def _set_connecting_state(self, connecting: bool):
         """连接过程中在顶部状态条实时反馈（避免提示藏在屏幕底部看不见）"""
         if connecting:
-            self.status_text.value = "连接中 · SYNCING"
+            self.status_text.value = "连接中"
             self.status_text.color = Color.INFO_TEXT
             self.status_dot.bgcolor = Color.INFO
             self.status_dot.shadow = glow(Color.INFO, radius=8, alpha="80")
             self.status_container.bgcolor = tint(Color.INFO, "1F")
             self.status_container.border = ft.Border.all(1, tint(Color.INFO, "40"))
+            self.connect_button.disabled = True
+            self.disconnect_button.disabled = True
         self.page.update()
 
     def show_message(self, message: str, message_type: str = "info"):
@@ -1239,6 +1299,9 @@ class ConnectionView:
 
     def on_view_activated(self):
         """视图激活时检查连接状态"""
+        if self._auto_connect_in_progress:
+            self._set_connecting_state(True)
+            return
         source_type = self._current_source_type()
         self.is_connected = source_type in self.source_clients
         self._update_connection_status(self.is_connected)
@@ -1283,9 +1346,7 @@ class ConnectionView:
             self.app_context["nextcloud_client"] = client
             self.source_clients["gdrive"] = client
             if self.app_context.get("music_service"):
-                self.app_context["music_service"].update_source_client(
-                    "gdrive", client
-                )
+                self.app_context["music_service"].update_source_client("gdrive", client)
             if self.app_context.get("lyrics_service"):
                 self.app_context["lyrics_service"].update_clients(
                     nextcloud_client=client
@@ -1308,37 +1369,60 @@ class ConnectionView:
             folder_input = self.gdrive_sync_folder_input
             config_key = "connection.gdrive.default_sync_folder"
             folders_key = "connection.gdrive.sync_folders"
+            folders = list(self._gdrive_folder_ids)
         elif self._current_source_type() == "smb":
             folder_input = self.smb_sync_folder_input
             config_key = "connection.smb.default_sync_folder"
             folders_key = "connection.smb.sync_folders"
+            folders = self._parse_folder_lines(folder_input.value)
         else:
             folder_input = self.sync_folder_input
             config_key = "connection.default_sync_folder"
             folders_key = "connection.sync_folders"
+            folders = self._parse_folder_lines(folder_input.value)
 
         from .folder_selector import FolderSelector
 
-        folders = self._parse_folder_lines(folder_input.value)
         current_folder = folders[-1] if folders else "/"
+        current_display = ""
+        if self._current_source_type() == "gdrive":
+            current_display = self._gdrive_folder_labels.get(current_folder, "")
         selector = FolderSelector(
             self.page,
-            source_client or self.source_clients.get(self._current_source_type())
+            source_client
+            or self.source_clients.get(self._current_source_type())
             or self.app_context["nextcloud_client"],
             current_folder,
+            initial_display_path=current_display,
         )
 
         def on_selected(path):
-            folders = self._parse_folder_lines(folder_input.value)
+            if self._current_source_type() == "gdrive":
+                folders = list(self._gdrive_folder_ids)
+            else:
+                folders = self._parse_folder_lines(folder_input.value)
             if path not in folders:
                 folders.append(path)
-            folder_input.value = "\n".join(folders)
+            display_path = selector.selected_display_path or path or "/"
+            if self._current_source_type() == "gdrive":
+                self._gdrive_folder_ids = folders
+                self._gdrive_folder_labels[path] = display_path
+                folder_input.value = "\n".join(
+                    self._gdrive_folder_labels.get(folder, folder) for folder in folders
+                )
+            else:
+                folder_input.value = "\n".join(folders)
             self.page.update()
-            self.show_message(f"已选择文件夹: {path or '/'}", "success")
+            self.show_message(f"已选择文件夹: {display_path}", "success")
             self.app_context["config_manager"].set(
                 config_key, folders[0] if folders else path
             )
             self.app_context["config_manager"].set(folders_key, folders)
+            if self._current_source_type() == "gdrive":
+                self.app_context["config_manager"].set(
+                    "connection.gdrive.sync_folder_labels",
+                    self._gdrive_folder_labels,
+                )
             self.app_context["config_manager"].save_config()
 
         selector.show_dialog(on_selected)

@@ -47,3 +47,70 @@ def test_remove_cached_songs_refuses_path_outside_music_directory(tmp_path):
 
     assert library.remove_cached_songs(["outside.mp3"]) == (0, 0)
     assert outside.exists()
+
+
+def test_cached_songs_count_uses_real_audio_files_on_disk(tmp_path):
+    library = MusicLibrary.__new__(MusicLibrary)
+    library.music_dir = tmp_path / "music"
+    library.music_dir.mkdir()
+    library.music_list_file = tmp_path / "music_list.json"
+    indexed = library.music_dir / "indexed.mp3"
+    orphan = library.music_dir / "orphan.flac"
+    stale = library.music_dir / "missing.mp3"
+    indexed.write_bytes(b"a" * 10)
+    orphan.write_bytes(b"b" * 20)
+    library.songs = {
+        "indexed.mp3": {"is_downloaded": True, "filepath": str(indexed)},
+        "missing.mp3": {"is_downloaded": True, "filepath": str(stale)},
+    }
+
+    cached = library.get_cached_songs()
+
+    assert [item["name"] for item in cached] == ["indexed.mp3", "orphan.flac"]
+    assert sum(item["size"] for item in cached) == 30
+
+
+def test_remove_orphaned_cached_song(tmp_path):
+    library = MusicLibrary.__new__(MusicLibrary)
+    library.music_dir = tmp_path / "music"
+    library.music_dir.mkdir()
+    library.music_list_file = tmp_path / "music_list.json"
+    orphan = library.music_dir / "orphan.mp3"
+    orphan.write_bytes(b"x" * 12)
+    library.songs = {}
+
+    assert library.remove_cached_songs(["orphan.mp3"]) == (1, 12)
+    assert not orphan.exists()
+
+
+def test_same_filename_keeps_multiple_origins_and_stable_primary(tmp_path):
+    library = MusicLibrary.__new__(MusicLibrary)
+    library.music_dir = tmp_path / "music"
+    library.music_dir.mkdir()
+    library.music_list_file = tmp_path / "music_list.json"
+    library.songs = {}
+
+    library.add_remote_song(
+        "same.mp3", "/next/same.mp3", source_type="nextcloud",
+        sync_folder="/Music",
+    )
+    library.add_remote_song(
+        "same.mp3", "drive-file-id", source_type="gdrive",
+        sync_folder="drive-folder-id",
+    )
+
+    song = library.songs["same.mp3"]
+    assert song["source_type"] == "nextcloud"
+    assert song["remote_path"] == "/next/same.mp3"
+    assert [(o["source_type"], o["remote_path"]) for o in song["origins"]] == [
+        ("nextcloud", "/next/same.mp3"),
+        ("gdrive", "drive-file-id"),
+    ]
+
+    # 重复同步同一来源只更新候选，不追加重复项。
+    library.add_remote_song(
+        "same.mp3", "drive-file-id", size=123, source_type="gdrive",
+        sync_folder="drive-folder-id",
+    )
+    assert len(song["origins"]) == 2
+    assert song["origins"][1]["size"] == 123

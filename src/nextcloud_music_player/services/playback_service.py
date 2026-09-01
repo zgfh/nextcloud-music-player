@@ -238,7 +238,10 @@ class PlaybackService:
                 # 特别是在播放完成后需要重新开始的情况下
                 try:
                     # 先停止当前播放（如果有的话）
-                    if self.current_song_state["is_playing"] or self.current_song_state["is_paused"]:
+                    if (
+                        self.current_song_state["is_playing"]
+                        or self.current_song_state["is_paused"]
+                    ):
                         logger.info("停止当前播放，准备重新开始")
                         stop_async = getattr(self.audio_player, "stop_async", None)
                         if stop_async is not None:

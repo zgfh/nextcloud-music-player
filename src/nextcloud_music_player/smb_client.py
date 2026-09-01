@@ -220,9 +220,8 @@ class SMBClient:
         text = f"{name}: {msg}" if msg else name
 
         # 服务器只接受 pysmb 无法协商的协议（SMB 3.1.1 / 强制签名或加密）
-        if (
-            "does not support any of the" in msg
-            or ("ProtocolError" in name and "dialect" in msg.lower())
+        if "does not support any of the" in msg or (
+            "ProtocolError" in name and "dialect" in msg.lower()
         ):
             return (
                 f"服务器 {self.host} 要求 SMB 3.1.1 或强制签名/加密，"

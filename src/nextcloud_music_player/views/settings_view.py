@@ -531,24 +531,36 @@ class SettingsView:
             detail = self._format_bytes(downloaded)
         else:
             detail = label
+        elapsed = state.get("elapsed_seconds", 0)
+        eta = state.get("eta_seconds", 0)
+        if elapsed and status == "downloading":
+            detail += f" · 用时 {self._format_duration(elapsed)}"
+            if eta:
+                detail += f" · 剩余约 {self._format_duration(eta)}"
+        elif elapsed and status in ("completed", "failed"):
+            detail += f" · 共 {self._format_duration(elapsed)}"
         return ft.Row(
             [
-                ft.Icon(icon, size=14, color=color),
+                ft.Icon(icon, size=18, color=color),
                 ft.Text(
                     state.get("filename", ""),
-                    size=FontSize.CAPTION,
-                    color=Color.TEXT_SECONDARY,
+                    size=FontSize.BODY,
+                    color=Color.TEXT_PRIMARY,
                     expand=True,
                     max_lines=1,
                     overflow=ft.TextOverflow.ELLIPSIS,
                 ),
                 ft.Text(
                     detail,
-                    size=FontSize.MICRO + 1,
-                    color=Color.TEXT_MUTED,
+                    size=FontSize.CAPTION,
+                    color=(
+                        color
+                        if status in ("downloading", "failed")
+                        else Color.TEXT_SECONDARY
+                    ),
                 ),
             ],
-            spacing=Space.SM,
+            spacing=Space.MD,
         )
 
     # ------------------------------------------------------------------
@@ -1057,6 +1069,15 @@ class SettingsView:
             value /= 1024
         return "0 B"
 
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        seconds = max(int(seconds or 0), 0)
+        hours, remainder = divmod(seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        if hours:
+            return f"{hours}:{minutes:02d}:{secs:02d}"
+        return f"{minutes:02d}:{secs:02d}"
+
     # ------------------------------------------------------------------
     # 下载进度刷新
     # ------------------------------------------------------------------
@@ -1084,13 +1105,28 @@ class SettingsView:
         downloaded = state["downloaded_bytes"]
         total = state["total_bytes"]
         speed = state["speed_bps"]
-        progress = min(downloaded / total, 1.0) if total else None
+        # ProgressBar.value=None 会显示持续滚动的不确定进度，只能用于确实
+        # 正在下载但服务端未返回 Content-Length 的场景。空闲/排队/终态必须静止。
+        if status == "downloading":
+            progress = min(downloaded / total, 1.0) if total else None
+        elif status == "completed" and state["completed"]:
+            progress = 1.0
+        else:
+            progress = 0.0
         filename = state["filename"] or "从文件页选择歌曲后，可在这里查看实时进度"
         progress_text = self._format_bytes(downloaded)
         if total:
             progress_text += f" / {self._format_bytes(total)}"
+            if status == "downloading":
+                progress_text += f" · {downloaded / total:.0%}"
         if status == "downloading" and speed:
             progress_text += f" · {self._format_bytes(speed)}/s"
+        elapsed = state.get("elapsed_seconds", 0)
+        eta = state.get("eta_seconds", 0)
+        if elapsed:
+            progress_text += f" · 用时 {self._format_duration(elapsed)}"
+        if status == "downloading" and eta:
+            progress_text += f" · 剩余约 {self._format_duration(eta)}"
         values = (
             labels.get(status, status),
             filename,
@@ -1122,6 +1158,8 @@ class SettingsView:
                     item["status"],
                     item["downloaded_bytes"],
                     item["total_bytes"],
+                    int(item.get("elapsed_seconds", 0)),
+                    int(item.get("eta_seconds", 0)),
                 )
                 for item in states
             )

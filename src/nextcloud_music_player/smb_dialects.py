@@ -110,7 +110,9 @@ def _make_negotiate_payload_class(revisions, negotiate_contexts=b""):
         # 头 64 + 固定 36 + 方言表 -> 按 8 字节对齐即为上下文偏移
         context_offset = _SMB2_HEADER_SIZE + 36 + len(dialect_bytes)
         context_offset += -context_offset % _NEGOTIATE_CONTEXT_ALIGN
-        padding = b"\x00" * (context_offset - _SMB2_HEADER_SIZE - 36 - len(dialect_bytes))
+        padding = b"\x00" * (
+            context_offset - _SMB2_HEADER_SIZE - 36 - len(dialect_bytes)
+        )
 
     class _SMB2NegotiateRequest(Structure):
         """[MS-SMB2] 2.2.3 SMB2 NEGOTIATE Request"""
@@ -203,19 +205,13 @@ def patch_two_stage_negotiate():
         if revision == SMB_2FF:
             self._nmp_phase2_sent = True
             if getattr(self, "_nmp_prefer_311", True):
-                logger.info(
-                    "服务器应答 SMB 2.???(0x02FF)，补发 SMB 3.1.1 NEGOTIATE"
-                )
+                logger.info("服务器应答 SMB 2.???(0x02FF)，补发 SMB 3.1.1 NEGOTIATE")
                 self._sendSMBMessage(
                     SMB2Message(_build_negotiate_311_request_payload())
                 )
             else:
-                logger.info(
-                    "服务器应答 SMB 2.???(0x02FF)，补发多方言 SMB2 NEGOTIATE"
-                )
-                self._sendSMBMessage(
-                    SMB2Message(_build_negotiate_request_payload())
-                )
+                logger.info("服务器应答 SMB 2.???(0x02FF)，补发多方言 SMB2 NEGOTIATE")
+                self._sendSMBMessage(SMB2Message(_build_negotiate_request_payload()))
             return
         if revision == SMB2_DIALECT_002 and not getattr(
             self, "_nmp_phase2_sent", False
@@ -319,9 +315,7 @@ def reset():
 
     structs.DIALECTS2[:] = BASE_DIALECTS2
     if _patched and _original_handle_negotiate is not None:
-        smb_base.SMB._handleNegotiateResponse_SMB2 = (
-            _original_handle_negotiate
-        )
+        smb_base.SMB._handleNegotiateResponse_SMB2 = _original_handle_negotiate
     _patched = False
     if _original_update_server_info is not None:
         smb_base.SMB._updateServerInfo_SMB2 = _original_update_server_info

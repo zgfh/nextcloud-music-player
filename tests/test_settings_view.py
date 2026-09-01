@@ -137,7 +137,49 @@ def test_download_card_renders_live_progress():
     assert view.download_filename_text.value == "song.mp3"
     assert view.download_progress_bar.value == 0.5
     assert "512.0 KB / 1.0 MB" in view.download_progress_text.value
+    assert "50%" in view.download_progress_text.value
     assert "等待 1" in view.download_queue_text.value
+
+
+def test_download_progress_is_static_when_idle():
+    from nextcloud_music_player.services.download_progress import (
+        DownloadProgressTracker,
+    )
+
+    view, _, _ = make_settings_view(sub_page="download")
+    view.app_context["music_service"] = SimpleNamespace(
+        download_progress=DownloadProgressTracker()
+    )
+
+    view._refresh_download_progress()
+
+    assert view.download_status_text.value == "暂无下载任务"
+    assert view.download_progress_bar.value == 0.0
+
+
+def test_download_page_shows_elapsed_and_remaining_time(monkeypatch):
+    from nextcloud_music_player.services import download_progress as module
+    from nextcloud_music_player.services.download_progress import (
+        DownloadProgressTracker,
+    )
+
+    clock = [100.0]
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    tracker = DownloadProgressTracker()
+    tracker.enqueue("song.mp3")
+    tracker.mark_downloading("song.mp3")
+    clock[0] = 110.0
+    tracker.update("song.mp3", 50, 100)
+    view, _, _ = make_settings_view(sub_page="download")
+    view.app_context["music_service"] = SimpleNamespace(download_progress=tracker)
+
+    view._refresh_download_progress()
+
+    assert "用时 00:10" in view.download_progress_text.value
+    assert "剩余约 00:10" in view.download_progress_text.value
+    row_detail = view.download_list.controls[0].controls[2].value
+    assert "用时 00:10" in row_detail
+    assert "剩余约 00:10" in row_detail
 
 
 def test_cache_manager_lists_and_selectively_clears_downloads():
@@ -366,3 +408,4 @@ def test_download_page_renders_per_file_list():
     assert "50%" in rows[0].controls[2].value
     assert "HTTP 404" in rows[2].controls[2].value
     assert view.download_status_text.value == "正在下载 1 首"
+    assert rows[0].controls[1].size >= view.download_filename_text.size

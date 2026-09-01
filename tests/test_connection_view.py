@@ -126,6 +126,41 @@ def test_auto_connect_switch_is_saved_per_source():
     assert config.get("connection.auto_connect") is True
 
 
+async def test_auto_connect_immediately_shows_connecting(monkeypatch):
+    """启动自动连接后，首帧应显示连接中，不能短暂显示未连接。"""
+    from nextcloud_music_player.views.connection_view import ConnectionView
+
+    async def hold_auto_connect(self):
+        await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(ConnectionView, "_auto_connect_all_sources", hold_auto_connect)
+    config = FakeConfigManager({
+        "connection": {
+            "source_type": "nextcloud",
+            "auto_connect": True,
+        }
+    })
+    view = make_connection_view(
+        FakePage(), base_context(config), FakeViewManager()
+    )
+
+    assert view.status_text.value == "连接中"
+    view.on_view_activated()
+    assert view.status_text.value == "连接中"
+    await asyncio.sleep(0.02)
+
+
+def test_disconnected_status_uses_chinese_wording():
+    view = make_connection_view(
+        FakePage(), base_context(FakeConfigManager()), FakeViewManager()
+    )
+
+    view._update_connection_status(False)
+
+    assert view.status_text.value == "未连接"
+    assert "OFFLINE" not in view.status_text.value
+
+
 async def test_auto_connect_sources_are_independent(monkeypatch):
     import nextcloud_music_player.gdrive_client as gdrive_module
     import nextcloud_music_player.smb_client as smb_module

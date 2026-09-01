@@ -104,6 +104,7 @@ async def test_build_with_gdrive_source_shows_authorized_state():
                     "client_secret": "sec",
                     "refresh_token": "kept-rt",
                     "default_sync_folder": "FOLDER1",
+                    "sync_folder_labels": {"FOLDER1": "/音乐"},
                 },
             }
         }
@@ -111,7 +112,28 @@ async def test_build_with_gdrive_source_shows_authorized_state():
 
     assert view.gdrive_form_card.visible is True
     assert view.gdrive_auth_status.value == "已授权 ✓"
-    assert view.gdrive_sync_folder_input.value == "FOLDER1"
+    assert view.gdrive_sync_folder_input.value == "/音乐"
+
+
+def test_gdrive_folder_selection_displays_name_but_saves_id(monkeypatch):
+    from nextcloud_music_player.views.folder_selector import FolderSelector
+
+    page, view = make_view(client=FakeNextcloudClient(directories={"/": []}))
+    switch_to_gdrive(view)
+
+    def select_music(selector, callback):
+        selector.selected_display_path = "/音乐/周杰伦"
+        callback("FOLDER2")
+
+    monkeypatch.setattr(FolderSelector, "show_dialog", select_music)
+    view._open_folder_selector(view.app_context["nextcloud_client"])
+
+    config = view.app_context["config_manager"]
+    assert view.gdrive_sync_folder_input.value == "/音乐/周杰伦"
+    assert config.get("connection.gdrive.sync_folders") == ["FOLDER2"]
+    assert config.get("connection.gdrive.sync_folder_labels") == {
+        "FOLDER2": "/音乐/周杰伦"
+    }
 
 
 # === 连接前校验 ===

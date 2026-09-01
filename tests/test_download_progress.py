@@ -79,3 +79,28 @@ def test_aggregate_bytes_and_speed():
     assert snapshot["downloaded_bytes"] == 150
     assert snapshot["total_bytes"] == 500
     assert snapshot["speed_bps"] > 0
+
+
+def test_elapsed_and_eta_are_tracked(monkeypatch):
+    from nextcloud_music_player.services import download_progress as module
+
+    clock = [100.0]
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    tracker = DownloadProgressTracker()
+    tracker.enqueue("song.mp3")
+    tracker.mark_downloading("song.mp3")
+    clock[0] = 110.0
+    tracker.update("song.mp3", 50, 100)
+
+    state = tracker.file_states()[0]
+    snapshot = tracker.snapshot()
+    assert state["elapsed_seconds"] == 10
+    assert state["eta_seconds"] == 10
+    assert snapshot["elapsed_seconds"] == 10
+    assert snapshot["eta_seconds"] == 10
+
+    clock[0] = 112.0
+    tracker.finish("song.mp3", True)
+    finished = tracker.file_states()[0]
+    assert finished["elapsed_seconds"] == 12
+    assert finished["eta_seconds"] == 0

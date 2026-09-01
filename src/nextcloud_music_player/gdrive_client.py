@@ -150,7 +150,10 @@ def exchange_authorization_code(
 
 
 def refresh_access_token(
-    client_id: str, client_secret: str, refresh_token: str, session=None,
+    client_id: str,
+    client_secret: str,
+    refresh_token: str,
+    session=None,
     token_url: str = None,
 ) -> Dict:
     """用 refresh_token 换取新的 access_token"""

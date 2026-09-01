@@ -38,6 +38,8 @@ class PlaybackView:
         self.app_context = app_context
         self.view_manager = view_manager
         self.play_mode = PlayMode.REPEAT_ONE
+        self._prefetch_task: asyncio.Task | None = None
+        self._prefetch_song_name = ""
 
         config_manager = app_context["config_manager"]
         music_service = app_context.get("music_service")
@@ -415,6 +417,7 @@ class PlaybackView:
                 else ""
             )
             if local_path and os.path.exists(local_path):
+                self._refresh_playlist_song_state(song_name)
                 return await self.play_music_file(local_path, request_id=request_id)
 
             remote_path = song_info.get("remote_path", "")
@@ -426,7 +429,15 @@ class PlaybackView:
             self._set_status("下载中...", Color.INFO)
             self.page.update()
             try:
-                success = await music_service.download_file(remote_path, song_name)
+                if (
+                    self._prefetch_song_name == song_name
+                    and self._prefetch_task
+                    and not self._prefetch_task.done()
+                ):
+                    logger.info("复用下一首预缓存任务: %s", song_name)
+                    success = await asyncio.shield(self._prefetch_task)
+                else:
+                    success = await music_service.download_file(remote_path, song_name)
             except Exception as dl_error:
                 logger.error(f"下载歌曲失败: {song_name} - {dl_error}")
                 success = False
@@ -444,6 +455,7 @@ class PlaybackView:
                 music_library.get_song_info(song_name) if music_library else None
             )
             if updated_info and updated_info.get("filepath"):
+                self._refresh_playlist_song_state(song_name)
                 return await self.play_music_file(
                     updated_info["filepath"], request_id=request_id
                 )
@@ -454,6 +466,25 @@ class PlaybackView:
         except Exception as e:
             logger.error(f"播放选中歌曲失败: {e}")
             return False
+
+    def _refresh_playlist_song_state(self, song_name: str) -> None:
+        """歌曲缓存状态变化后立即让当前信息和播放列表读取音乐库最新值。"""
+        music_library = self.app_context.get("music_library")
+        latest_info = (
+            music_library.get_song_info(song_name)
+            if music_library and song_name
+            else None
+        )
+        if latest_info:
+            current_name = (self.current_song_info or {}).get("name", "")
+            if current_name == song_name:
+                self.current_song_info = {
+                    **(self.current_song_info or {}),
+                    **latest_info,
+                    "name": song_name,
+                }
+            if self.playlist_component:
+                self.playlist_component.refresh_display()
 
     async def play_music_file(
         self, file_path: str, request_id: Optional[int] = None
@@ -486,18 +517,102 @@ class PlaybackView:
                     song_name, auto_download=True
                 )
 
-            self._set_status("播放中", Color.STATUS_PLAYING)
+            # 播放成功后立即同步状态和主按钮图标。不能只依赖定时进度任务，
+            # 因为视图切换、后台或任务尚未启动时它可能不会及时刷新。
+            self.on_playback_state_changed(True)
             self.update_ui()
+            self._schedule_next_song_prefetch()
             return True
         except Exception as e:
             logger.error(f"播放音乐文件失败: {e}")
             return False
 
+    def _next_prefetch_candidate(self) -> Optional[Dict[str, Any]]:
+        """返回可预测的下一首播放条目；随机/单曲循环不预缓存。"""
+        if self.play_mode in (PlayMode.REPEAT_ONE, PlayMode.SHUFFLE):
+            return None
+        playlist = self.playlist_manager.get_current_playlist()
+        songs = playlist.get("songs", []) if playlist else []
+        if len(songs) < 2:
+            return None
+        current_index = int(playlist.get("current_index", 0) or 0)
+        next_index = (current_index + 1) % len(songs)
+        entry = songs[next_index]
+        song_info = dict(entry.get("info", {}))
+        song_name = entry.get("name") or song_info.get("name", "")
+        music_library = self.app_context.get("music_library")
+        latest = music_library.get_song_info(song_name) if music_library else None
+        if latest:
+            song_info.update(latest)
+        song_info["name"] = song_name
+        return song_info
+
+    def _schedule_next_song_prefetch(self) -> None:
+        """当前歌曲开始播放后，后台预缓存来源在线的下一首。"""
+        candidate = self._next_prefetch_candidate()
+        if not candidate:
+            return
+        song_name = candidate.get("name", "")
+        source_type = candidate.get("source_type", "nextcloud")
+        origins = candidate.get("origins") or []
+        music_service = self.app_context.get("music_service")
+        source_available = (
+            any(
+                origin.get("source_type") in music_service.source_clients
+                for origin in origins
+            )
+            if music_service and origins
+            else music_service and source_type in music_service.source_clients
+        )
+        if not (
+            song_name
+            and music_service
+            and source_available
+        ):
+            return
+        if music_service.get_local_file_path(song_name):
+            return
+        if (
+            self._prefetch_task
+            and not self._prefetch_task.done()
+        ):
+            # 同一时间只预缓存一首；当前任务结束后会按最新播放索引重试。
+            return
+        self._prefetch_song_name = song_name
+        self._prefetch_task = asyncio.create_task(
+            self._prefetch_next_song(candidate)
+        )
+
+    async def _prefetch_next_song(self, song_info: Dict[str, Any]) -> bool:
+        """静默下载下一首；失败只记录日志，不打断当前播放。"""
+        song_name = song_info.get("name", "")
+        remote_path = song_info.get("remote_path", "")
+        music_service = self.app_context.get("music_service")
+        if not (song_name and remote_path and music_service):
+            return False
+        try:
+            logger.info("开始预缓存下一首: %s", song_name)
+            success = await music_service.download_file(remote_path, song_name)
+            if success:
+                self._refresh_playlist_song_state(song_name)
+                logger.info("下一首预缓存完成: %s", song_name)
+            return bool(success)
+        except asyncio.CancelledError:
+            raise
+        except Exception as ex:
+            logger.warning("下一首预缓存失败 %s: %s", song_name, ex)
+            return False
+        finally:
+            if self._prefetch_task is asyncio.current_task():
+                self._prefetch_task = None
+                self._prefetch_song_name = ""
+                # 快速切歌期间候选可能已经变化，按最新播放列表补一次调度。
+                self._schedule_next_song_prefetch()
+
     async def _stop_music(self):
         """停止播放"""
         await self.playback_service.stop_music()
-        self._set_status("停止", Color.STATUS_STOPPED)
-        self.page.update()
+        self.on_playback_state_changed(False, is_stopped=True)
 
     async def _schedule_ui_update(self):
         """定时更新 UI（仅在视图激活时刷新，避免更新已冻结控件）"""

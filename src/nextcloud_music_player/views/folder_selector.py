@@ -15,10 +15,18 @@ logger = logging.getLogger(__name__)
 class FolderSelector:
     """远程文件夹浏览器对话框（Nextcloud/SMB/Google Drive 通用）"""
 
-    def __init__(self, page: ft.Page, nextcloud_client, initial_path: str = "/"):
+    def __init__(
+        self,
+        page: ft.Page,
+        nextcloud_client,
+        initial_path: str = "/",
+        initial_display_path: str = "",
+    ):
         self.page = page
         self.nextcloud_client = nextcloud_client
         self.current_path = initial_path or "/"
+        self.initial_display_path = initial_display_path
+        self.selected_display_path = initial_display_path or self.current_path or "/"
         # 面包屑栈 [(显示名, 路径)]：上级导航与路径展示均基于此。
         # Google Drive 按文件夹 ID 导航，无法用字符串截断求上级目录；
         # Nextcloud/SMB 的根路径 '/' 也会被 Drive 客户端归一化为根目录。
@@ -173,7 +181,7 @@ class FolderSelector:
     def _display_path(self) -> str:
         """展示用路径：面包屑名称拼接；栈空时展示原始路径（根为 '/'）"""
         if not self._crumbs:
-            return self.current_path or "/"
+            return self.initial_display_path or self.current_path or "/"
         return "/" + "/".join(name for name, _ in self._crumbs)
 
     def _enter_folder(self, folder_name: str, folder_path: str = None):
@@ -185,6 +193,7 @@ class FolderSelector:
         else:
             new_path = f"{self.current_path.rstrip('/')}/{folder_name}"
         self.current_path = new_path
+        self.initial_display_path = ""
         self._crumbs.append((folder_name, new_path))
         self.path_display.value = self._display_path()
         asyncio.create_task(self._load_folders())
@@ -198,12 +207,14 @@ class FolderSelector:
             self.current_path = self._crumbs[-1][1]
         else:
             self.current_path = "/"
+        self.initial_display_path = ""
         self.path_display.value = self._display_path()
         asyncio.create_task(self._load_folders())
 
     def _go_root(self, e):
         """返回根目录"""
         self.current_path = "/"
+        self.initial_display_path = ""
         self._crumbs.clear()
         self.path_display.value = self._display_path()
         asyncio.create_task(self._load_folders())
@@ -214,6 +225,7 @@ class FolderSelector:
 
     def _select_current(self, e):
         """选择当前文件夹"""
+        self.selected_display_path = self._display_path()
         self.page.pop_dialog()
         if self.on_path_selected:
             self.on_path_selected(self.current_path)

@@ -139,18 +139,7 @@ class FileListView:
             ),
         )
 
-        # 播放操作栏
-        self.add_button = ft.OutlinedButton(
-            "添加",
-            icon=ft.Icons.PLAYLIST_ADD,
-            on_click=self._add_to_playlist,
-            style=ft.ButtonStyle(
-                color=Color.TEXT_SECONDARY,
-                icon_color=Color.TEXT_SECONDARY,
-                side=ft.BorderSide(1, Color.BORDER),
-                shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
-            ),
-        )
+        # 选择与播放操作栏
         self.play_button = ft.FilledButton(
             "播放",
             icon=ft.Icons.PLAY_ARROW,
@@ -200,7 +189,7 @@ class FileListView:
 
         # 下载栏
         self.download_button = ft.FilledButton(
-            "下载选中",
+            "下载",
             icon=ft.Icons.CLOUD_DOWNLOAD,
             on_click=self._download_selected,
             disabled=True,
@@ -221,6 +210,15 @@ class FileListView:
                 shape=ft.RoundedRectangleBorder(radius=Radius.CIRCLE),
             ),
         )
+        self.selection_action_row = ft.Row(
+            [
+                self.select_all_button,
+                self.download_button,
+                self.play_button,
+                self.delete_button,
+            ],
+            spacing=Space.XS,
+        )
         # 组装
         self._container = ft.Container(
             content=ft.Column(
@@ -231,15 +229,7 @@ class FileListView:
                         spacing=Space.XS,
                     ),
                     ft.Row([self.folder_text, self.folder_button], spacing=Space.XS),
-                    ft.Row(
-                        [
-                            self.add_button,
-                            self.play_button,
-                            self.select_all_button,
-                            self.delete_button,
-                        ],
-                        spacing=Space.XS,
-                    ),
+                    self.selection_action_row,
                     ft.Container(
                         content=ft.Row(
                             [
@@ -264,7 +254,6 @@ class FileListView:
                         border_radius=Radius.LG,
                         padding=Space.XS,
                     ),
-                    ft.Row([self.download_button], spacing=Space.SM),
                 ],
                 spacing=Space.MD,
                 expand=True,
@@ -287,21 +276,29 @@ class FileListView:
         artist = song.get("artist", "未知艺术家")
         is_downloaded = song.get("is_downloaded", False)
         source_type = song.get("source_type", "nextcloud")
+        origins = song.get("origins") or []
         source_label = {
             "nextcloud": "Nextcloud",
             "smb": "SMB",
             "gdrive": "Google Drive",
         }.get(source_type, source_type or "未知来源")
-        availability = (
-            f"{source_label} · " + ("已下载" if is_downloaded else "需联网")
-        )
+        source_text = f"{len(origins)} 个来源" if len(origins) > 1 else source_label
+        availability = f"{source_text} · " + ("已下载" if is_downloaded else "需联网")
         size = song.get("size", 0)
 
         size_str = f"{float(size) / 1024 / 1024:.1f}MB" if size else ""
         download_icon = (
             ft.Icons.TASK_ALT if is_downloaded else ft.Icons.CLOUD_DOWNLOAD_OUTLINED
         )
-        download_color = Color.SUCCESS if is_downloaded else Color.TEXT_DISABLED
+        source_connected = any(
+            origin.get("source_type") in self.music_service.source_clients
+            for origin in origins
+        ) if origins else source_type in self.music_service.source_clients
+        download_color = (
+            Color.SUCCESS
+            if is_downloaded
+            else (Color.PRIMARY if source_connected else Color.TEXT_DISABLED)
+        )
 
         selected = name in self.selected_files
         check_icon = ft.Icon(
@@ -374,6 +371,10 @@ class FileListView:
         downloaded = sum(1 for s in self.music_files if s.get("is_downloaded", False))
         self.stats_text.value = f"总数 {total} · 已选 {selected} · 已下载 {downloaded}"
         self.download_button.disabled = selected == 0
+        self.download_button.text = f"下载（{selected}）" if selected else "下载"
+        self.select_all_button.text = (
+            "取消全选" if total > 0 and selected == total else "全选"
+        )
         self.page.update()
 
     def reload_music_list(self, keep_scroll=False):
@@ -395,7 +396,9 @@ class FileListView:
             return
         self.is_syncing = True
         self.sync_button.disabled = True
+        self.sync_button.text = "同步中…"
         self.show_message("正在同步...", "info")
+        self.page.update()
 
         try:
             files = await self.music_service.sync_all_sources()
@@ -407,6 +410,7 @@ class FileListView:
         finally:
             self.is_syncing = False
             self.sync_button.disabled = False
+            self.sync_button.text = "同步"
             self.page.update()
 
     def _search_music(self, e):
@@ -591,7 +595,8 @@ class FileListView:
     @staticmethod
     def _source_label(source_type: str) -> str:
         return {
-            "nextcloud": "Nextcloud", "smb": "SMB",
+            "nextcloud": "Nextcloud",
+            "smb": "SMB",
             "gdrive": "Google Drive",
         }.get(source_type, source_type or "未知来源")
 
@@ -603,11 +608,19 @@ class FileListView:
         result = []
         for source_type in self.music_service.source_clients:
             for folder in self.music_service.get_sync_folders(source_type):
-                result.append({
-                    "source_type": source_type, "folder": folder,
-                    "song_count": 0, "synced_count": 0,
-                    "status": "pending", "error": "",
-                })
+                result.append(
+                    {
+                        "source_type": source_type,
+                        "folder": folder,
+                        "folder_label": self.music_service.get_sync_folder_label(
+                            source_type, folder
+                        ),
+                        "song_count": 0,
+                        "synced_count": 0,
+                        "status": "pending",
+                        "error": "",
+                    }
+                )
         return result
 
     def _update_sync_status(self):
@@ -624,29 +637,43 @@ class FileListView:
             pending = item.get("status") == "pending"
             status = "等待同步" if pending else ("同步完成" if ok else "同步失败")
             count = int(item.get("song_count", 0))
-            subtitle = f"{item.get('folder') or '/'}\n歌曲数量：{count} · {status}"
+            subtitle = (
+                f"{item.get('folder_label') or item.get('folder') or '/'}"
+                f"\n歌曲数量：{count} · {status}"
+            )
             if item.get("error"):
                 subtitle += f"\n{item['error']}"
-            rows.append(ft.ListTile(
-                leading=ft.Icon(
-                    ft.Icons.SCHEDULE if pending else (
-                        ft.Icons.CHECK_CIRCLE if ok else ft.Icons.ERROR_OUTLINE
+            rows.append(
+                ft.ListTile(
+                    leading=ft.Icon(
+                        (
+                            ft.Icons.SCHEDULE
+                            if pending
+                            else (
+                                ft.Icons.CHECK_CIRCLE if ok else ft.Icons.ERROR_OUTLINE
+                            )
+                        ),
+                        color=(
+                            Color.TEXT_MUTED
+                            if pending
+                            else (Color.SUCCESS if ok else Color.DANGER_TEXT)
+                        ),
                     ),
-                    color=Color.TEXT_MUTED if pending else (
-                        Color.SUCCESS if ok else Color.DANGER_TEXT
-                    ),
-                ),
-                title=ft.Text(self._source_label(item.get("source_type", ""))),
-                subtitle=ft.Text(subtitle),
-            ))
+                    title=ft.Text(self._source_label(item.get("source_type", ""))),
+                    subtitle=ft.Text(subtitle),
+                )
+            )
         if not rows:
             rows.append(ft.Text("尚未配置同步目录", color=Color.TEXT_MUTED))
         dialog = ft.AlertDialog(
             title=ft.Text("同步目录详情"),
             content=ft.Container(
                 content=ft.Column(rows, tight=True, scroll=ft.ScrollMode.AUTO),
-                width=420, height=min(420, max(100, len(rows) * 96)),
+                width=420,
+                height=min(420, max(100, len(rows) * 96)),
             ),
-            actions=[ft.TextButton("关闭", on_click=lambda event: self.page.pop_dialog())],
+            actions=[
+                ft.TextButton("关闭", on_click=lambda event: self.page.pop_dialog())
+            ],
         )
         self.page.show_dialog(dialog)
