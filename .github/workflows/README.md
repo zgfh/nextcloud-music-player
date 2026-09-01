@@ -91,5 +91,5 @@ tag 触发 `release.yml` 创建 Release；在 Release 页面发布时触发 `bui
 
 ## 监控构建状态
 
-- **Actions**: https://github.com/zgfh/nextcloud-music-player/actions
-- **Releases**: https://github.com/zgfh/nextcloud-music-player/releases
+- **Actions**: https://github.com/zgfh/cloud-music-player/actions
+- **Releases**: https://github.com/zgfh/cloud-music-player/releases

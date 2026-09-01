@@ -963,6 +963,22 @@ class SettingsView:
                 ),
                 self._info_row("Flet 版本", _package_version("flet")),
                 self._info_row("应用版本", _package_version("nextcloud-music-player")),
+                ft.Row(
+                    [
+                        ft.Text(
+                            "GitHub",
+                            size=FontSize.CAPTION,
+                            color=Color.TEXT_MUTED,
+                            width=80,
+                        ),
+                        ft.TextButton(
+                            "zgfh/cloud-music-player",
+                            icon=ft.Icons.OPEN_IN_NEW,
+                            url="https://github.com/zgfh/cloud-music-player",
+                        ),
+                    ],
+                    spacing=Space.SM,
+                ),
             ],
             spacing=Space.SM,
         )
@@ -1417,7 +1433,7 @@ class SettingsView:
             await share.share_text(
                 "\n".join(self._log_lines),
                 title="分享应用日志",
-                subject="NextCloud Music Player 日志",
+                subject="Cloud Music Player 日志",
             )
         except Exception as ex:
             logger.error(f"分享日志失败: {ex}")

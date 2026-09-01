@@ -130,14 +130,14 @@ jobs:
 
     - name: Package Linux app
       run: |
-        tar -czf nextcloud-music-player-linux-${{ matrix.arch }}.tar.gz \
+        tar -czf cloud-music-player-linux-${{ matrix.arch }}.tar.gz \
           -C build/flutter/build/linux/${{ matrix.arch }}/release bundle
 
     - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4
       with:
         name: linux-build-${{ matrix.arch }}
-        path: nextcloud-music-player-linux-${{ matrix.arch }}.tar.gz
+        path: cloud-music-player-linux-${{ matrix.arch }}.tar.gz
         if-no-files-found: error
         retention-days: 7
 
@@ -172,14 +172,14 @@ jobs:
 
     - name: Package Windows app
       run: |
-        Compress-Archive -Path "build/flutter/build/windows/x64/runner/Release/*" -DestinationPath "nextcloud-music-player-windows-x64.zip"
+        Compress-Archive -Path "build/flutter/build/windows/x64/runner/Release/*" -DestinationPath "cloud-music-player-windows-x64.zip"
       shell: pwsh
 
     - name: Upload Windows artifacts
       uses: actions/upload-artifact@v4
       with:
         name: windows-build
-        path: nextcloud-music-player-windows-x64.zip
+        path: cloud-music-player-windows-x64.zip
         if-no-files-found: error
         retention-days: 7
 
@@ -228,13 +228,13 @@ jobs:
     - name: Package macOS app
       run: |
         APP=$(find build/flutter/build/macos/Build/Products/Release -name "*.app" -maxdepth 1 | head -1)
-        ditto -c -k --keepParent "$APP" nextcloud-music-player-macos-${{ matrix.arch }}.zip
+        ditto -c -k --keepParent "$APP" cloud-music-player-macos-${{ matrix.arch }}.zip
 
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
       with:
         name: macos-build-${{ matrix.arch }}
-        path: nextcloud-music-player-macos-${{ matrix.arch }}.zip
+        path: cloud-music-player-macos-${{ matrix.arch }}.zip
         if-no-files-found: error
         retention-days: 7
 
@@ -268,13 +268,13 @@ jobs:
     - name: Package iOS Simulator app
       run: |
         APP=$(find build/flutter/build/ios/iphonesimulator -name "*.app" -maxdepth 1 | head -1)
-        ditto -c -k --keepParent "$APP" nextcloud-music-player-ios-simulator.zip
+        ditto -c -k --keepParent "$APP" cloud-music-player-ios-simulator.zip
 
     - name: Upload iOS artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ios-build
-        path: nextcloud-music-player-ios-simulator.zip
+        path: cloud-music-player-ios-simulator.zip
         if-no-files-found: error
         retention-days: 7
 

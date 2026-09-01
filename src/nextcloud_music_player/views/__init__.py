@@ -1,5 +1,5 @@
 """
-Views package for NextCloud Music Player
+Views package for Cloud Music Player
 """
 
 from .connection_view import ConnectionView

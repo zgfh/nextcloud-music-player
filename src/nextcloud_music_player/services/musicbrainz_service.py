@@ -14,7 +14,7 @@ class MusicBrainzService:
     SEARCH_URL = "https://musicbrainz.org/ws/2/recording/"
     USER_AGENT = (
         "NextCloudMusicPlayer/0.1.0 "
-        "(https://github.com/zgfh/nextcloud-music-player)"
+        "(https://github.com/zgfh/cloud-music-player)"
     )
     _rate_lock = threading.Lock()
     _last_request_at = 0.0

@@ -1,7 +1,7 @@
 #!/bin/bash
 # 测试Android构建修复脚本
 
-echo "🔧 NextCloud Music Player - Android Build Fix Test"
+echo "🔧 Cloud Music Player - Android Build Fix Test"
 echo "================================================="
 
 # 检查是否在CI环境中

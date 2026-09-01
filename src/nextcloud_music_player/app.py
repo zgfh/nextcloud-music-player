@@ -1,5 +1,5 @@
 """
-NextCloud Music Player - Flet 主入口
+Cloud Music Player - Flet 主入口
 """
 
 import logging
@@ -51,7 +51,7 @@ def setup_logging():
 async def main(page: ft.Page):
     """Flet 应用主入口"""
     # 页面配置 - 深空霓虹主题
-    page.title = "NextCloud Music Player"
+    page.title = "Cloud Music Player"
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
     page.bgcolor = Color.BG_APP

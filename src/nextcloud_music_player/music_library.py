@@ -1,5 +1,5 @@
 """
-Music library management for the NextCloud Music Player.
+Music library management for the Cloud Music Player.
 """
 
 import json

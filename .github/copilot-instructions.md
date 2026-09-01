@@ -19,7 +19,7 @@
 
 ## Project Complete! 🎉
 
-This NextCloud Music Player demo showcases all the requested enhancements:
+This Cloud Music Player demo showcases all the requested enhancements:
 
 ### ✨ Interface Improvements
 - ✅ Play progress bar with time display

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-启动脚本 - NextCloud Music Player (Flet)
+启动脚本 - Cloud Music Player (Flet)
 """
 
 import sys

@@ -49,9 +49,9 @@ jobs:
         
         # 创建完整的发布说明
         cat > release_notes.md << 'EOF'
-        ## 🎵 NextCloud Music Player v${{ steps.version.outputs.version }}
+        ## 🎵 Cloud Music Player v${{ steps.version.outputs.version }}
         
-        感谢使用 NextCloud Music Player！这是一个跨平台的音乐播放器，支持与 NextCloud 服务器同步音乐文件。
+        感谢使用 Cloud Music Player！这是一个跨平台的音乐播放器，支持与 NextCloud 服务器同步音乐文件。
         
         ### 📦 下载
         请根据您的操作系统选择对应的安装包：
@@ -101,7 +101,7 @@ jobs:
         4. 或者下载源码自行编译
         
         ### 🐛 问题反馈
-        如果您遇到任何问题，请在 [GitHub Issues](https://github.com/zgfh/nextcloud-music-player/issues) 中反馈。
+        如果您遇到任何问题，请在 [GitHub Issues](https://github.com/zgfh/cloud-music-player/issues) 中反馈。
         
         ### 📝 安装说明
         1. 下载对应平台的安装包
@@ -114,7 +114,7 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.version.outputs.tag }}
-        name: NextCloud Music Player v${{ steps.version.outputs.version }}
+        name: Cloud Music Player v${{ steps.version.outputs.version }}
         body_path: release_notes.md
         draft: false
         prerelease: false

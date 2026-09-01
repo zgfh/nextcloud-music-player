@@ -1,5 +1,5 @@
 
-# NextCloud Music Player
+# Cloud Music Player
 
 免责: 大模型生成的项目,开发学习使用,不保证质量
 
@@ -19,7 +19,7 @@
 
 ## 📖 项目简介
 
-NextCloud Music Player 是一款现代化的跨平台音乐播放器，可同时连接 Nextcloud、SMB 共享和 Google Drive。应用会同步多个来源、多个目录中的音乐，汇总到统一音乐库和播放列表，并支持下载到本地后离线播放。
+Cloud Music Player 是一款现代化的跨平台音乐播放器，可同时连接 Nextcloud、SMB 共享和 Google Drive。应用会同步多个来源、多个目录中的音乐，汇总到统一音乐库和播放列表，并支持下载到本地后离线播放。
 
 项目使用 [Flet](https://flet.dev/) 框架（基于 Flutter 引擎），实现了原生级别的 UI 渲染和流畅的跨平台体验。
 
@@ -123,8 +123,8 @@ NextCloud Music Player 是一款现代化的跨平台音乐播放器，可同时
 
 1. **克隆仓库**
    ```bash
-   git clone https://github.com/zgfh/nextcloud-music-player.git
-   cd nextcloud-music-player
+   git clone https://github.com/zgfh/cloud-music-player.git
+   cd cloud-music-player
    ```
 
 2. **安装依赖并运行**（推荐 [uv](https://docs.astral.sh/uv/)）
@@ -233,7 +233,7 @@ SMB 首次连接会通过向导选择身份、共享和目录。配置保存后�
 ### 项目结构
 
 ```
-nextcloud-music-player/
+cloud-music-player/
 ├── src/nextcloud_music_player/
 │   ├── __main__.py              # 入口 (ft.run)
 │   ├── app.py                   # Flet 主入口

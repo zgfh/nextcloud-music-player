@@ -4,7 +4,7 @@
 # 这个脚本会检查当前系统上的 GObject Introspection 依赖
 
 echo "======================================="
-echo "  NextCloud Music Player 依赖检查"
+echo "  Cloud Music Player 依赖检查"
 echo "======================================="
 
 # 系统信息

@@ -104,7 +104,7 @@ push_release() {
 
 # 主函数
 main() {
-    echo "🚀 NextCloud Music Player 发布脚本"
+    echo "🚀 Cloud Music Player 发布脚本"
     echo "=================================="
     
     # 检查参数
@@ -159,8 +159,8 @@ main() {
     echo
     print_success "🎉 发布完成！"
     print_info "GitHub Actions 将自动构建并创建 release"
-    print_info "查看构建状态: https://github.com/zgfh/nextcloud-music-player/actions"
-    print_info "查看发布页面: https://github.com/zgfh/nextcloud-music-player/releases"
+    print_info "查看构建状态: https://github.com/zgfh/cloud-music-player/actions"
+    print_info "查看发布页面: https://github.com/zgfh/cloud-music-player/releases"
 }
 
 # 执行主函数

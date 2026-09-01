@@ -52,8 +52,8 @@ ios-distribution/
 ├── README.md                           # 详细安装说明
 ├── ios/                               # 完整 Xcode 项目
 │   └── xcode/
-│       └── NextCloud Music Player.xcodeproj
-├── NextCloud Music Player.app/       # 应用包（如果构建成功）
+│       └── Cloud Music Player.xcodeproj
+├── Cloud Music Player.app/       # 应用包（如果构建成功）
 ├── NextCloud-Music-Player.ipa        # 签名 IPA（如果签名成功）
 └── NextCloud-Music-Player-unsigned.ipa # 未签名 IPA（如果创建成功）
 ```
@@ -66,7 +66,7 @@ ios-distribution/
 
 **步骤**：
 1. 下载并解压 `ios-build.tar.gz`
-2. 打开 `ios/xcode/NextCloud Music Player.xcodeproj`
+2. 打开 `ios/xcode/Cloud Music Player.xcodeproj`
 3. 在 Xcode 中：
    - 选择 Project → Signing & Capabilities
    - 设置你的 Development Team
@@ -142,13 +142,13 @@ codesign -f -s "iPhone Developer: Your Name" NextCloud-Music-Player-unsigned.ipa
 ### 验证构建结果：
 ```bash
 # 检查 .app 结构
-ls -la "NextCloud Music Player.app"
+ls -la "Cloud Music Player.app"
 
 # 检查 IPA 内容
 unzip -l NextCloud-Music-Player-unsigned.ipa
 
 # 验证代码签名状态
-codesign -dv "NextCloud Music Player.app"
+codesign -dv "Cloud Music Player.app"
 ```
 
 ### 常见问题解决：

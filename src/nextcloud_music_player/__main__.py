@@ -1,5 +1,5 @@
 """
-Entry point for the NextCloud Music Player application.
+Entry point for the Cloud Music Player application.
 """
 
 import flet as ft

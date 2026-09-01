@@ -1,6 +1,6 @@
 # 📱 移动平台构建指南（Flet）
 
-本文档介绍如何为 NextCloud Music Player 构建移动平台应用。
+本文档介绍如何为 Cloud Music Player 构建移动平台应用。
 当前项目基于 [Flet](https://flet.dev/) 0.86（Flutter 引擎），构建体系为 `flet build`。
 （旧 Toga/BeeWare + Briefcase 流程已于 2026-08 废弃，见文末历史文档说明。）
 

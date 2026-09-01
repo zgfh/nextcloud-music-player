@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nextcloud-music-player"
 version = "0.1.0"
-description = "A cross-platform music player with NextCloud integration"
+description = "A cross-platform music player for Nextcloud, SMB, and Google Drive"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
@@ -83,9 +83,9 @@ profile = "black"
 "nextcloud_music_player.resources" = ["*"]
 
 [project.urls]
-Homepage = "https://example.com/nextcloud-music-player"
-"Bug Tracker" = "https://github.com/example/nextcloud-music-player/issues"
-"Source Code" = "https://github.com/example/nextcloud-music-player"
+Homepage = "https://github.com/zgfh/cloud-music-player"
+"Bug Tracker" = "https://github.com/zgfh/cloud-music-player/issues"
+"Source Code" = "https://github.com/zgfh/cloud-music-player"
 
 [project.scripts]
 nextcloud-music-player = "nextcloud_music_player.__main__:main"
@@ -93,9 +93,9 @@ nextcloud-music-player = "nextcloud_music_player.__main__:main"
 # === Flet 配置 ===
 [tool.flet]
 app_name = "nextcloud-music-player"
-app_description = "A cross-platform music player with NextCloud integration"
+app_description = "A cross-platform music player for Nextcloud, SMB, and Google Drive"
 org_name = "com.daozzg"
-product_name = "NextCloud Music Player"
+product_name = "Cloud Music Player"
 
 [tool.flet.app]
 path = "src"

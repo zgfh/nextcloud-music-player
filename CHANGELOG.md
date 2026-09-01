@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2025-09-04
 
 ### Added
-- Initial release of NextCloud Music Player
+- Initial release of Cloud Music Player
 - NextCloud server integration for music synchronization
 - Cross-platform music playback using Toga and pygame
 - Playlist management with shuffle, repeat, and loop modes
