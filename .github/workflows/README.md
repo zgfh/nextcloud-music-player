@@ -57,7 +57,7 @@ NO_PROXY=127.0.0.1,localhost,::1 no_proxy=127.0.0.1,localhost,::1 \
 | build-ios | `flet build ios-simulator` | 模拟器 `.app` 打 zip（免签名编译验证） |
 
   - 所有 upload-artifact 均 `if-no-files-found: error`，产物缺失直接失败
-- `publish-dev`：**仅 main push** 触发，创建 `dev-{sha}` 预发布；PR 不刷 release
+- `publish-dev`：**仅 main push** 触发，创建 `dev-{sha}` 预发布；标题包含北京时间和短 commit ID，方便识别最新版本；PR 不刷 release
 - `publish-release`：GitHub Release 发布时把各平台产物挂到 Release；macOS 和 Linux 均提供 ARM64、x64 两种架构
 
 **iOS 真机签名包**：CI 无证书不出正式 IPA，由本地 `scripts/deploy_iso.sh`（自动签名 + 装机 + 续签）完成。

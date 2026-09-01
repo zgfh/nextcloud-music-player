@@ -293,13 +293,22 @@ jobs:
       with:
         path: artifacts
 
+    - name: Generate development build metadata
+      id: dev_meta
+      shell: bash
+      run: |
+        echo "timestamp=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M CST')" >> "$GITHUB_OUTPUT"
+        echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
     - name: Create development release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: dev-${{ github.sha }}
-        name: Development Build ${{ github.sha }}
+        name: Development Build ${{ steps.dev_meta.outputs.timestamp }} · ${{ steps.dev_meta.outputs.short_sha }}
         body: |
-          Development build from commit ${{ github.sha }}
+          Development build from commit `${{ github.sha }}`.
+
+          Build time: ${{ steps.dev_meta.outputs.timestamp }}
 
           This is an automated development release. Use at your own risk.
 
