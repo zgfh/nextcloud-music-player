@@ -108,7 +108,7 @@ class PlaylistViewComponent:
         )
         if latest_info:
             song_info = {**song_info, **latest_info}
-        title = song_info.get("title", song_name)
+        title = song_info.get("custom_title") or song_info.get("title", song_name)
         if title.endswith(".mp3"):
             title = title[:-4]
         artist = song_info.get("artist", "未知艺术家")

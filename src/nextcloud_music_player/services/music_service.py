@@ -201,6 +201,11 @@ class MusicService:
             logger.error(f"获取歌曲列表失败: {e}")
             return []
 
+    def update_song_metadata(self, song_name: str, metadata: Dict[str, Any]) -> bool:
+        """保存歌曲展示信息到音乐库索引，不修改任何源文件。"""
+        updater = getattr(self.music_library, "update_song_metadata", None)
+        return bool(updater and updater(song_name, metadata))
+
     def is_file_cached(self, filename: str) -> bool:
         """检查文件是否已缓存"""
         try:

@@ -276,6 +276,35 @@ class SettingsView:
                 on_click=lambda e, pid=page_id: self._open_sub_page(pid),
             )
 
+        self.musicbrainz_switch = ft.Switch(
+            label="启用 MusicBrainz 在线查询",
+            value=bool(
+                self.app_context["config_manager"].get(
+                    "metadata.musicbrainz_enabled", True
+                )
+            ),
+            on_change=self._on_musicbrainz_enabled_change,
+            active_color=Color.PRIMARY,
+            label_text_style=ft.TextStyle(color=Color.TEXT_PRIMARY),
+        )
+        musicbrainz_card = ft.Container(
+            content=ft.Column(
+                [
+                    self.musicbrainz_switch,
+                    ft.Text(
+                        "关闭后仍可编辑并保存歌曲信息，只禁用 MusicBrainz 联网查询",
+                        size=FontSize.CAPTION,
+                        color=Color.TEXT_MUTED,
+                    ),
+                ],
+                spacing=Space.XS,
+            ),
+            padding=Space.MD,
+            bgcolor=Color.BG_SURFACE,
+            border=ft.Border.all(1, Color.BORDER),
+            border_radius=Radius.LG,
+        )
+
         entries = [
             entry(
                 ft.Icons.DOWNLOAD_ROUNDED,
@@ -311,10 +340,20 @@ class SettingsView:
         ]
 
         return ft.ListView(
-            controls=[self._menu_header(), *entries],
+            controls=[self._menu_header(), musicbrainz_card, *entries],
             spacing=Space.MD,
             expand=True,
             padding=0,
+        )
+
+    def _on_musicbrainz_enabled_change(self, e):
+        """立即保存 MusicBrainz 在线查询开关。"""
+        cm = self.app_context["config_manager"]
+        cm.set("metadata.musicbrainz_enabled", bool(e.control.value))
+        cm.save_config()
+        self.show_message(
+            "MusicBrainz 在线查询已开启" if e.control.value else "MusicBrainz 在线查询已关闭",
+            "success" if e.control.value else "info",
         )
 
     def _cache_summary(self) -> str:

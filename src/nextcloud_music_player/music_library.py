@@ -198,12 +198,26 @@ class MusicLibrary:
                 "artist": parts[0].strip(),
                 "album": "未知专辑",
             }
-        else:
-            return {
-                "title": name_without_ext,
-                "artist": "未知艺术家",
-                "album": "未知专辑",
-            }
+        return {
+            "title": name_without_ext,
+            "artist": "未知艺术家",
+            "album": "未知专辑",
+        }
+
+    def update_song_metadata(self, song_name: str, metadata: Dict) -> bool:
+        """保存用户确认的展示信息，不修改源文件名或音频标签。"""
+        song = self.songs.get(song_name)
+        if not song:
+            return False
+        allowed = {
+            "custom_title", "artist", "album", "year", "musicbrainz_mbid",
+            "metadata_source", "metadata_updated_at",
+        }
+        for key in allowed:
+            if key in metadata:
+                song[key] = str(metadata[key] or "").strip()
+        self.save_music_list()
+        return True
 
     def has_song(self, song_name: str) -> bool:
         """Check if a song exists in the library."""
@@ -244,6 +258,7 @@ class MusicLibrary:
         for song_name, song_info in self.songs.items():
             if (
                 query in song_info.get("title", "").lower()
+                or query in song_info.get("custom_title", "").lower()
                 or query in song_info.get("artist", "").lower()
                 or query in song_info.get("album", "").lower()
                 or query in song_name.lower()

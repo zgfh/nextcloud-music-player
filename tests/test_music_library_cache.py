@@ -114,3 +114,21 @@ def test_same_filename_keeps_multiple_origins_and_stable_primary(tmp_path):
     )
     assert len(song["origins"]) == 2
     assert song["origins"][1]["size"] == 123
+
+
+def test_custom_song_title_is_saved_without_renaming_file(tmp_path):
+    library = MusicLibrary.__new__(MusicLibrary)
+    library.music_dir = tmp_path / "music"
+    library.music_dir.mkdir()
+    library.music_list_file = tmp_path / "music_list.json"
+    library.songs = {}
+    library.add_remote_song("original.mp3", "/remote/original.mp3")
+
+    assert library.update_song_metadata("original.mp3", {
+        "custom_title": "自定义歌名", "artist": "歌手", "album": "专辑",
+        "year": "2026", "musicbrainz_mbid": "mbid-1",
+    }) is True
+
+    assert "original.mp3" in library.songs
+    assert library.songs["original.mp3"]["custom_title"] == "自定义歌名"
+    assert library.songs["original.mp3"]["remote_path"] == "/remote/original.mp3"

@@ -65,6 +65,76 @@ def test_download_button_shows_selected_count(tmp_path, monkeypatch):
     assert view.select_all_button.text == "取消全选"
 
 
+def test_song_details_save_custom_title_without_changing_library_key(tmp_path, monkeypatch):
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("original.mp3", "/original.mp3")
+    page = FakePage()
+    view, _ = make_file_list_view(
+        page, FakeNextcloudClient(), library, FakeConfigManager(), monkeypatch
+    )
+
+    view._show_song_details("original.mp3")
+    view.song_title_input.value = "自定义歌名"
+    view.song_artist_input.value = "新歌手"
+    view._save_song_details(None)
+
+    assert "original.mp3" in library.songs
+    assert library.songs["original.mp3"]["custom_title"] == "自定义歌名"
+    assert library.songs["original.mp3"]["remote_path"] == "/original.mp3"
+    assert page.popped_dialogs == 1
+
+
+async def test_song_details_query_requires_selection_before_save(tmp_path, monkeypatch):
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("周杰伦 - 晴天.mp3", "/song.mp3")
+    page = FakePage()
+    view, _ = make_file_list_view(
+        page, FakeNextcloudClient(), library, FakeConfigManager(), monkeypatch
+    )
+    view._show_song_details("周杰伦 - 晴天.mp3")
+
+    class SearchService:
+        async def search(self, artist, title):
+            return [{
+                "title": "晴天", "artist": "周杰伦", "album": "叶惠美",
+                "year": "2003", "mbid": "mbid-1", "confidence": 99,
+            }]
+
+    view._musicbrainz_service = SearchService()
+    await view._query_song_metadata()
+
+    # 查询本身不持久化，必须先选择候选再保存。
+    assert library.songs["周杰伦 - 晴天.mp3"].get("musicbrainz_mbid") is None
+    view._select_song_candidate({
+        "title": "晴天", "artist": "周杰伦", "album": "叶惠美",
+        "year": "2003", "mbid": "mbid-1",
+    })
+    view._save_song_details(None)
+    assert library.songs["周杰伦 - 晴天.mp3"]["musicbrainz_mbid"] == "mbid-1"
+
+
+async def test_song_details_keeps_editing_but_disables_online_query(
+    tmp_path, monkeypatch
+):
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("song.mp3", "/song.mp3")
+    page = FakePage()
+    config = FakeConfigManager(
+        {"metadata": {"musicbrainz_enabled": False}}
+    )
+    view, _ = make_file_list_view(
+        page, FakeNextcloudClient(), library, config, monkeypatch
+    )
+
+    view._show_song_details("song.mp3")
+
+    assert view.song_query_button.disabled is True
+    assert "已在设置中关闭" in view.song_query_status.value
+    view.song_title_input.value = "仍可手动编辑"
+    view._save_song_details(None)
+    assert library.songs["song.mp3"]["custom_title"] == "仍可手动编辑"
+
+
 def test_remote_song_cloud_icon_reflects_its_source_connection(
     tmp_path, monkeypatch
 ):

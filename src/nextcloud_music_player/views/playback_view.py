@@ -726,7 +726,7 @@ class PlaybackView:
 
             if current_song and self.current_song_info:
                 song_info = self.current_song_info
-                display_title = song_info.get(
+                display_title = song_info.get("custom_title") or song_info.get(
                     "title", song_info.get("name", "未知歌曲")
                 )
                 if display_title.endswith(".mp3"):

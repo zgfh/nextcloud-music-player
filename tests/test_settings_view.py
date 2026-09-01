@@ -57,6 +57,18 @@ def test_logs_rendered_from_memory_buffer(log_env):
     assert any("warn-log-line" in (t or "") for t in texts)
 
 
+def test_musicbrainz_switch_defaults_on_and_persists_change():
+    view, _, config = make_settings_view()
+
+    assert view.musicbrainz_switch.value is True
+    view.musicbrainz_switch.value = False
+    view._on_musicbrainz_enabled_change(
+        SimpleNamespace(control=view.musicbrainz_switch)
+    )
+
+    assert config.get("metadata.musicbrainz_enabled") is False
+
+
 def test_log_level_change_persists_and_applies(log_env):
     """切换到 DEBUG：立即作用于 root logger 并写入配置"""
     view, _, config = make_settings_view(sub_page="logs")
@@ -265,6 +277,7 @@ def test_menu_lists_all_feature_entries():
     titles = [
         entry.content.controls[1].controls[0].value
         for entry in view._container.content.controls[1:]
+        if isinstance(entry.content, ft.Row)
     ]
     assert titles == ["下载进度", "缓存管理", "应用日志", "谷歌云盘", "应用信息"]
 
@@ -273,8 +286,11 @@ def test_menu_entry_click_opens_sub_page():
     """点击菜单入口进入对应子页面，返回按钮可回到菜单"""
     view, _, _ = make_settings_view()
 
-    # 第五个入口：谷歌云盘
-    gdrive_entry = view._container.content.controls[4]
+    gdrive_entry = next(
+        entry for entry in view._container.content.controls
+        if isinstance(getattr(entry, "content", None), ft.Row)
+        and entry.content.controls[1].controls[0].value == "谷歌云盘"
+    )
     gdrive_entry.on_click(SimpleNamespace(control=gdrive_entry))
 
     assert view._sub_page == "gdrive"

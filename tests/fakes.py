@@ -210,6 +210,12 @@ class FakeMusicLibrary:
     def get_song_info(self, song_name):
         return self.songs.get(song_name)
 
+    def update_song_metadata(self, song_name, metadata):
+        if song_name not in self.songs:
+            return False
+        self.songs[song_name].update(metadata)
+        return True
+
     def get_all_songs(self):
         return {name: dict(info) for name, info in self.songs.items()}
 
@@ -227,7 +233,14 @@ class FakeMusicLibrary:
         pass
 
     def search_songs(self, query):
-        return [n for n in self.songs if query.lower() in n.lower()]
+        query = query.lower()
+        return [
+            n for n, info in self.songs.items()
+            if query in n.lower()
+            or query in str(info.get("custom_title", "")).lower()
+            or query in str(info.get("artist", "")).lower()
+            or query in str(info.get("album", "")).lower()
+        ]
 
     def get_local_file_path(self, song_name):
         return (self.songs.get(song_name) or {}).get("filepath", "")
