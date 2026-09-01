@@ -3,7 +3,7 @@ name: Auto Release
 on:
   push:
     tags:
-      - 'v*'  # 匹配 v1.0.0, v1.2.3 等格式的标签
+      - 'v*'  # 匹配 v1.0.0、v1.0.0-rc 等格式的标签
 
 # GitHub 默认会为工作流令牌提供只读权限；创建 Release 需要仓库内容写权限。
 permissions:
@@ -24,6 +24,13 @@ jobs:
         VERSION=${GITHUB_REF#refs/tags/v}
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        if [[ "$VERSION" == *-* ]]; then
+          echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          echo "make_latest=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          echo "make_latest=true" >> "$GITHUB_OUTPUT"
+        fi
     
     - name: Generate changelog
       id: changelog
@@ -117,6 +124,7 @@ jobs:
         name: Cloud Music Player v${{ steps.version.outputs.version }}
         body_path: release_notes.md
         draft: false
-        prerelease: false
+        prerelease: ${{ steps.version.outputs.prerelease }}
+        make_latest: ${{ steps.version.outputs.make_latest }}
         generate_release_notes: true
         token: ${{ secrets.GITHUB_TOKEN }}
