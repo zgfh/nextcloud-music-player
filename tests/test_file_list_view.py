@@ -113,6 +113,25 @@ async def test_song_details_query_requires_selection_before_save(tmp_path, monke
     assert library.songs["周杰伦 - 晴天.mp3"]["musicbrainz_mbid"] == "mbid-1"
 
 
+def test_song_details_reparses_legacy_numbered_filename(tmp_path, monkeypatch):
+    library = FakeMusicLibrary(tmp_path)
+    library.add_remote_song("0172.五月天-倔强.mp3", "/song.mp3")
+    library.songs["0172.五月天-倔强.mp3"].update(
+        {"title": "0172.五月天-倔强", "artist": "未知艺术家"}
+    )
+    library.extract_song_info_from_filename = lambda _: {
+        "title": "倔强", "artist": "五月天", "album": "未知专辑"
+    }
+    view, _ = make_file_list_view(
+        FakePage(), FakeNextcloudClient(), library, FakeConfigManager(), monkeypatch
+    )
+
+    view._show_song_details("0172.五月天-倔强.mp3")
+
+    assert view.song_title_input.value == "倔强"
+    assert view.song_artist_input.value == "五月天"
+
+
 async def test_song_details_keeps_editing_but_disables_online_query(
     tmp_path, monkeypatch
 ):

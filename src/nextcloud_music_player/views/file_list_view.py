@@ -366,6 +366,14 @@ class FileListView:
     def _show_song_details(self, song_name: str):
         """打开只修改音乐库索引、不触碰源文件的歌曲信息弹窗。"""
         song = self.music_service.get_song_info(song_name) or {}
+        # 旧索引可能把 "0172.五月天-倔强" 整串当成歌名。
+        # 未经手动/MusicBrainz 编辑的记录，打开时用新规则重新解析。
+        parsed = {}
+        if not song.get("metadata_source"):
+            library = self.app_context.get("music_library")
+            parser = getattr(library, "extract_song_info_from_filename", None)
+            if parser:
+                parsed = parser(song_name)
         field_style = dict(
             bgcolor=Color.BG_SURFACE_ALT, border_color=Color.BORDER,
             focused_border_color=Color.PRIMARY, color=Color.TEXT_PRIMARY,
@@ -374,10 +382,16 @@ class FileListView:
         self.song_detail_name = song_name
         self.song_detail_mbid = song.get("musicbrainz_mbid", "")
         self.song_title_input = ft.TextField(
-            label="自定义歌名", value=song.get("custom_title") or song.get("title", ""),
+            label="自定义歌名", value=(
+                song.get("custom_title") or parsed.get("title")
+                or song.get("title", "")
+            ),
             hint_text="仅改变应用内显示，不修改文件名", **field_style,
         )
-        self.song_artist_input = ft.TextField(label="歌手", value=song.get("artist", ""), **field_style)
+        self.song_artist_input = ft.TextField(
+            label="歌手", value=parsed.get("artist") or song.get("artist", ""),
+            **field_style,
+        )
         self.song_album_input = ft.TextField(label="专辑", value=song.get("album", ""), **field_style)
         self.song_year_input = ft.TextField(label="年份", value=str(song.get("year", "") or ""), **field_style)
         self.song_query_status = ft.Text(
@@ -468,7 +482,11 @@ class FileListView:
             self.song_query_status.color = Color.SUCCESS_TEXT if candidates else Color.TEXT_MUTED
         except Exception as ex:
             logger.error("MusicBrainz 查询失败: %s", ex)
-            self.song_query_status.value = f"查询失败：{ex}"
+            self.song_query_status.value = (
+                f"{ex}；仍可手动编辑后保存"
+                if "MusicBrainz 服务暂不可用" in str(ex)
+                else "查询失败，可手动编辑后保存"
+            )
             self.song_query_status.color = Color.DANGER_TEXT
         finally:
             self.song_query_button.disabled = False

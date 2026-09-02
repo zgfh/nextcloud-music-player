@@ -10,6 +10,10 @@ from difflib import SequenceMatcher
 import requests
 
 
+class MusicBrainzUnavailableError(RuntimeError):
+    """MusicBrainz 限流或临时不可用。"""
+
+
 class MusicBrainzService:
     SEARCH_URL = "https://musicbrainz.org/ws/2/recording/"
     USER_AGENT = (
@@ -18,6 +22,8 @@ class MusicBrainzService:
     )
     _rate_lock = threading.Lock()
     _last_request_at = 0.0
+    MAX_ATTEMPTS = 3
+    RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
     @staticmethod
     def _escape(value: str) -> str:
@@ -53,14 +59,45 @@ class MusicBrainzService:
         if not query:
             return []
 
-        self._wait_for_rate_limit()
-        response = requests.get(
-            self.SEARCH_URL,
-            params={"query": query, "fmt": "json", "limit": max(1, min(limit, 10))},
-            headers={"User-Agent": self.USER_AGENT, "Accept": "application/json"},
-            timeout=12,
-        )
-        response.raise_for_status()
+        response = None
+        for attempt in range(self.MAX_ATTEMPTS):
+            self._wait_for_rate_limit()
+            try:
+                response = requests.get(
+                    self.SEARCH_URL,
+                    params={
+                        "query": query,
+                        "fmt": "json",
+                        "limit": max(1, min(limit, 10)),
+                    },
+                    headers={
+                        "User-Agent": self.USER_AGENT,
+                        "Accept": "application/json",
+                    },
+                    timeout=12,
+                )
+                response.raise_for_status()
+                break
+            except requests.RequestException as exc:
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                retryable = status in self.RETRYABLE_STATUS or status is None
+                if not retryable:
+                    raise
+                if attempt + 1 >= self.MAX_ATTEMPTS:
+                    raise MusicBrainzUnavailableError(
+                        "MusicBrainz 服务暂不可用，请稍后再试"
+                    ) from exc
+                retry_after = getattr(
+                    getattr(exc, "response", None), "headers", {}
+                ).get("Retry-After")
+                try:
+                    delay = min(float(retry_after), 5.0)
+                except (TypeError, ValueError):
+                    delay = 0.75 * (2**attempt)
+                time.sleep(delay)
+
+        if response is None:
+            return []
         results = []
         guess = f"{artist} {title}".strip()
         for recording in response.json().get("recordings", []):

@@ -244,7 +244,9 @@ check_signature() {
     now_epoch=$(date "+%s")
     days_left=$(( (expiry_epoch - now_epoch) / 86400 ))
 
-    log_message "${YELLOW}⏳ 签名过期时间: $expiry（剩余 $days_left 天）${NC}"
+    # 变量后紧跟全角括号时，部分 Bash/locale 组合会把非 ASCII 字符误判为
+    # 变量名的一部分；始终用花括号明确变量边界。
+    log_message "${YELLOW}⏳ 签名过期时间: ${expiry}（剩余 ${days_left} 天）${NC}"
     if [ "$days_left" -le 1 ]; then
         log_message "${RED}⚠️ 签名即将过期，请尽快重新运行本脚本续签${NC}"
     fi

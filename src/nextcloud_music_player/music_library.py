@@ -5,6 +5,7 @@ Music library management for the Cloud Music Player.
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -190,9 +191,14 @@ class MusicLibrary:
         # Remove file extension
         name_without_ext = os.path.splitext(filename)[0]
 
-        # Try to parse "Artist - Title" format
-        if " - " in name_without_ext:
-            parts = name_without_ext.split(" - ", 1)
+        # 移除常见的曲序前缀，如 "0172." / "01 - " / "1_"。
+        name_without_ext = re.sub(
+            r"^\s*\d{1,4}\s*[._-]\s*", "", name_without_ext
+        )
+
+        # 兼容 "Artist - Title" 和中文曲库常见的 "Artist-Title"。
+        if "-" in name_without_ext:
+            parts = name_without_ext.split("-", 1)
             return {
                 "title": parts[1].strip(),
                 "artist": parts[0].strip(),

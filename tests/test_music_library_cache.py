@@ -132,3 +132,15 @@ def test_custom_song_title_is_saved_without_renaming_file(tmp_path):
     assert "original.mp3" in library.songs
     assert library.songs["original.mp3"]["custom_title"] == "自定义歌名"
     assert library.songs["original.mp3"]["remote_path"] == "/remote/original.mp3"
+def test_filename_metadata_parser_handles_track_number_and_compact_separator(
+    tmp_path, monkeypatch
+):
+    from nextcloud_music_player.music_library import MusicLibrary
+
+    library = MusicLibrary.__new__(MusicLibrary)
+    assert library.extract_song_info_from_filename("0172.五月天-倔强.mp3") == {
+        "title": "倔强",
+        "artist": "五月天",
+        "album": "未知专辑",
+    }
+
