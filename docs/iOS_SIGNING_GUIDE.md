@@ -54,8 +54,8 @@ ios-distribution/
 │   └── xcode/
 │       └── Cloud Music Player.xcodeproj
 ├── Cloud Music Player.app/       # 应用包（如果构建成功）
-├── NextCloud-Music-Player.ipa        # 签名 IPA（如果签名成功）
-└── NextCloud-Music-Player-unsigned.ipa # 未签名 IPA（如果创建成功）
+├── Cloud-Music-Player.ipa        # 签名 IPA（如果签名成功）
+└── Cloud-Music-Player-unsigned.ipa # 未签名 IPA（如果创建成功）
 ```
 
 ## 🛠️ 用户安装选项
@@ -85,7 +85,7 @@ ios-distribution/
 **步骤**：
 ```bash
 # 使用 codesign 重新签名
-codesign -f -s "iPhone Developer: Your Name" NextCloud-Music-Player-unsigned.ipa
+codesign -f -s "iPhone Developer: Your Name" Cloud-Music-Player-unsigned.ipa
 
 # 或使用第三方工具如 ios-app-signer
 ```
@@ -145,7 +145,7 @@ codesign -f -s "iPhone Developer: Your Name" NextCloud-Music-Player-unsigned.ipa
 ls -la "Cloud Music Player.app"
 
 # 检查 IPA 内容
-unzip -l NextCloud-Music-Player-unsigned.ipa
+unzip -l Cloud-Music-Player-unsigned.ipa
 
 # 验证代码签名状态
 codesign -dv "Cloud Music Player.app"

@@ -333,7 +333,7 @@ class SettingsView:
             entry(
                 ft.Icons.INFO_OUTLINED,
                 "应用信息",
-                f"v{_package_version('nextcloud-music-player')} · "
+                f"v{_package_version('cloud-music-player')} · "
                 f"Flet {_package_version('flet')}",
                 "about",
             ),
@@ -962,7 +962,7 @@ class SettingsView:
                     "平台", f"{platform_name} · Python {sys.version.split()[0]}"
                 ),
                 self._info_row("Flet 版本", _package_version("flet")),
-                self._info_row("应用版本", _package_version("nextcloud-music-player")),
+                self._info_row("应用版本", _package_version("cloud-music-player")),
                 ft.Row(
                     [
                         ft.Text(

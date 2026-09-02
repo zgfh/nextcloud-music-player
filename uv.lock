@@ -342,6 +342,58 @@ wheels = [
 ]
 
 [[package]]
+name = "cloud-music-player"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "flet" },
+    { name = "flet-audio" },
+    { name = "httpx" },
+    { name = "pysmb" },
+    { name = "requests" },
+    { name = "rubicon-objc", marker = "sys_platform == 'darwin' or sys_platform == 'ios'" },
+]
+
+[package.optional-dependencies]
+desktop = [
+    { name = "pygame" },
+]
+dev = [
+    { name = "black" },
+    { name = "fastapi" },
+    { name = "flake8" },
+    { name = "flet", extra = ["test"] },
+    { name = "isort" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "black", marker = "extra == 'dev'" },
+    { name = "fastapi", marker = "extra == 'dev'" },
+    { name = "flake8", marker = "extra == 'dev'" },
+    { name = "flet", specifier = ">=0.86.0" },
+    { name = "flet", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.86.0" },
+    { name = "flet-audio", specifier = ">=0.86.0" },
+    { name = "httpx", specifier = ">=0.24.0" },
+    { name = "isort", marker = "extra == 'dev'" },
+    { name = "mypy", marker = "extra == 'dev'" },
+    { name = "pygame", marker = "extra == 'desktop'", specifier = ">=2.0.0" },
+    { name = "pysmb" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'" },
+    { name = "pytest-cov", marker = "extra == 'dev'" },
+    { name = "requests", specifier = ">=2.25.0" },
+    { name = "rubicon-objc", marker = "sys_platform == 'darwin' or sys_platform == 'ios'" },
+    { name = "uvicorn", marker = "extra == 'dev'" },
+]
+provides-extras = ["dev", "desktop"]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -969,58 +1021,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/6a/51/63fe664f3908c97be
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/c9/b2622292ea83fbb4ec318f5b9ab867d0a28ab43c5717bb85b0a5f6b3b0a4/networkx-3.6.1-py3-none-any.whl", hash = "sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762", size = 2068504, upload-time = "2025-12-08T17:02:38.159Z" },
 ]
-
-[[package]]
-name = "nextcloud-music-player"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "flet" },
-    { name = "flet-audio" },
-    { name = "httpx" },
-    { name = "pysmb" },
-    { name = "requests" },
-    { name = "rubicon-objc", marker = "sys_platform == 'darwin' or sys_platform == 'ios'" },
-]
-
-[package.optional-dependencies]
-desktop = [
-    { name = "pygame" },
-]
-dev = [
-    { name = "black" },
-    { name = "fastapi" },
-    { name = "flake8" },
-    { name = "flet", extra = ["test"] },
-    { name = "isort" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "uvicorn" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "black", marker = "extra == 'dev'" },
-    { name = "fastapi", marker = "extra == 'dev'" },
-    { name = "flake8", marker = "extra == 'dev'" },
-    { name = "flet", specifier = ">=0.86.0" },
-    { name = "flet", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.86.0" },
-    { name = "flet-audio", specifier = ">=0.86.0" },
-    { name = "httpx", specifier = ">=0.24.0" },
-    { name = "isort", marker = "extra == 'dev'" },
-    { name = "mypy", marker = "extra == 'dev'" },
-    { name = "pygame", marker = "extra == 'desktop'", specifier = ">=2.0.0" },
-    { name = "pysmb" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "requests", specifier = ">=2.25.0" },
-    { name = "rubicon-objc", marker = "sys_platform == 'darwin' or sys_platform == 'ios'" },
-    { name = "uvicorn", marker = "extra == 'dev'" },
-]
-provides-extras = ["dev", "desktop"]
 
 [[package]]
 name = "numpy"

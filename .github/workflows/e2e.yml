@@ -109,7 +109,7 @@ jobs:
             find "$CONTAINER" -type f \( -name '*.log' -o -name 'config.json' \) -exec cp {} test-artifacts/app-logs/ \;
           fi
           xcrun simctl spawn "$UDID" log show --last 10m --style compact \
-            --predicate 'process == "nextcloud-music-player"' \
+            --predicate 'process == "Cloud Music Player"' \
             > test-artifacts/simulator.log 2>&1 || true
 
       - name: Upload E2E logs and artifacts

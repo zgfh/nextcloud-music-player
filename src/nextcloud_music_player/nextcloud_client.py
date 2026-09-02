@@ -1016,7 +1016,7 @@ class NextCloudClient:
                 headers = {
                     "Depth": "1",
                     "Content-Type": "application/xml; charset=utf-8",
-                    "User-Agent": "NextCloud-Music-Player/1.0",
+                    "User-Agent": "Cloud-Music-Player/1.0",
                 }
 
                 response = requests.request(
