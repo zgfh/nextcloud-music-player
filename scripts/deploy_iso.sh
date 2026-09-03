@@ -4,6 +4,15 @@ set -euo pipefail
 # 确保在项目根目录执行
 cd "$(dirname "$0")/.."
 
+# launchd/cron 不会加载交互式 shell 环境。Flet 在生成 Flutter
+# 工程时就需要 flutter/dart/pod，因此必须在 flet build 之前补全 PATH。
+FLUTTER_ROOT="${FLUTTER_ROOT:-/Users/zzg/flutter/3.44.8}"
+export PATH="$FLUTTER_ROOT/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+
+mkdir -p scripts/logs
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -137,13 +146,22 @@ if [ "$NEED_FLET_BUILD" = "1" ]; then
         exit 1
     fi
 
+    if ! command -v flutter >/dev/null 2>&1; then
+        log_message "${RED}❌ 未找到 flutter: $FLUTTER_ROOT/bin/flutter${NC}"
+        exit 1
+    fi
+    if ! command -v pod >/dev/null 2>&1; then
+        log_message "${RED}❌ 未找到 CocoaPods (pod)，请检查 /usr/local/bin 或 /opt/homebrew/bin${NC}"
+        exit 1
+    fi
+
     log_message "${YELLOW}🔨 打包 Python 应用并生成 Flutter 工程...${NC}"
     # 失败必须中止：继续往下会用旧的 build/flutter 产物打包出旧代码的应用
-    FLET_BUILD_LOG=$(mktemp -t deploy_flet)
+    FLET_BUILD_LOG="scripts/logs/flet_build_$(date '+%Y%m%d_%H%M%S').log"
     if ! $FLET_CMD build ipa --yes --no-rich-output >"$FLET_BUILD_LOG" 2>&1; then
-        log_message "${RED}❌ flet build 失败，最后 40 行输出：${NC}"
-        tail -40 "$FLET_BUILD_LOG"
-        rm -f "$FLET_BUILD_LOG"
+        log_message "${RED}❌ flet build 失败，最后 120 行输出：${NC}"
+        tail -120 "$FLET_BUILD_LOG"
+        log_message "${YELLOW}📄 完整日志已保留: $FLET_BUILD_LOG${NC}"
         exit 1
     fi
     rm -f "$FLET_BUILD_LOG"
@@ -200,7 +218,6 @@ fi
 
 log_message "${YELLOW}📦 构建并签名 IPA ($FLUTTER_BUILD_MODE)...${NC}"
 
-export PATH="$HOME/flutter/3.44.8/bin:/usr/local/bin:$PATH"
 FLUTTER_BUILD_LOG=$(mktemp -t deploy_flutter)
 if ! (cd build/flutter && flutter build ipa --$FLUTTER_BUILD_MODE \
     --export-options-plist ios/exportOptions.plist >"$FLUTTER_BUILD_LOG" 2>&1); then
